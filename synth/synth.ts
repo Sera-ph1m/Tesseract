@@ -3521,7 +3521,96 @@ export class Song {
             }
         });
     }
-    
+    private _getChannelsOfType(type: ChannelType): { channel: Channel, absoluteIndex: number }[] {
+        return this.channels
+            .map((channel, index) => ({ channel, absoluteIndex: index }))
+            .filter(item => item.channel.type === type);
+    }
+    // Update all modulator channel targets after a structural change.
+    private _updateAllModTargetIndices(remap: (oldIndex: number) => number): void {
+        for (const channel of this.channels) {
+            if (channel.type === ChannelType.Mod) {
+                for (const instrument of channel.instruments) {
+                    for (let i = 0; i < instrument.modChannels.length; i++) {
+                        const oldTargetIndex = instrument.modChannels[i];
+                        // Don't remap song-level targets (-1) or "None" (-2).
+                        if (oldTargetIndex >= 0) {
+                            instrument.modChannels[i] = remap(oldTargetIndex);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+        public addChannel(type: ChannelType, position: number = this.channels.length - 1): void {
+        const insertIndex = position + 1;
+
+        // Before modifying the array, update all existing modulators.
+        // Any target with an index >= insertIndex will be shifted one position to the right.
+        const remap = (oldIndex: number) => (oldIndex >= insertIndex ? oldIndex + 1 : oldIndex);
+        this._updateAllModTargetIndices(remap);
+        const newChannel = new Channel(type);
+
+        // Initialize the new channel with default properties.
+        newChannel.octave = (type === ChannelType.Pitch) ? 3 : 0;
+
+        for (let i = 0; i < this.patternsPerChannel; i++) {
+            newChannel.patterns.push(new Pattern());
+        }
+
+        for (let i = 0; i < Config.instrumentCountMin; i++) {
+            const isNoise = type === ChannelType.Noise;
+            const isMod = type === ChannelType.Mod;
+            const instrument = new Instrument(isNoise, isMod);
+            instrument.setTypeAndReset(
+                isMod ? InstrumentType.mod : (isNoise ? InstrumentType.noise : InstrumentType.chip),
+                isNoise,
+                isMod
+            );
+            newChannel.instruments.push(instrument);
+        }
+
+        for (let i = 0; i < this.barCount; i++) {
+            newChannel.bars.push(0);
+        }
+
+        this.channels.splice(insertIndex, 0, newChannel);
+
+        this.updateDefaultChannelNames();
+    }
+
+    public removeChannel(index: number): void {
+        if (index < 0 || index >= this.channels.length) return;
+
+        // Before modifying the array, update all existing modulators.
+        const remap = (oldIndex: number) => {
+            if (oldIndex === index) return -2; // Target was deleted, set to "None".
+            if (oldIndex > index) return oldIndex - 1; // Target was shifted left.
+            return oldIndex;
+        };
+        this._updateAllModTargetIndices(remap);
+        this.channels.splice(index, 1);
+        this.updateDefaultChannelNames();
+    }
+
+
+    public removeChannelType(type: ChannelType): void {
+        const candidates = this._getChannelsOfType(type);
+        if (candidates.length === 0) return;
+
+        const leastUsed = candidates.reduce((best, current) => {
+            const bestScore = best.channel.bars.filter(b => b > 0).length;
+            const currentScore = current.channel.bars.filter(b => b > 0).length;
+
+            if (currentScore < bestScore) return current;
+            if (currentScore > bestScore) return best;
+            return current.absoluteIndex > best.absoluteIndex ? current : best;
+        });
+
+        this.removeChannel(leastUsed.absoluteIndex);
+    }
+
 
     public initToDefault(andResetChannels: boolean = true): void {
         this.scale = 0;
@@ -3873,20 +3962,21 @@ export class Song {
                 }
 
                 if (instrument.type == InstrumentType.chip) {
+                    buffer.push(SongTagCode.wave);
                     if (instrument.chipWave > 186) {
-                        buffer.push(119, base64IntToCharCode[instrument.chipWave - 186]);
+                        buffer.push(base64IntToCharCode[instrument.chipWave - 186]);
                         buffer.push(base64IntToCharCode[3]);
                     }
                     else if (instrument.chipWave > 124) {
-                        buffer.push(119, base64IntToCharCode[instrument.chipWave - 124]);
+                        buffer.push(base64IntToCharCode[instrument.chipWave - 124]);
                         buffer.push(base64IntToCharCode[2]);
                     }
                     else if (instrument.chipWave > 62) {
-                        buffer.push(119, base64IntToCharCode[instrument.chipWave - 62]);
+                        buffer.push(base64IntToCharCode[instrument.chipWave - 62]);
                         buffer.push(base64IntToCharCode[1]);
                     }
                     else {
-                        buffer.push(119, base64IntToCharCode[instrument.chipWave]);
+                        buffer.push(base64IntToCharCode[instrument.chipWave]);
                         buffer.push(base64IntToCharCode[0]);
                     }
                     buffer.push(104, base64IntToCharCode[instrument.unison]);
@@ -4161,7 +4251,7 @@ export class Song {
                 }
             }
             const octaveOffset: number = (isNoiseChannel || isModChannel) ? 0 : channel.octave * Config.pitchesPerOctave;
-            let lastPitch: number = (isNoiseChannel ? 4 : octaveOffset);
+            let lastPitch: number = isModChannel ? 0 : (isNoiseChannel ? 4 : octaveOffset);
             const recentPitches: number[] = isModChannel ? [0, 1, 2, 3, 4, 5] : (isNoiseChannel ? [4, 6, 7, 2, 3, 8, 0, 10] : [0, 7, 12, 19, 24, -5, -12]);
             const recentShapes: string[] = [];
             for (let i: number = 0; i < recentPitches.length; i++) {
@@ -4858,55 +4948,77 @@ export class Song {
                     this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator].preset = EditorConfig.nameToPresetValue("grand piano 3")!;
                 }
             } break;
-            case SongTagCode.wave: {
+            
+            case SongTagCode.wave: { // 119, which is the same as SongTagCode.pulseWidth
+                const instrument = this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator];
+ 
+                // First, handle the very old, self-contained BeepBox legacy formats.
                 if (beforeThree && fromBeepBox) {
                     const legacyWaves: number[] = [1, 2, 3, 4, 5, 6, 7, 8, 0];
                     const channelIndex: number = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
-                    const instrument: Instrument = this.channels[channelIndex].instruments[0];
-                    instrument.chipWave = clamp(0, Config.chipWaves.length, legacyWaves[base64CharCodeToInt[compressed.charCodeAt(charIndex++)]] | 0);
-
-                    // Version 2 didn't save any settings for settings for filters, or envelopes,
-                    // just waves, so initialize them here I guess.
-                    instrument.convertLegacySettings(legacySettingsCache![channelIndex][0], forceSimpleFilter);
-
+                    const legacyInstrument: Instrument = this.channels[channelIndex].instruments[0];
+                    legacyInstrument.chipWave = clamp(0, Config.chipWaves.length, legacyWaves[base64CharCodeToInt[compressed.charCodeAt(charIndex++)]] | 0);
+                    legacyInstrument.convertLegacySettings(legacySettingsCache![channelIndex][0], forceSimpleFilter);
                 } else if (beforeSix && fromBeepBox) {
                     const legacyWaves: number[] = [1, 2, 3, 4, 5, 6, 7, 8, 0];
                     for (let channelIndex: number = 0; channelIndex < this.getChannelCount(); channelIndex++) {
-                        for (const instrument of this.channels[channelIndex].instruments) { 
+                        for (const legacyInstrument of this.channels[channelIndex].instruments) {
                             if (this.getChannelIsNoise(channelIndex)) {
-                                instrument.chipNoise = clamp(0, Config.chipNoises.length, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
+                                legacyInstrument.chipNoise = clamp(0, Config.chipNoises.length, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
                             } else {
-                                instrument.chipWave = clamp(0, Config.chipWaves.length, legacyWaves[base64CharCodeToInt[compressed.charCodeAt(charIndex++)]] | 0);
+                                legacyInstrument.chipWave = clamp(0, Config.chipWaves.length, legacyWaves[base64CharCodeToInt[compressed.charCodeAt(charIndex++)]] | 0);
                             }
                         }
                     }
                 } else if (beforeSeven && fromBeepBox) {
                     const legacyWaves: number[] = [1, 2, 3, 4, 5, 6, 7, 8, 0];
                     if (this.getChannelIsNoise(instrumentChannelIterator)) {
-                        this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator].chipNoise = clamp(0, Config.chipNoises.length, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
+                        instrument.chipNoise = clamp(0, Config.chipNoises.length, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
                     } else {
-                        this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator].chipWave = clamp(0, Config.chipWaves.length, legacyWaves[base64CharCodeToInt[compressed.charCodeAt(charIndex++)]] | 0);
+                        instrument.chipWave = clamp(0, Config.chipWaves.length, legacyWaves[base64CharCodeToInt[compressed.charCodeAt(charIndex++)]] | 0);
                     }
                 } else {
-                    if (this.getChannelIsNoise(instrumentChannelIterator)) {
-                        this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator].chipNoise = clamp(0, Config.chipNoises.length, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
+                    // This is the path for all modern formats.
+                    if (instrument.type === InstrumentType.noise) {
+                        instrument.chipNoise = clamp(0, Config.chipNoises.length, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
+                    
+                    } else if (instrument.type === InstrumentType.pwm || instrument.type === InstrumentType.supersaw) {
+                        // This is the logic from the original pulseWidth block.
+                        instrument.pulseWidth = clamp(0, Config.pulseWidthRange + (+(fromJummBox)) + 1, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
+                        if (fromBeepBox) {
+                            instrument.pulseWidth = Math.round(Math.pow(0.5, (7 - instrument.pulseWidth) * Config.pulseWidthStepPower) * Config.pulseWidthRange);
+                        }
+ 
+                        if ((beforeNine && fromBeepBox) || (beforeFive && fromJummBox) || (beforeFour && fromGoldBox)) {
+                            const pregoldToEnvelope: number[] = [0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, 16, 17, 18, 19, 20, 21, 23, 24, 25, 27, 28, 29, 32, 33, 34, 31, 11];
+                            const legacySettings: LegacySettings = legacySettingsCache![instrumentChannelIterator][instrumentIndexIterator];
+                            let aa: number = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
+                            if ((beforeTwo && fromGoldBox) || (!fromGoldBox && !fromUltraBox && !fromSlarmoosBox)) aa = pregoldToEnvelope[aa];
+                            legacySettings.pulseEnvelope = Song._envelopeFromLegacyIndex(aa);
+                            instrument.convertLegacySettings(legacySettings, forceSimpleFilter);
+                        }
+ 
+                        if (fromSomethingBox || (fromUltraBox && !beforeFour) || fromSlarmoosBox) {
+                            instrument.decimalOffset = clamp(0, 99 + 1, (base64CharCodeToInt[compressed.charCodeAt(charIndex++)] << 6) + base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
+                        }
+ 
                     } else {
-                        if (fromSlarmoosBox || fromUltraBox) {
+                        // This is the logic for chip, customChipWave, etc.
+                        if (fromSomethingBox || fromSlarmoosBox || fromUltraBox) {
                             const chipWaveReal = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
                             const chipWaveCounter = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
-
+ 
                             if (chipWaveCounter == 3) {
-                                this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator].chipWave = clamp(0, Config.chipWaves.length, chipWaveReal + 186);
+                                instrument.chipWave = clamp(0, Config.chipWaves.length, chipWaveReal + 186);
                             } else if (chipWaveCounter == 2) {
-                                this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator].chipWave = clamp(0, Config.chipWaves.length, chipWaveReal + 124);
+                                instrument.chipWave = clamp(0, Config.chipWaves.length, chipWaveReal + 124);
                             } else if (chipWaveCounter == 1) {
-                                this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator].chipWave = clamp(0, Config.chipWaves.length, chipWaveReal + 62);
+                                instrument.chipWave = clamp(0, Config.chipWaves.length, chipWaveReal + 62);
                             } else {
-                                this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator].chipWave = clamp(0, Config.chipWaves.length, chipWaveReal);
+                                instrument.chipWave = clamp(0, Config.chipWaves.length, chipWaveReal);
                             }
-
                         } else {
-                            this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator].chipWave = clamp(0, Config.chipWaves.length, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
+                            instrument.chipWave = clamp(0, Config.chipWaves.length, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
                         }
                     }
                 }
@@ -5022,85 +5134,84 @@ export class Song {
             }
         }
     } break;
-            case SongTagCode.loopControls: {
-                if (fromSlarmoosBox || fromUltraBox) {
-                    if (beforeThree && fromUltraBox) {
-                        // Still have to support the old and bad loop control data format written as a test, sigh.
-                        const sampleLoopInfoEncodedLength = decode32BitNumber(compressed, charIndex);
-                        charIndex += 6;
-                        const sampleLoopInfoEncoded = compressed.slice(charIndex, charIndex + sampleLoopInfoEncodedLength);
-                        charIndex += sampleLoopInfoEncodedLength;
-                        interface SampleLoopInfo {
-                            isUsingAdvancedLoopControls: boolean;
-                            chipWaveLoopStart: number;
-                            chipWaveLoopEnd: number;
-                            chipWaveLoopMode: number;
-                            chipWavePlayBackwards: boolean;
-                            chipWaveStartOffset: number;
-                        }
-                        interface SampleLoopInfoEntry {
-                            channel: number;
-                            instrument: number;
-                            info: SampleLoopInfo;
-                        }
-                        const sampleLoopInfo: SampleLoopInfoEntry[] = JSON.parse(atob(sampleLoopInfoEncoded));
-                        for (const entry of sampleLoopInfo) {
-                            const channelIndex: number = entry["channel"];
-                            const instrumentIndex: number = entry["instrument"];
-                            const info: SampleLoopInfo = entry["info"];
-                            const instrument: Instrument = this.channels[channelIndex].instruments[instrumentIndex];
-                            instrument.isUsingAdvancedLoopControls = info["isUsingAdvancedLoopControls"];
-                            instrument.chipWaveLoopStart = info["chipWaveLoopStart"];
-                            instrument.chipWaveLoopEnd = info["chipWaveLoopEnd"];
-                            instrument.chipWaveLoopMode = info["chipWaveLoopMode"];
-                            instrument.chipWavePlayBackwards = info["chipWavePlayBackwards"];
-                            instrument.chipWaveStartOffset = info["chipWaveStartOffset"];
-                            // @TODO: Whenever chipWaveReleaseMode is implemented, it should be set here to the default.
-                        }
-                    } else {
-                        // Read the new loop control data format.
-                        // See Song.toBase64String for details on the encodings used here.
-                        const encodedLoopMode: number = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
-                        const isUsingAdvancedLoopControls: boolean = Boolean(encodedLoopMode & 1);
-                        const chipWaveLoopMode: number = encodedLoopMode >> 1;
-                        const encodedReleaseMode: number = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
-                        const chipWavePlayBackwards: boolean = Boolean(encodedReleaseMode & 1);
-                        // const chipWaveReleaseMode: number = encodedReleaseMode >> 1;
-                        const chipWaveLoopStart: number = decode32BitNumber(compressed, charIndex);
-                        charIndex += 6;
-                        const chipWaveLoopEnd: number = decode32BitNumber(compressed, charIndex);
-                        charIndex += 6;
-                        const chipWaveStartOffset: number = decode32BitNumber(compressed, charIndex);
-                        charIndex += 6;
-                        const instrument: Instrument = this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator];
-                        instrument.isUsingAdvancedLoopControls = isUsingAdvancedLoopControls;
-                        instrument.chipWaveLoopStart = chipWaveLoopStart;
-                        instrument.chipWaveLoopEnd = chipWaveLoopEnd;
-                        instrument.chipWaveLoopMode = chipWaveLoopMode;
-                        instrument.chipWavePlayBackwards = chipWavePlayBackwards;
-                        instrument.chipWaveStartOffset = chipWaveStartOffset;
-                        // instrument.chipWaveReleaseMode = chipWaveReleaseMode;
-                    }
+            
+	
+	case SongTagCode.loopControls: {
+        // CORRECTED LOGIC: Read loop controls for all modern formats that write them.
+        if (fromSomethingBox || fromSlarmoosBox || fromUltraBox) {
+            if (beforeThree && fromUltraBox) {
+                // Still have to support the old and bad loop control data format written as a test, sigh.
+                const sampleLoopInfoEncodedLength = decode32BitNumber(compressed, charIndex);
+                charIndex += 6;
+                const sampleLoopInfoEncoded = compressed.slice(charIndex, charIndex + sampleLoopInfoEncodedLength);
+                charIndex += sampleLoopInfoEncodedLength;
+                interface SampleLoopInfo {
+                    isUsingAdvancedLoopControls: boolean;
+                    chipWaveLoopStart: number;
+                    chipWaveLoopEnd: number;
+                    chipWaveLoopMode: number;
+                    chipWavePlayBackwards: boolean;
+                    chipWaveStartOffset: number;
                 }
-                else if (fromGoldBox && !beforeFour && beforeSix) {
-                    if (document.URL.substring(document.URL.length - 13).toLowerCase() != "legacysamples") {
-                        if (!willLoadLegacySamplesForOldSongs) {
-                            willLoadLegacySamplesForOldSongs = true;
-                            Config.willReloadForCustomSamples = true;
-                            EditorConfig.customSamples = ["legacySamples"];
-                            loadBuiltInSamples(0);
-                        }
-                    }
-                    this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator].chipWave = clamp(0, Config.chipWaves.length, base64CharCodeToInt[compressed.charCodeAt(charIndex++)] + 125);
-                } else if ((beforeNine && fromBeepBox) || ((fromJummBox && beforeFive) || (beforeFour && fromGoldBox))) {
-                    const filterResonanceRange: number = 8;
-                    const instrument: Instrument = this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator];
-                    const legacySettings: LegacySettings = legacySettingsCache![instrumentChannelIterator][instrumentIndexIterator];
-                    legacySettings.filterResonance = clamp(0, filterResonanceRange, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
-                    instrument.convertLegacySettings(legacySettings, forceSimpleFilter);
+                interface SampleLoopInfoEntry {
+                    channel: number;
+                    instrument: number;
+                    info: SampleLoopInfo;
+                }
+                const sampleLoopInfo: SampleLoopInfoEntry[] = JSON.parse(atob(sampleLoopInfoEncoded));
+                for (const entry of sampleLoopInfo) {
+                    const channelIndex: number = entry["channel"];
+                    const instrumentIndex: number = entry["instrument"];
+                    const info: SampleLoopInfo = entry["info"];
+                    const instrument: Instrument = this.channels[channelIndex].instruments[instrumentIndex];
+                    instrument.isUsingAdvancedLoopControls = info["isUsingAdvancedLoopControls"];
+                    instrument.chipWaveLoopStart = info["chipWaveLoopStart"];
+                    instrument.chipWaveLoopEnd = info["chipWaveLoopEnd"];
+                    instrument.chipWaveLoopMode = info["chipWaveLoopMode"];
+                    instrument.chipWavePlayBackwards = info["chipWavePlayBackwards"];
+                    instrument.chipWaveStartOffset = info["chipWaveStartOffset"];
+                }
+            } else {
+                // Read the new loop control data format.
+                const encodedLoopMode: number = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
+                const isUsingAdvancedLoopControls: boolean = Boolean(encodedLoopMode & 1);
+                const chipWaveLoopMode: number = encodedLoopMode >> 1;
+                const encodedReleaseMode: number = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
+                const chipWavePlayBackwards: boolean = Boolean(encodedReleaseMode & 1);
+                const chipWaveLoopStart: number = decode32BitNumber(compressed, charIndex);
+                charIndex += 6;
+                const chipWaveLoopEnd: number = decode32BitNumber(compressed, charIndex);
+                charIndex += 6;
+                const chipWaveStartOffset: number = decode32BitNumber(compressed, charIndex);
+                charIndex += 6;
+                const instrument: Instrument = this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator];
+                instrument.isUsingAdvancedLoopControls = isUsingAdvancedLoopControls;
+                instrument.chipWaveLoopStart = chipWaveLoopStart;
+                instrument.chipWaveLoopEnd = chipWaveLoopEnd;
+                instrument.chipWaveLoopMode = chipWaveLoopMode;
+                instrument.chipWavePlayBackwards = chipWavePlayBackwards;
+                instrument.chipWaveStartOffset = chipWaveStartOffset;
+            }
+        }
+        else if (fromGoldBox && !beforeFour && beforeSix) {
+            if (document.URL.substring(document.URL.length - 13).toLowerCase() != "legacysamples") {
+                if (!willLoadLegacySamplesForOldSongs) {
+                    willLoadLegacySamplesForOldSongs = true;
+                    Config.willReloadForCustomSamples = true;
+                    EditorConfig.customSamples = ["legacySamples"];
+                    loadBuiltInSamples(0);
+                }
+            }
+            this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator].chipWave = clamp(0, Config.chipWaves.length, base64CharCodeToInt[compressed.charCodeAt(charIndex++)] + 125);
+        } else if ((beforeNine && fromBeepBox) || ((fromJummBox && beforeFive) || (beforeFour && fromGoldBox))) {
+            const filterResonanceRange: number = 8;
+            const instrument: Instrument = this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator];
+            const legacySettings: LegacySettings = legacySettingsCache![instrumentChannelIterator][instrumentIndexIterator];
+            legacySettings.filterResonance = clamp(0, filterResonanceRange, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
+            instrument.convertLegacySettings(legacySettings, forceSimpleFilter);
 
-                }
-            } break;
+        }
+    } break;
             case SongTagCode.drumsetEnvelopes: {
                 const instrument: Instrument = this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator];
                 const pregoldToEnvelope: number[] = [0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, 16, 17, 18, 19, 20, 21, 23, 24, 25, 27, 28, 29, 32, 33, 34, 31, 11];
@@ -5140,9 +5251,8 @@ export class Song {
                 if (fromBeepBox) {
                     // BeepBox formula
                     instrument.pulseWidth = Math.round(Math.pow(0.5, (7 - instrument.pulseWidth) * Config.pulseWidthStepPower) * Config.pulseWidthRange);
-
                 }
-
+ 
                 if ((beforeNine && fromBeepBox) || (beforeFive && fromJummBox) || (beforeFour && fromGoldBox)) {
                     const pregoldToEnvelope: number[] = [0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, 16, 17, 18, 19, 20, 21, 23, 24, 25, 27, 28, 29, 32, 33, 34, 31, 11];
                     const legacySettings: LegacySettings = legacySettingsCache![instrumentChannelIterator][instrumentIndexIterator];
@@ -5151,12 +5261,14 @@ export class Song {
                     legacySettings.pulseEnvelope = Song._envelopeFromLegacyIndex(aa);
                     instrument.convertLegacySettings(legacySettings, forceSimpleFilter);
                 }
-
-                if ((fromUltraBox && !beforeFour) || fromSlarmoosBox) {
+ 
+                // CORRECTED LOGIC: Read decimalOffset for all modern formats that write it.
+                if (fromSomethingBox || (fromUltraBox && !beforeFour) || fromSlarmoosBox) {
                     instrument.decimalOffset = clamp(0, 99 + 1, (base64CharCodeToInt[compressed.charCodeAt(charIndex++)] << 6) + base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
                 }
-
+ 
             } break;
+
             case SongTagCode.stringSustain: {
                 const instrument: Instrument = this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator];
                 const sustainValue: number = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
@@ -5484,6 +5596,7 @@ export class Song {
             } break;
             
 	
+            
             case SongTagCode.effects: {
                 const instrument: Instrument = this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator];
                 if ((beforeNine && fromBeepBox) || ((fromJummBox && beforeFive) || (beforeFour && fromGoldBox))) {
@@ -5926,151 +6039,152 @@ export class Song {
                 }
             } break;
             
-	case SongTagCode.envelopes: {
-        const pregoldToEnvelope: number[] = [0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, 16, 17, 18, 19, 20, 21, 23, 24, 25, 27, 28, 29, 32, 33, 34, 31, 11];
-        const jummToUltraEnvelope: number[] = [0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, 16, 17, 18, 19, 20, 21, 23, 24, 25, 58, 59, 60];
-        const slarURL3toURL4Envelope: number[] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 8, 9, 10, 11, 12, 13, 14];
-        const instrument: Instrument = this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator];
-        if ((beforeNine && fromBeepBox) || (beforeFive && fromJummBox) || (beforeFour && fromGoldBox)) {
-            const legacySettings: LegacySettings = legacySettingsCache![instrumentChannelIterator][instrumentIndexIterator];
-            legacySettings.operatorEnvelopes = [];
-            for (let o: number = 0; o < (instrument.type == InstrumentType.fm6op ? 6 : Config.operatorCount); o++) {
-                let aa: number = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
-                if ((beforeTwo && fromGoldBox) || (fromBeepBox)) aa = pregoldToEnvelope[aa];
-                if (fromJummBox) aa = jummToUltraEnvelope[aa];
-                legacySettings.operatorEnvelopes[o] = Song._envelopeFromLegacyIndex(aa);
-            }
-            instrument.convertLegacySettings(legacySettings, forceSimpleFilter);
-        } else {
-            const envelopeCount: number = clamp(0, Config.maxEnvelopeCount + 1, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
-            
-            const hasLegacyDiscreteByte = (fromJummBox && !beforeSix) || (fromUltraBox && !beforeFive);
-            let globalEnvelopeDiscrete: boolean = false;
-
-            if ((fromJummBox && !beforeSix) || (fromUltraBox && !beforeFive) || fromSlarmoosBox || fromSomethingBox) {
-                instrument.envelopeSpeed = clamp(0, Config.modulators.dictionary["envelope speed"].maxRawVol + 1, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
-            }
-            
-            if (hasLegacyDiscreteByte) {
-                globalEnvelopeDiscrete = (base64CharCodeToInt[compressed.charCodeAt(charIndex++)]) ? true : false;
-            }
-
-            for (let i: number = 0; i < envelopeCount; i++) {
-                const target: number = clamp(0, Config.instrumentAutomationTargets.length, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
-                let index: number = 0;
-                const maxCount: number = Config.instrumentAutomationTargets[target].maxCount;
-                if (maxCount > 1) {
-                    index = clamp(0, maxCount, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
-                }
-                let aa: number = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
-                if ((beforeTwo && fromGoldBox) || (fromBeepBox)) aa = pregoldToEnvelope[aa];
-                if (fromJummBox) aa = jummToUltraEnvelope[aa];
-                if (!fromSlarmoosBox && aa >= 2) aa++;
-                let updatedEnvelopes: boolean = false;
-                let perEnvelopeSpeed: number = 1;
-                if (!fromSlarmoosBox || beforeThree) {
-                    updatedEnvelopes = true;
-                    perEnvelopeSpeed = Config.envelopes[aa].speed;
-                    aa = Config.envelopes[aa].type;
-                } else if (beforeFour && aa >= 3) aa++;
-                let isTremolo2: boolean = false;
-                if ((fromSlarmoosBox && !beforeThree && beforeFour) || updatedEnvelopes) {
-                    if (aa == 9) isTremolo2 = true;
-                    aa = slarURL3toURL4Envelope[aa];
-                }
-                const envelope: number = clamp(0, ((fromSlarmoosBox && !beforeThree || updatedEnvelopes) ? Config.newEnvelopes.length : Config.envelopes.length), aa);
-                let pitchEnvelopeStart: number = 0;
-                let pitchEnvelopeEnd: number = Config.maxPitch;
-                let perEnvelopeLowerBound: number = 0;
-                let perEnvelopeUpperBound: number = 1;
-                let steps: number = 2;
-                let seed: number = 2;
-                let waveform: number = LFOEnvelopeTypes.sine;
-                let envelopeInverse: boolean = false;
-                let envelopeDiscrete: boolean = globalEnvelopeDiscrete;
-                
-                // CORRECTED LOGIC: This block must run for somethingbox.
-                if (fromSomethingBox || (fromSlarmoosBox && !beforeThree)) {
-                    if (Config.newEnvelopes[envelope].name == "pitch") {
-                        if (!instrument.isNoiseInstrument) {
-                            let pitchEnvelopeCompact: number = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
-                            pitchEnvelopeStart = clamp(0, Config.maxPitch + 1, pitchEnvelopeCompact * 64 + base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
-                            pitchEnvelopeCompact = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
-                            pitchEnvelopeEnd = clamp(0, Config.maxPitch + 1, pitchEnvelopeCompact * 64 + base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
-                        } else {
-                            pitchEnvelopeStart = clamp(0, Config.drumCount, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
-                            pitchEnvelopeEnd = clamp(0, Config.drumCount, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
-                        }
+	
+            case SongTagCode.envelopes: {
+                const pregoldToEnvelope: number[] = [0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, 16, 17, 18, 19, 20, 21, 23, 24, 25, 27, 28, 29, 32, 33, 34, 31, 11];
+                const jummToUltraEnvelope: number[] = [0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, 16, 17, 18, 19, 20, 21, 23, 24, 25, 58, 59, 60];
+                const slarURL3toURL4Envelope: number[] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 8, 9, 10, 11, 12, 13, 14];
+                const instrument: Instrument = this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator];
+                if ((beforeNine && fromBeepBox) || (beforeFive && fromJummBox) || (beforeFour && fromGoldBox)) {
+                    const legacySettings: LegacySettings = legacySettingsCache![instrumentChannelIterator][instrumentIndexIterator];
+                    legacySettings.operatorEnvelopes = [];
+                    for (let o: number = 0; o < (instrument.type == InstrumentType.fm6op ? 6 : Config.operatorCount); o++) {
+                        let aa: number = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
+                        if ((beforeTwo && fromGoldBox) || (fromBeepBox)) aa = pregoldToEnvelope[aa];
+                        if (fromJummBox) aa = jummToUltraEnvelope[aa];
+                        legacySettings.operatorEnvelopes[o] = Song._envelopeFromLegacyIndex(aa);
+                    }
+                    instrument.convertLegacySettings(legacySettings, forceSimpleFilter);
+                } else {
+                    const envelopeCount: number = clamp(0, Config.maxEnvelopeCount + 1, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
+                    
+                    const hasLegacyDiscreteByte = (fromJummBox && !beforeSix) || (fromUltraBox && !beforeFive);
+                    let globalEnvelopeDiscrete: boolean = false;
+ 
+                    if ((fromJummBox && !beforeSix) || (fromUltraBox && !beforeFive) || fromSlarmoosBox || fromSomethingBox) {
+                        instrument.envelopeSpeed = clamp(0, Config.modulators.dictionary["envelope speed"].maxRawVol + 1, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
                     }
                     
-                    if (fromSomethingBox || (fromSlarmoosBox && !beforeFour)) {
-                        if (Config.newEnvelopes[envelope].name == "lfo") {
-                            waveform = clamp(0, LFOEnvelopeTypes.length, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
-                            if (waveform == LFOEnvelopeTypes.steppedSaw || waveform == LFOEnvelopeTypes.steppedTri) {
-                                steps = clamp(1, Config.randomEnvelopeStepsMax + 1, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
+                    if (hasLegacyDiscreteByte) {
+                        globalEnvelopeDiscrete = (base64CharCodeToInt[compressed.charCodeAt(charIndex++)]) ? true : false;
+                    }
+ 
+                    for (let i: number = 0; i < envelopeCount; i++) {
+                        const target: number = clamp(0, Config.instrumentAutomationTargets.length, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
+                        let index: number = 0;
+                        const maxCount: number = Config.instrumentAutomationTargets[target].maxCount;
+                        if (maxCount > 1) {
+                            index = clamp(0, maxCount, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
+                        }
+                        let aa: number = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
+                        if ((beforeTwo && fromGoldBox) || (fromBeepBox)) aa = pregoldToEnvelope[aa];
+                        if (fromJummBox) aa = jummToUltraEnvelope[aa];
+                        if (!fromSlarmoosBox && aa >= 2) aa++;
+                        let updatedEnvelopes: boolean = false;
+                        let perEnvelopeSpeed: number = 1;
+                        if (!fromSlarmoosBox || beforeThree) {
+                            updatedEnvelopes = true;
+                            perEnvelopeSpeed = Config.envelopes[aa].speed;
+                            aa = Config.envelopes[aa].type;
+                        } else if (beforeFour && aa >= 3) aa++;
+                        let isTremolo2: boolean = false;
+                        if ((fromSlarmoosBox && !beforeThree && beforeFour) || updatedEnvelopes) {
+                            if (aa == 9) isTremolo2 = true;
+                            aa = slarURL3toURL4Envelope[aa];
+                        }
+                        const envelope: number = clamp(0, ((fromSlarmoosBox && !beforeThree || updatedEnvelopes) ? Config.newEnvelopes.length : Config.envelopes.length), aa);
+                        let pitchEnvelopeStart: number = 0;
+                        let pitchEnvelopeEnd: number = Config.maxPitch;
+                        let perEnvelopeLowerBound: number = 0;
+                        let perEnvelopeUpperBound: number = 1;
+                        let steps: number = 2;
+                        let seed: number = 2;
+                        let waveform: number = LFOEnvelopeTypes.sine;
+                        let envelopeInverse: boolean = false;
+                        let envelopeDiscrete: boolean = globalEnvelopeDiscrete;
+                        
+                        // CORRECTED LOGIC: This block must run for somethingbox.
+                        if (fromSomethingBox || (fromSlarmoosBox && !beforeThree)) {
+                            if (Config.newEnvelopes[envelope].name == "pitch") {
+                                if (!instrument.isNoiseInstrument) {
+                                    let pitchEnvelopeCompact: number = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
+                                    pitchEnvelopeStart = clamp(0, Config.maxPitch + 1, pitchEnvelopeCompact * 64 + base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
+                                    pitchEnvelopeCompact = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
+                                    pitchEnvelopeEnd = clamp(0, Config.maxPitch + 1, pitchEnvelopeCompact * 64 + base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
+                                } else {
+                                    pitchEnvelopeStart = clamp(0, Config.drumCount, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
+                                    pitchEnvelopeEnd = clamp(0, Config.drumCount, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
+                                }
                             }
-                        } else if (Config.newEnvelopes[envelope].name == "random") {
-                            steps = clamp(1, Config.randomEnvelopeStepsMax + 1, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
-                            seed = clamp(1, Config.randomEnvelopeSeedMax + 1, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
-                            waveform = clamp(0, RandomEnvelopeTypes.length, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
+                            
+                            if (fromSomethingBox || (fromSlarmoosBox && !beforeFour)) {
+                                if (Config.newEnvelopes[envelope].name == "lfo") {
+                                    waveform = clamp(0, LFOEnvelopeTypes.length, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
+                                    if (waveform == LFOEnvelopeTypes.steppedSaw || waveform == LFOEnvelopeTypes.steppedTri) {
+                                        steps = clamp(1, Config.randomEnvelopeStepsMax + 1, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
+                                    }
+                                } else if (Config.newEnvelopes[envelope].name == "random") {
+                                    steps = clamp(1, Config.randomEnvelopeStepsMax + 1, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
+                                    seed = clamp(1, Config.randomEnvelopeSeedMax + 1, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
+                                    waveform = clamp(0, RandomEnvelopeTypes.length, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
+                                }
+                            }
+ 
+                            let checkboxValues: number = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
+                            envelopeInverse = (checkboxValues & 1) == 1;
+                            
+                            if (!hasLegacyDiscreteByte) {
+                                envelopeDiscrete = ((checkboxValues >> 1) & 1) == 1;
+                            }
+ 
+                            if (Config.newEnvelopes[envelope].name != "pitch" && Config.newEnvelopes[envelope].name != "note size" && Config.newEnvelopes[envelope].name != "punch" && Config.newEnvelopes[envelope].name != "none") {
+                                perEnvelopeSpeed = Config.perEnvelopeSpeedIndices[base64CharCodeToInt[compressed.charCodeAt(charIndex++)]];
+                            }
+                            perEnvelopeLowerBound = base64CharCodeToInt[compressed.charCodeAt(charIndex++)] / 10;
+                            perEnvelopeUpperBound = base64CharCodeToInt[compressed.charCodeAt(charIndex++)] / 10;
+                        }
+                        
+                        if (!fromSlarmoosBox || beforeFour) {
+                            if (isTremolo2) {
+                                waveform = LFOEnvelopeTypes.sine;
+                                if (envelopeInverse) {
+                                    perEnvelopeUpperBound = Math.floor((perEnvelopeUpperBound / 2) * 10) / 10;
+                                    perEnvelopeLowerBound = Math.floor((perEnvelopeLowerBound / 2) * 10) / 10;
+                                } else {
+                                    perEnvelopeUpperBound = Math.floor((0.5 + (perEnvelopeUpperBound - perEnvelopeLowerBound) / 2) * 10) / 10;
+                                    perEnvelopeLowerBound = 0.5;
+                                }
+                            }
+                        }
+ 
+                        instrument.addEnvelope(target, index, envelope, true, pitchEnvelopeStart, pitchEnvelopeEnd, envelopeInverse, perEnvelopeSpeed, perEnvelopeLowerBound, perEnvelopeUpperBound, steps, seed, waveform, envelopeDiscrete);
+                        
+                        if (fromSlarmoosBox && beforeThree && !beforeTwo) {
+                            let pitchEnvelopeCompact: number = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
+                            instrument.envelopes[i].pitchEnvelopeStart = pitchEnvelopeCompact * 64 + base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
+                            pitchEnvelopeCompact = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
+                            instrument.envelopes[i].pitchEnvelopeEnd = pitchEnvelopeCompact * 64 + base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
+                            instrument.envelopes[i].inverse = base64CharCodeToInt[compressed.charCodeAt(charIndex++)] == 1 ? true : false;
                         }
                     }
-
-                    let checkboxValues: number = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
-                    envelopeInverse = (checkboxValues & 1) == 1;
-                    
-                    if (!hasLegacyDiscreteByte) {
-                        envelopeDiscrete = ((checkboxValues >> 1) & 1) == 1;
-                    }
-
-                    if (Config.newEnvelopes[envelope].name != "pitch" && Config.newEnvelopes[envelope].name != "note size" && Config.newEnvelopes[envelope].name != "punch" && Config.newEnvelopes[envelope].name != "none") {
-                        perEnvelopeSpeed = Config.perEnvelopeSpeedIndices[base64CharCodeToInt[compressed.charCodeAt(charIndex++)]];
-                    }
-                    perEnvelopeLowerBound = base64CharCodeToInt[compressed.charCodeAt(charIndex++)] / 10;
-                    perEnvelopeUpperBound = base64CharCodeToInt[compressed.charCodeAt(charIndex++)] / 10;
-                }
-                
-                if (!fromSlarmoosBox || beforeFour) {
-                    if (isTremolo2) {
-                        waveform = LFOEnvelopeTypes.sine;
-                        if (envelopeInverse) {
-                            perEnvelopeUpperBound = Math.floor((perEnvelopeUpperBound / 2) * 10) / 10;
-                            perEnvelopeLowerBound = Math.floor((perEnvelopeLowerBound / 2) * 10) / 10;
-                        } else {
-                            perEnvelopeUpperBound = Math.floor((0.5 + (perEnvelopeUpperBound - perEnvelopeLowerBound) / 2) * 10) / 10;
-                            perEnvelopeLowerBound = 0.5;
+ 
+                    let instrumentPitchEnvelopeStart: number = 0;
+                    let instrumentPitchEnvelopeEnd: number = Config.maxPitch;
+                    let instrumentEnvelopeInverse: boolean = false;
+                    if (fromSlarmoosBox && beforeTwo) {
+                        let pitchEnvelopeCompact: number = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
+                        instrumentPitchEnvelopeStart = pitchEnvelopeCompact * 64 + base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
+                        pitchEnvelopeCompact = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
+                        instrumentPitchEnvelopeEnd = pitchEnvelopeCompact * 64 + base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
+                        instrumentEnvelopeInverse = base64CharCodeToInt[compressed.charCodeAt(charIndex++)] === 1 ? true : false;
+                        for (let i: number = 0; i < envelopeCount; i++) {
+                            instrument.envelopes[i].pitchEnvelopeStart = instrumentPitchEnvelopeStart;
+                            instrument.envelopes[i].pitchEnvelopeEnd = instrumentPitchEnvelopeEnd;
+                            instrument.envelopes[i].inverse = Config.envelopes[instrument.envelopes[i].envelope].name == "pitch" ? instrumentEnvelopeInverse : false;
                         }
                     }
                 }
-
-                instrument.addEnvelope(target, index, envelope, true, pitchEnvelopeStart, pitchEnvelopeEnd, envelopeInverse, perEnvelopeSpeed, perEnvelopeLowerBound, perEnvelopeUpperBound, steps, seed, waveform, envelopeDiscrete);
-                
-                if (fromSlarmoosBox && beforeThree && !beforeTwo) {
-                    let pitchEnvelopeCompact: number = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
-                    instrument.envelopes[i].pitchEnvelopeStart = pitchEnvelopeCompact * 64 + base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
-                    pitchEnvelopeCompact = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
-                    instrument.envelopes[i].pitchEnvelopeEnd = pitchEnvelopeCompact * 64 + base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
-                    instrument.envelopes[i].inverse = base64CharCodeToInt[compressed.charCodeAt(charIndex++)] == 1 ? true : false;
-                }
-            }
-
-            let instrumentPitchEnvelopeStart: number = 0;
-            let instrumentPitchEnvelopeEnd: number = Config.maxPitch;
-            let instrumentEnvelopeInverse: boolean = false;
-            if (fromSlarmoosBox && beforeTwo) {
-                let pitchEnvelopeCompact: number = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
-                instrumentPitchEnvelopeStart = pitchEnvelopeCompact * 64 + base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
-                pitchEnvelopeCompact = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
-                instrumentPitchEnvelopeEnd = pitchEnvelopeCompact * 64 + base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
-                instrumentEnvelopeInverse = base64CharCodeToInt[compressed.charCodeAt(charIndex++)] === 1 ? true : false;
-                for (let i: number = 0; i < envelopeCount; i++) {
-                    instrument.envelopes[i].pitchEnvelopeStart = instrumentPitchEnvelopeStart;
-                    instrument.envelopes[i].pitchEnvelopeEnd = instrumentPitchEnvelopeEnd;
-                    instrument.envelopes[i].inverse = Config.envelopes[instrument.envelopes[i].envelope].name == "pitch" ? instrumentEnvelopeInverse : false;
-                }
-            }
-        }
-    } break;
+            } break;
             case SongTagCode.operatorWaves: {
                 const instrument: Instrument = this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator];
 
@@ -6253,13 +6367,18 @@ export class Song {
                                 let status: number = bits.read(2);
 
                                 switch (status) {
-                                    case 0: // Pitch
-                                        instrument.modChannels[mod] = clamp(0, this.pitchChannelCount + this.noiseChannelCount + 1, bits.read(8));
-                                        instrument.modInstruments[mod] = clamp(0, this.channels[instrument.modChannels[mod]].instruments.length + 2, bits.read(neededModInstrumentIndexBits));
-                                        break;
+                                   case 0: // Pitch or Noise target
+                                       if (fromSomethingBox) {
+                                           // New format: A modulator can target ANY channel. Read the absolute index.
+                                           instrument.modChannels[mod] = clamp(0, this.getChannelCount(), bits.read(8));
+                                       } else {
+                                           // Legacy format: Can only target pitch or noise channels.
+                                           instrument.modChannels[mod] = clamp(0, this.pitchChannelCount + this.noiseChannelCount + 1, bits.read(8));
+                                       }
+                                       instrument.modInstruments[mod] = clamp(0, this.channels[instrument.modChannels[mod]].instruments.length + 2, bits.read(neededModInstrumentIndexBits));
+                                    break;
                                     case 1: // Noise
                                        // Legacy format: The stored index is relative to noise channels.
-                                       // We must find the absolute index in our flexible array.
                                        const relativeNoiseIndex = bits.read(8);
                                        let absoluteNoiseIndex = 0;
                                        let noiseChannelsFound = 0;
@@ -6287,11 +6406,12 @@ export class Song {
                                     instrument.modulators[mod] = bits.read(6);
                                 }
 
-                                // In legacy formats, a status of 1 meant "noise channel" and the index was relative.
-                               if (status == 1) {
-                                   const noiseChannelIndex = instrument.modChannels[mod] - this.pitchChannelCount;
-                                   instrument.modChannels[mod] = this.channels.findIndex((ch, i) => this.getChannelIsNoise(i) && i >= this.pitchChannelCount && (i - this.pitchChannelCount) === noiseChannelIndex);
-                               }
+ 
+//                               // In legacy formats, a status of 1 meant "noise channel" and the index was relative.
+//                              if (status == 1) {
+//                                  const noiseChannelIndex = instrument.modChannels[mod] - this.pitchChannelCount;
+//                                  instrument.modChannels[mod] = this.channels.findIndex((ch, i) => this.getChannelIsNoise(i) && i >= this.pitchChannelCount && (i - this.pitchChannelCount) === noiseChannelIndex);
+//                              }
 
                                 if (!jumfive && (Config.modulators[instrument.modulators[mod]].name == "eq filter" || Config.modulators[instrument.modulators[mod]].name == "note filter" || Config.modulators[instrument.modulators[mod]].name == "song eq")) {
                                     instrument.modFilterTypes[mod] = bits.read(6);
@@ -6363,7 +6483,7 @@ export class Song {
                         }
                     }
                     const octaveOffset: number = (isNoiseChannel || isModChannel) ? 0 : channel.octave * 12;
-                    let lastPitch: number = ((isNoiseChannel || isModChannel) ? 4 : octaveOffset);
+                    let lastPitch: number = isModChannel ? 0 : (isNoiseChannel ? 4 : octaveOffset);
                     const recentPitches: number[] = isModChannel ? [0, 1, 2, 3, 4, 5] : (isNoiseChannel ? [4, 6, 7, 2, 3, 8, 0, 10] : [0, 7, 12, 19, 24, -5, -12]);
                     const recentShapes: any[] = [];
                     for (let i: number = 0; i < recentPitches.length; i++) {

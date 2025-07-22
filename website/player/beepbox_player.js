@@ -12576,6 +12576,76 @@ var beepbox = (function (exports) {
                 }
             });
         }
+        _getChannelsOfType(type) {
+            return this.channels
+                .map((channel, index) => ({ channel, absoluteIndex: index }))
+                .filter(item => item.channel.type === type);
+        }
+        _updateAllModTargetIndices(remap) {
+            for (const channel of this.channels) {
+                if (channel.type === ChannelType.Mod) {
+                    for (const instrument of channel.instruments) {
+                        for (let i = 0; i < instrument.modChannels.length; i++) {
+                            const oldTargetIndex = instrument.modChannels[i];
+                            if (oldTargetIndex >= 0) {
+                                instrument.modChannels[i] = remap(oldTargetIndex);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        addChannel(type, position = this.channels.length - 1) {
+            const insertIndex = position + 1;
+            const remap = (oldIndex) => (oldIndex >= insertIndex ? oldIndex + 1 : oldIndex);
+            this._updateAllModTargetIndices(remap);
+            const newChannel = new Channel(type);
+            newChannel.octave = (type === ChannelType.Pitch) ? 3 : 0;
+            for (let i = 0; i < this.patternsPerChannel; i++) {
+                newChannel.patterns.push(new Pattern());
+            }
+            for (let i = 0; i < Config.instrumentCountMin; i++) {
+                const isNoise = type === ChannelType.Noise;
+                const isMod = type === ChannelType.Mod;
+                const instrument = new Instrument(isNoise, isMod);
+                instrument.setTypeAndReset(isMod ? 10 : (isNoise ? 2 : 0), isNoise, isMod);
+                newChannel.instruments.push(instrument);
+            }
+            for (let i = 0; i < this.barCount; i++) {
+                newChannel.bars.push(0);
+            }
+            this.channels.splice(insertIndex, 0, newChannel);
+            this.updateDefaultChannelNames();
+        }
+        removeChannel(index) {
+            if (index < 0 || index >= this.channels.length)
+                return;
+            const remap = (oldIndex) => {
+                if (oldIndex === index)
+                    return -2;
+                if (oldIndex > index)
+                    return oldIndex - 1;
+                return oldIndex;
+            };
+            this._updateAllModTargetIndices(remap);
+            this.channels.splice(index, 1);
+            this.updateDefaultChannelNames();
+        }
+        removeChannelType(type) {
+            const candidates = this._getChannelsOfType(type);
+            if (candidates.length === 0)
+                return;
+            const leastUsed = candidates.reduce((best, current) => {
+                const bestScore = best.channel.bars.filter(b => b > 0).length;
+                const currentScore = current.channel.bars.filter(b => b > 0).length;
+                if (currentScore < bestScore)
+                    return current;
+                if (currentScore > bestScore)
+                    return best;
+                return current.absoluteIndex > best.absoluteIndex ? current : best;
+            });
+            this.removeChannel(leastUsed.absoluteIndex);
+        }
         initToDefault(andResetChannels = true) {
             this.scale = 0;
             this.scaleCustom = [true, false, true, true, false, false, false, true, true, false, true, true];
@@ -12865,20 +12935,21 @@ var beepbox = (function (exports) {
                         harmonicsBits.encodeBase64(buffer);
                     }
                     if (instrument.type == 0) {
+                        buffer.push(119);
                         if (instrument.chipWave > 186) {
-                            buffer.push(119, base64IntToCharCode[instrument.chipWave - 186]);
+                            buffer.push(base64IntToCharCode[instrument.chipWave - 186]);
                             buffer.push(base64IntToCharCode[3]);
                         }
                         else if (instrument.chipWave > 124) {
-                            buffer.push(119, base64IntToCharCode[instrument.chipWave - 124]);
+                            buffer.push(base64IntToCharCode[instrument.chipWave - 124]);
                             buffer.push(base64IntToCharCode[2]);
                         }
                         else if (instrument.chipWave > 62) {
-                            buffer.push(119, base64IntToCharCode[instrument.chipWave - 62]);
+                            buffer.push(base64IntToCharCode[instrument.chipWave - 62]);
                             buffer.push(base64IntToCharCode[1]);
                         }
                         else {
-                            buffer.push(119, base64IntToCharCode[instrument.chipWave]);
+                            buffer.push(base64IntToCharCode[instrument.chipWave]);
                             buffer.push(base64IntToCharCode[0]);
                         }
                         buffer.push(104, base64IntToCharCode[instrument.unison]);
@@ -13127,7 +13198,7 @@ var beepbox = (function (exports) {
                     }
                 }
                 const octaveOffset = (isNoiseChannel || isModChannel) ? 0 : channel.octave * Config.pitchesPerOctave;
-                let lastPitch = (isNoiseChannel ? 4 : octaveOffset);
+                let lastPitch = isModChannel ? 0 : (isNoiseChannel ? 4 : octaveOffset);
                 const recentPitches = isModChannel ? [0, 1, 2, 3, 4, 5] : (isNoiseChannel ? [4, 6, 7, 2, 3, 8, 0, 10] : [0, 7, 12, 19, 24, -5, -12]);
                 const recentShapes = [];
                 for (let i = 0; i < recentPitches.length; i++) {
@@ -13792,22 +13863,23 @@ var beepbox = (function (exports) {
                         break;
                     case 119:
                         {
+                            const instrument = this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator];
                             if (beforeThree && fromBeepBox) {
                                 const legacyWaves = [1, 2, 3, 4, 5, 6, 7, 8, 0];
                                 const channelIndex = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
-                                const instrument = this.channels[channelIndex].instruments[0];
-                                instrument.chipWave = clamp(0, Config.chipWaves.length, legacyWaves[base64CharCodeToInt[compressed.charCodeAt(charIndex++)]] | 0);
-                                instrument.convertLegacySettings(legacySettingsCache[channelIndex][0], forceSimpleFilter);
+                                const legacyInstrument = this.channels[channelIndex].instruments[0];
+                                legacyInstrument.chipWave = clamp(0, Config.chipWaves.length, legacyWaves[base64CharCodeToInt[compressed.charCodeAt(charIndex++)]] | 0);
+                                legacyInstrument.convertLegacySettings(legacySettingsCache[channelIndex][0], forceSimpleFilter);
                             }
                             else if (beforeSix && fromBeepBox) {
                                 const legacyWaves = [1, 2, 3, 4, 5, 6, 7, 8, 0];
                                 for (let channelIndex = 0; channelIndex < this.getChannelCount(); channelIndex++) {
-                                    for (const instrument of this.channels[channelIndex].instruments) {
+                                    for (const legacyInstrument of this.channels[channelIndex].instruments) {
                                         if (this.getChannelIsNoise(channelIndex)) {
-                                            instrument.chipNoise = clamp(0, Config.chipNoises.length, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
+                                            legacyInstrument.chipNoise = clamp(0, Config.chipNoises.length, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
                                         }
                                         else {
-                                            instrument.chipWave = clamp(0, Config.chipWaves.length, legacyWaves[base64CharCodeToInt[compressed.charCodeAt(charIndex++)]] | 0);
+                                            legacyInstrument.chipWave = clamp(0, Config.chipWaves.length, legacyWaves[base64CharCodeToInt[compressed.charCodeAt(charIndex++)]] | 0);
                                         }
                                     }
                                 }
@@ -13815,35 +13887,53 @@ var beepbox = (function (exports) {
                             else if (beforeSeven && fromBeepBox) {
                                 const legacyWaves = [1, 2, 3, 4, 5, 6, 7, 8, 0];
                                 if (this.getChannelIsNoise(instrumentChannelIterator)) {
-                                    this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator].chipNoise = clamp(0, Config.chipNoises.length, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
+                                    instrument.chipNoise = clamp(0, Config.chipNoises.length, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
                                 }
                                 else {
-                                    this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator].chipWave = clamp(0, Config.chipWaves.length, legacyWaves[base64CharCodeToInt[compressed.charCodeAt(charIndex++)]] | 0);
+                                    instrument.chipWave = clamp(0, Config.chipWaves.length, legacyWaves[base64CharCodeToInt[compressed.charCodeAt(charIndex++)]] | 0);
                                 }
                             }
                             else {
-                                if (this.getChannelIsNoise(instrumentChannelIterator)) {
-                                    this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator].chipNoise = clamp(0, Config.chipNoises.length, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
+                                if (instrument.type === 2) {
+                                    instrument.chipNoise = clamp(0, Config.chipNoises.length, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
+                                }
+                                else if (instrument.type === 6 || instrument.type === 8) {
+                                    instrument.pulseWidth = clamp(0, Config.pulseWidthRange + (+(fromJummBox)) + 1, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
+                                    if (fromBeepBox) {
+                                        instrument.pulseWidth = Math.round(Math.pow(0.5, (7 - instrument.pulseWidth) * Config.pulseWidthStepPower) * Config.pulseWidthRange);
+                                    }
+                                    if ((beforeNine && fromBeepBox) || (beforeFive && fromJummBox) || (beforeFour && fromGoldBox)) {
+                                        const pregoldToEnvelope = [0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, 16, 17, 18, 19, 20, 21, 23, 24, 25, 27, 28, 29, 32, 33, 34, 31, 11];
+                                        const legacySettings = legacySettingsCache[instrumentChannelIterator][instrumentIndexIterator];
+                                        let aa = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
+                                        if ((beforeTwo && fromGoldBox) || (!fromGoldBox && !fromUltraBox && !fromSlarmoosBox))
+                                            aa = pregoldToEnvelope[aa];
+                                        legacySettings.pulseEnvelope = Song._envelopeFromLegacyIndex(aa);
+                                        instrument.convertLegacySettings(legacySettings, forceSimpleFilter);
+                                    }
+                                    if (fromSomethingBox || (fromUltraBox && !beforeFour) || fromSlarmoosBox) {
+                                        instrument.decimalOffset = clamp(0, 99 + 1, (base64CharCodeToInt[compressed.charCodeAt(charIndex++)] << 6) + base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
+                                    }
                                 }
                                 else {
-                                    if (fromSlarmoosBox || fromUltraBox) {
+                                    if (fromSomethingBox || fromSlarmoosBox || fromUltraBox) {
                                         const chipWaveReal = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
                                         const chipWaveCounter = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
                                         if (chipWaveCounter == 3) {
-                                            this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator].chipWave = clamp(0, Config.chipWaves.length, chipWaveReal + 186);
+                                            instrument.chipWave = clamp(0, Config.chipWaves.length, chipWaveReal + 186);
                                         }
                                         else if (chipWaveCounter == 2) {
-                                            this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator].chipWave = clamp(0, Config.chipWaves.length, chipWaveReal + 124);
+                                            instrument.chipWave = clamp(0, Config.chipWaves.length, chipWaveReal + 124);
                                         }
                                         else if (chipWaveCounter == 1) {
-                                            this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator].chipWave = clamp(0, Config.chipWaves.length, chipWaveReal + 62);
+                                            instrument.chipWave = clamp(0, Config.chipWaves.length, chipWaveReal + 62);
                                         }
                                         else {
-                                            this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator].chipWave = clamp(0, Config.chipWaves.length, chipWaveReal);
+                                            instrument.chipWave = clamp(0, Config.chipWaves.length, chipWaveReal);
                                         }
                                     }
                                     else {
-                                        this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator].chipWave = clamp(0, Config.chipWaves.length, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
+                                        instrument.chipWave = clamp(0, Config.chipWaves.length, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
                                     }
                                 }
                             }
@@ -13960,7 +14050,7 @@ var beepbox = (function (exports) {
                         break;
                     case 121:
                         {
-                            if (fromSlarmoosBox || fromUltraBox) {
+                            if (fromSomethingBox || fromSlarmoosBox || fromUltraBox) {
                                 if (beforeThree && fromUltraBox) {
                                     const sampleLoopInfoEncodedLength = decode32BitNumber(compressed, charIndex);
                                     charIndex += 6;
@@ -14071,7 +14161,7 @@ var beepbox = (function (exports) {
                                 legacySettings.pulseEnvelope = Song._envelopeFromLegacyIndex(aa);
                                 instrument.convertLegacySettings(legacySettings, forceSimpleFilter);
                             }
-                            if ((fromUltraBox && !beforeFour) || fromSlarmoosBox) {
+                            if (fromSomethingBox || (fromUltraBox && !beforeFour) || fromSlarmoosBox) {
                                 instrument.decimalOffset = clamp(0, 99 + 1, (base64CharCodeToInt[compressed.charCodeAt(charIndex++)] << 6) + base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
                             }
                         }
@@ -15155,7 +15245,12 @@ var beepbox = (function (exports) {
                                             let status = bits.read(2);
                                             switch (status) {
                                                 case 0:
-                                                    instrument.modChannels[mod] = clamp(0, this.pitchChannelCount + this.noiseChannelCount + 1, bits.read(8));
+                                                    if (fromSomethingBox) {
+                                                        instrument.modChannels[mod] = clamp(0, this.getChannelCount(), bits.read(8));
+                                                    }
+                                                    else {
+                                                        instrument.modChannels[mod] = clamp(0, this.pitchChannelCount + this.noiseChannelCount + 1, bits.read(8));
+                                                    }
                                                     instrument.modInstruments[mod] = clamp(0, this.channels[instrument.modChannels[mod]].instruments.length + 2, bits.read(neededModInstrumentIndexBits));
                                                     break;
                                                 case 1:
@@ -15182,10 +15277,6 @@ var beepbox = (function (exports) {
                                             }
                                             if (status != 3) {
                                                 instrument.modulators[mod] = bits.read(6);
-                                            }
-                                            if (status == 1) {
-                                                const noiseChannelIndex = instrument.modChannels[mod] - this.pitchChannelCount;
-                                                instrument.modChannels[mod] = this.channels.findIndex((ch, i) => this.getChannelIsNoise(i) && i >= this.pitchChannelCount && (i - this.pitchChannelCount) === noiseChannelIndex);
                                             }
                                             if (!jumfive && (Config.modulators[instrument.modulators[mod]].name == "eq filter" || Config.modulators[instrument.modulators[mod]].name == "note filter" || Config.modulators[instrument.modulators[mod]].name == "song eq")) {
                                                 instrument.modFilterTypes[mod] = bits.read(6);
@@ -15238,7 +15329,7 @@ var beepbox = (function (exports) {
                                     }
                                 }
                                 const octaveOffset = (isNoiseChannel || isModChannel) ? 0 : channel.octave * 12;
-                                let lastPitch = ((isNoiseChannel || isModChannel) ? 4 : octaveOffset);
+                                let lastPitch = isModChannel ? 0 : (isNoiseChannel ? 4 : octaveOffset);
                                 const recentPitches = isModChannel ? [0, 1, 2, 3, 4, 5] : (isNoiseChannel ? [4, 6, 7, 2, 3, 8, 0, 10] : [0, 7, 12, 19, 24, -5, -12]);
                                 const recentShapes = [];
                                 for (let i = 0; i < recentPitches.length; i++) {

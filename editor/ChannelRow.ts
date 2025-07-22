@@ -93,11 +93,19 @@ export class Box {
 		this._label
 	);
 	private _renderedIndex: number = -1;
+	private _patternIndex: number = 0;
+	private _selected: boolean = false;
+	private _dim: boolean = false;
+	private _isNoise: boolean = false;
+	private _isMod: boolean = false;
+	private _labelColor: string = "?";
+	private _primaryColor: string = "?";
 	private _renderedLabelColor: string = "?";
 	private _renderedVisibility: string = "?";
 	private _renderedBorderLeft: string = "?";
 	private _renderedBorderRight: string = "?";
 	private _renderedBackgroundColor: string = "?";
+
 	constructor(channel: number, color: string) {
 		this.container.style.background = ColorConfig.uiWidgetBackground;
 		this._label.style.color = color;
@@ -117,9 +125,18 @@ export class Box {
 		dim: boolean,
 		labelColor: string,
 		isNoise: boolean,
-		isMod: boolean
+		isMod: boolean,
+		primaryColor: string
 	): void {
-		if (this._renderedIndex != index) {
+		this._patternIndex = index;
+		this._selected = selected;
+		this._dim = dim;
+		this._labelColor = labelColor;
+		this._isNoise = isNoise;
+		this._isMod = isMod;
+		this._primaryColor = primaryColor;
+
+		if (this._renderedIndex != this._patternIndex) {
 			if (index >= 100) {
 				this._label.setAttribute("font-size", "16");
 				this._label.style.setProperty("transform", "translate(0px, -1.5px)");
@@ -128,12 +145,18 @@ export class Box {
 				this._label.style.setProperty("transform", "translate(0px, 0px)");
 			}
 
-			this._renderedIndex = index;
-			this._text.data = String(index);
+			this._renderedIndex = this._patternIndex;
+			this._text.data = String(this._patternIndex);
 		}
 
+		this._updateColors();
+	}
+
+	private _updateColors(): void {
 		// Set the color for the number text itself.
-		const useColor: string = selected ? ColorConfig.c_invertedText : labelColor;
+		const useColor: string = this._selected
+			? ColorConfig.c_invertedText
+			: this._labelColor;
 		if (this._renderedLabelColor != useColor) {
 			this._label.style.color = useColor;
 			this._renderedLabelColor = useColor;
@@ -141,27 +164,23 @@ export class Box {
 
 		// Set the background color for the box.
 		let backgroundColor: string;
-		if (selected) {
-			backgroundColor = isMod
-				? ColorConfig.c_trackEditorBgMod
-				: isNoise
-				? ColorConfig.c_trackEditorBgNoise
-				: ColorConfig.c_trackEditorBgPitch;
+		if (this._selected) {
+			backgroundColor = this._primaryColor;
 		} else {
-			backgroundColor = isMod
-				? dim
+			backgroundColor = this._isMod
+				? this._dim
 					? ColorConfig.c_trackEditorBgModDim
 					: ColorConfig.c_trackEditorBgMod
-				: isNoise
-				? dim
+				: this._isNoise
+				? this._dim
 					? ColorConfig.c_trackEditorBgNoiseDim
 					: ColorConfig.c_trackEditorBgNoise
-				: dim
+				: this._dim
 				? ColorConfig.c_trackEditorBgPitchDim
 				: ColorConfig.c_trackEditorBgPitch;
 		}
 
-		if (index == 0 && !selected) {
+		if (this._patternIndex == 0 && !this._selected) {
 			backgroundColor = "none";
 		}
 
@@ -269,6 +288,8 @@ export class ChannelRow {
 			secondaryColorVar = `--pitch${colorIndex}-secondary-channel`;
 		}
 
+		const primaryColor = `var(${primaryColorVar})`;
+
 		for (let i: number = 0; i < this._boxes.length; i++) {
 			const pattern: Pattern | null = this._doc.song.getPattern(this.index, i);
 			const selected: boolean =
@@ -283,7 +304,15 @@ export class ChannelRow {
 					useSecondary ? secondaryColorVar : primaryColorVar
 				})`;
 
-				box.setIndex(patternIndex, selected, dim, labelColor, isNoise, isMod);
+				box.setIndex(
+					patternIndex,
+					selected,
+					dim,
+					labelColor,
+					isNoise,
+					isMod,
+					primaryColor
+				);
 				box.setVisibility("visible");
 			} else {
 				box.setVisibility("hidden");

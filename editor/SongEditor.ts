@@ -1,7 +1,29 @@
 // Copyright (c) 2012-2022 John Nesky and contributing authors, distributed under the MIT license, see accompanying the LICENSE.md file.
 
 //import {Layout} from "./Layout";
-import { sampleLoadEvents, SampleLoadedEvent, InstrumentType, EffectType, Config, effectsIncludeTransition, effectsIncludeChord, effectsIncludePitchShift, effectsIncludeDetune, effectsIncludeVibrato, effectsIncludeNoteFilter, effectsIncludeDistortion, effectsIncludeBitcrusher, effectsIncludePanning, effectsIncludeChorus, effectsIncludeEcho, effectsIncludeReverb, effectsIncludeRingModulation, effectsIncludeGranular, DropdownID, calculateRingModHertz } from "../synth/SynthConfig";
+import {
+	sampleLoadEvents,
+	SampleLoadedEvent,
+	InstrumentType,
+	EffectType,
+	Config,
+	effectsIncludeTransition,
+	effectsIncludeChord,
+	effectsIncludePitchShift,
+	effectsIncludeDetune,
+	effectsIncludeVibrato,
+	effectsIncludeNoteFilter,
+	effectsIncludeDistortion,
+	effectsIncludeBitcrusher,
+	effectsIncludePanning,
+	effectsIncludeChorus,
+	effectsIncludeEcho,
+	effectsIncludeReverb,
+	effectsIncludeRingModulation,
+	effectsIncludeGranular,
+	DropdownID,
+	calculateRingModHertz
+} from "../synth/SynthConfig";
 import { BarScrollBar } from "./BarScrollBar";
 import { BeatsPerBarPrompt } from "./BeatsPerBarPrompt";
 import { Change, ChangeGroup } from "./Change";
@@ -15,7 +37,7 @@ import { EditorConfig, isMobile, prettyNumber, Preset, PresetCategory } from "./
 import { EuclideanRhythmPrompt } from "./EuclidgenRhythmPrompt";
 import { ExportPrompt } from "./ExportPrompt";
 import "./Layout"; // Imported here for the sake of ensuring this code is transpiled early.
-import { Instrument, Channel, Synth } from "../synth/synth";
+import { Instrument, Channel, Synth, ChannelType } from "../synth/synth";
 import { HTML, SVG } from "imperative-html/dist/esm/elements-strict";
 import { Preferences } from "./Preferences";
 import { HarmonicsEditor, HarmonicsEditorPrompt } from "./HarmonicsEditor";
@@ -46,7 +68,101 @@ import { SpectrumEditor, SpectrumEditorPrompt } from "./SpectrumEditor";
 import { CustomThemePrompt } from "./CustomThemePrompt";
 import { ThemePrompt } from "./ThemePrompt";
 import { TipPrompt } from "./TipPrompt";
-import { ChangeTempo, ChangeKeyOctave, ChangeChorus, ChangeEchoDelay, ChangeEchoSustain, ChangeReverb, ChangeVolume, ChangePan, ChangePatternSelection, ChangePatternsPerChannel, ChangePatternNumbers, ChangeSupersawDynamism, ChangeSupersawSpread, ChangeSupersawShape, ChangePulseWidth, ChangeFeedbackAmplitude, ChangeOperatorAmplitude, ChangeOperatorFrequency, ChangeDrumsetEnvelope, ChangePasteInstrument, ChangePreset, pickRandomPresetValue, ChangeRandomGeneratedInstrument, ChangeEQFilterType, ChangeNoteFilterType, ChangeEQFilterSimpleCut, ChangeEQFilterSimplePeak, ChangeNoteFilterSimpleCut, ChangeNoteFilterSimplePeak, ChangeScale, ChangeDetectKey, ChangeKey, ChangeRhythm, ChangeFeedbackType, ChangeAlgorithm, ChangeChipWave, ChangeNoiseWave, ChangeTransition, ChangeToggleEffects, ChangeVibrato, ChangeUnison, ChangeChord, ChangeSong, ChangePitchShift, ChangeDetune, ChangeDistortion, ChangeStringSustain, ChangeBitcrusherFreq, ChangeBitcrusherQuantization, ChangeAddEnvelope, ChangeEnvelopeSpeed, ChangeAddChannelInstrument, ChangeRemoveChannelInstrument, ChangeCustomWave, ChangeOperatorWaveform, ChangeOperatorPulseWidth, ChangeSongTitle, ChangeVibratoDepth, ChangeVibratoSpeed, ChangeVibratoDelay, ChangeVibratoType, ChangePanDelay, ChangeArpeggioSpeed, ChangeFastTwoNoteArp, ChangeClicklessTransition, ChangeAliasing, ChangeSetPatternInstruments, ChangeHoldingModRecording, ChangeChipWavePlayBackwards, ChangeChipWaveStartOffset, ChangeChipWaveLoopEnd, ChangeChipWaveLoopStart, ChangeChipWaveLoopMode, ChangeChipWaveUseAdvancedLoopControls, ChangeDecimalOffset, ChangeUnisonVoices, ChangeUnisonSpread, ChangeUnisonOffset, ChangeUnisonExpression, ChangeUnisonSign, Change6OpFeedbackType, Change6OpAlgorithm, ChangeCustomAlgorythmorFeedback, ChangeRingMod, ChangeRingModHz, ChangeRingModChipWave, ChangeRingModPulseWidth, ChangeGranular, ChangeGrainSize, ChangeGrainAmounts, ChangeGrainRange, ChangeMonophonicTone } from "./changes";
+import {
+	ChangeTempo,
+	ChangeKeyOctave,
+	ChangeChorus,
+	ChangeEchoDelay,
+	ChangeEchoSustain,
+	ChangeReverb,
+	ChangeVolume,
+	ChangePan,
+	ChangePatternSelection,
+	ChangePatternsPerChannel,
+	ChangePatternNumbers,
+	ChangeSupersawDynamism,
+	ChangeSupersawSpread,
+	ChangeSupersawShape,
+	ChangePulseWidth,
+	ChangeFeedbackAmplitude,
+	ChangeOperatorAmplitude,
+	ChangeOperatorFrequency,
+	ChangeDrumsetEnvelope,
+	ChangePasteInstrument,
+	ChangePreset,
+	pickRandomPresetValue,
+	ChangeRandomGeneratedInstrument,
+	ChangeEQFilterType,
+	ChangeNoteFilterType,
+	ChangeEQFilterSimpleCut,
+	ChangeEQFilterSimplePeak,
+	ChangeNoteFilterSimpleCut,
+	ChangeNoteFilterSimplePeak,
+	ChangeScale,
+	ChangeDetectKey,
+	ChangeKey,
+	ChangeRhythm,
+	ChangeFeedbackType,
+	ChangeAlgorithm,
+	ChangeChipWave,
+	ChangeNoiseWave,
+	ChangeTransition,
+	ChangeToggleEffects,
+	ChangeVibrato,
+	ChangeUnison,
+	ChangeChord,
+	ChangeSong,
+	ChangePitchShift,
+	ChangeDetune,
+	ChangeDistortion,
+	ChangeStringSustain,
+	ChangeBitcrusherFreq,
+	ChangeBitcrusherQuantization,
+	ChangeAddEnvelope,
+	ChangeEnvelopeSpeed,
+	ChangeAddChannelInstrument,
+	ChangeRemoveChannelInstrument,
+	ChangeCustomWave,
+	ChangeOperatorWaveform,
+	ChangeOperatorPulseWidth,
+	ChangeSongTitle,
+	ChangeVibratoDepth,
+	ChangeVibratoSpeed,
+	ChangeVibratoDelay,
+	ChangeVibratoType,
+	ChangePanDelay,
+	ChangeArpeggioSpeed,
+	ChangeFastTwoNoteArp,
+	ChangeClicklessTransition,
+	ChangeAliasing,
+	ChangeSetPatternInstruments,
+	ChangeHoldingModRecording,
+	ChangeChipWavePlayBackwards,
+	ChangeChipWaveStartOffset,
+	ChangeChipWaveLoopEnd,
+	ChangeChipWaveLoopStart,
+	ChangeChipWaveLoopMode,
+	ChangeChipWaveUseAdvancedLoopControls,
+	ChangeDecimalOffset,
+	ChangeUnisonVoices,
+	ChangeUnisonSpread,
+	ChangeUnisonOffset,
+	ChangeUnisonExpression,
+	ChangeUnisonSign,
+	Change6OpFeedbackType,
+	Change6OpAlgorithm,
+	ChangeCustomAlgorythmorFeedback,
+	ChangeRingMod,
+	ChangeRingModHz,
+	ChangeRingModChipWave,
+	ChangeRingModPulseWidth,
+	ChangeGranular,
+	ChangeGrainSize,
+	ChangeGrainAmounts,
+	ChangeGrainRange,
+	ChangeMonophonicTone,
+	ChangeChannelOrder,
+} from "./changes";
 
 import { TrackEditor } from "./TrackEditor";
 import { oscilloscopeCanvas } from "../global/Oscilloscope";
@@ -2316,7 +2432,7 @@ export class SongEditor {
         const prefs: Preferences = this.doc.prefs;
         this._muteEditor.container.style.display = prefs.enableChannelMuting ? "" : "none";
         const trackBounds: DOMRect = this._trackVisibleArea.getBoundingClientRect();
-        this.doc.trackVisibleBars = Math.floor((trackBounds.right - trackBounds.left - (prefs.enableChannelMuting ? 32 : 0)) / this.doc.getBarWidth());
+		this.doc.trackVisibleBars = Math.max(1, Math.floor((trackBounds.right - trackBounds.left - (prefs.enableChannelMuting ? 32 : 0)) / this.doc.getBarWidth()));
         this.doc.trackVisibleChannels = Math.floor((trackBounds.bottom - trackBounds.top - 30) / ChannelRow.patternHeight);
         for (let i: number = this.doc.song.pitchChannelCount + this.doc.song.noiseChannelCount; i < this.doc.song.channels.length; i++) {
             const channel: Channel = this.doc.song.channels[i];
@@ -4292,7 +4408,16 @@ export class SongEditor {
                 this._loopEditor.setLoopAt(this.doc.synth.loopBarStart, this.doc.synth.loopBarEnd);
 
                 if ((event.ctrlKey || event.metaKey) && !event.shiftKey) {
-                    this.doc.selection.insertChannel();
+					const currentChannel = this.doc.channel;
+					let type: ChannelType;
+					if (this.doc.song.getChannelIsMod(currentChannel)) {
+						type = ChannelType.Mod;
+					} else if (this.doc.song.getChannelIsNoise(currentChannel)) {
+						type = ChannelType.Noise;
+					} else {
+						type = ChannelType.Pitch;
+					}
+					this.doc.song.addChannel(type, currentChannel);
                 } else if (event.shiftKey) {
                     const width = this.doc.selection.boxSelectionWidth
                     this.doc.selection.boxSelectionX0 -= width;
@@ -4309,7 +4434,7 @@ export class SongEditor {
                 this._loopEditor.setLoopAt(this.doc.synth.loopBarStart, this.doc.synth.loopBarEnd);
 
                 if (event.ctrlKey || event.metaKey) {
-                    this.doc.selection.deleteChannel();
+                    this.doc.song.removeChannel(this.doc.channel);
                 } else {
                     this.doc.selection.deleteBars();
                 }
@@ -4713,7 +4838,12 @@ export class SongEditor {
                 break;
             case 38: // up
                 if (event.ctrlKey || event.metaKey) {
-                    this.doc.selection.swapChannels(-1);
+					const channel = this.doc.channel;
+					if (channel > 0) {
+						this.doc.record(new ChangeChannelOrder(this.doc, channel, channel, -1));
+						this.doc.song.updateDefaultChannelNames();
+						this.doc.selection.setChannelBar(channel - 1, this.doc.bar);
+					}
                 } else if (event.shiftKey) {
                     this.doc.selection.boxSelectionY1 = Math.max(0, this.doc.selection.boxSelectionY1 - 1);
                     this.doc.selection.scrollToEndOfSelection();
@@ -4729,7 +4859,12 @@ export class SongEditor {
                 break;
             case 40: // down
                 if (event.ctrlKey || event.metaKey) {
-                    this.doc.selection.swapChannels(1);
+					const channel = this.doc.channel;
+					if (channel < this.doc.song.getChannelCount() - 1) {
+						this.doc.record(new ChangeChannelOrder(this.doc, channel, channel, 1));
+						this.doc.song.updateDefaultChannelNames();
+						this.doc.selection.setChannelBar(channel + 1, this.doc.bar);
+					}
                 } else if (event.shiftKey) {
                     this.doc.selection.boxSelectionY1 = Math.min(this.doc.song.getChannelCount() - 1, this.doc.selection.boxSelectionY1 + 1);
                     this.doc.selection.scrollToEndOfSelection();
@@ -5442,10 +5577,19 @@ export class SongEditor {
                 this.doc.selection.deleteBars();
                 break;
             case "insertChannel":
-                this.doc.selection.insertChannel();
+				const currentChannel = this.doc.channel;
+				let type: ChannelType;
+				if (this.doc.song.getChannelIsMod(currentChannel)) {
+					type = ChannelType.Mod;
+				} else if (this.doc.song.getChannelIsNoise(currentChannel)) {
+					type = ChannelType.Noise;
+				} else {
+					type = ChannelType.Pitch;
+				}
+				this.doc.song.addChannel(type, currentChannel);
                 break;
             case "deleteChannel":
-                this.doc.selection.deleteChannel();
+                this.doc.song.removeChannel(this.doc.channel);
                 break;
             case "pasteNotes":
                 this.doc.selection.pasteNotes();

@@ -5,12 +5,9 @@ import { HTML } from "imperative-html/dist/esm/elements-strict";
 import { ColorConfig } from "./ColorConfig";
 import { ChannelRow } from "./ChannelRow";
 import { InputBox } from "./HTMLWrapper";
-import {
-	ChangeChannelOrder,
-	ChangeChannelName,
-	ChangeRemoveChannel,
-} from "./changes";
+import { ChangeChannelOrder, ChangeChannelName } from "./changes";
 import { Config } from "../synth/SynthConfig";
+import { ChannelType } from "../synth/synth";
 import { SongEditor } from "./SongEditor";
 
 //namespace beepbox {
@@ -277,21 +274,25 @@ export class MuteEditor {
 				break;
 			}
 			case "chnInsert": {
-				this._doc.channel = this._channelDropDownChannel;
-				this._doc.selection.resetBoxSelection();
-				this._doc.selection.insertChannel();
+				let type: ChannelType;
+				if (this._doc.song.getChannelIsMod(this._channelDropDownChannel)) {
+					type = ChannelType.Mod;
+				} else if (
+					this._doc.song.getChannelIsNoise(this._channelDropDownChannel)
+				) {
+					type = ChannelType.Noise;
+				} else {
+					type = ChannelType.Pitch;
+				}
+				this._doc.song.addChannel(type, this._channelDropDownChannel);
 				this._doc.song.updateDefaultChannelNames();
+				this._doc.notifier.changed();
 				break;
 			}
 			case "chnDelete": {
-				this._doc.record(
-					new ChangeRemoveChannel(
-						this._doc,
-						this._channelDropDownChannel,
-						this._channelDropDownChannel
-					)
-				);
+				this._doc.song.removeChannel(this._channelDropDownChannel);
 				this._doc.song.updateDefaultChannelNames();
+				this._doc.notifier.changed();
 				break;
 			}
 		}
