@@ -398,7 +398,10 @@ class BitFieldWriter {
     }
 
     public encodeBase64(buffer: number[]): number[] {
-
+        // Pad with zeros to make the array length a multiple of 6.
+        while (this._index % 6 != 0) {
+            this._bits[this._index++] = 0;
+        }
         for (let i: number = 0; i < this._index; i += 6) {
             const value: number = (this._bits[i] << 5) | (this._bits[i + 1] << 4) | (this._bits[i + 2] << 3) | (this._bits[i + 3] << 2) | (this._bits[i + 4] << 1) | this._bits[i + 5];
             buffer.push(base64IntToCharCode[value]);
