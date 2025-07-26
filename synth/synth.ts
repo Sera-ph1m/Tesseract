@@ -4516,7 +4516,7 @@ export class Song {
 
         let willLoadLegacySamplesForOldSongs: boolean = false;
 
-        if (fromSlarmoosBox || fromUltraBox || fromGoldBox) {
+        if (fromSlarmoosBox || fromUltraBox || fromGoldBox || fromSomethingBox) {
             compressed = compressed.replaceAll("%7C", "|")
             var compressed_array = compressed.split("|");
             compressed = compressed_array.shift()!;

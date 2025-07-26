@@ -6449,7 +6449,7 @@ var beepbox = (function (exports) {
             this.initToDefault((fromBeepBox && beforeNine) || ((fromJummBox && beforeFive) || (beforeFour && fromGoldBox)));
             const forceSimpleFilter = (fromBeepBox && beforeNine || fromJummBox && beforeFive);
             let willLoadLegacySamplesForOldSongs = false;
-            if (fromSlarmoosBox || fromUltraBox || fromGoldBox) {
+            if (fromSlarmoosBox || fromUltraBox || fromGoldBox || fromSomethingBox) {
                 compressed = compressed.replaceAll("%7C", "|");
                 var compressed_array = compressed.split("|");
                 compressed = compressed_array.shift();
