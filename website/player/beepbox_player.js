@@ -9829,7 +9829,11 @@ var beepbox = (function (exports) {
             }
         }
         encodeBase64(buffer) {
-            for (let i = 0; i < this._index; i += 6) {
+            let tempIndex = this._index;
+            while (tempIndex % 6 != 0) {
+                this._bits[tempIndex++] = 0;
+            }
+            for (let i = 0; i < tempIndex; i += 6) {
                 const value = (this._bits[i] << 5) | (this._bits[i + 1] << 4) | (this._bits[i + 2] << 3) | (this._bits[i + 3] << 2) | (this._bits[i + 4] << 1) | this._bits[i + 5];
                 buffer.push(base64IntToCharCode[value]);
             }
@@ -14957,27 +14961,33 @@ var beepbox = (function (exports) {
                                     if (maxCount > 1) {
                                         index = clamp(0, maxCount, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
                                     }
-                                    let aa = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
-                                    if ((beforeTwo && fromGoldBox) || (fromBeepBox))
-                                        aa = pregoldToEnvelope[aa];
-                                    if (fromJummBox)
-                                        aa = jummToUltraEnvelope[aa];
-                                    if (!fromSlarmoosBox && aa >= 2)
-                                        aa++;
-                                    let updatedEnvelopes = false;
+                                    let aa;
+                                    let updatedEnvelopes = fromSomethingBox;
                                     let perEnvelopeSpeed = 1;
-                                    if (!fromSlarmoosBox || beforeThree) {
-                                        updatedEnvelopes = true;
-                                        perEnvelopeSpeed = Config.envelopes[aa].speed;
-                                        aa = Config.envelopes[aa].type;
-                                    }
-                                    else if (beforeFour && aa >= 3)
-                                        aa++;
                                     let isTremolo2 = false;
-                                    if ((fromSlarmoosBox && !beforeThree && beforeFour) || updatedEnvelopes) {
-                                        if (aa == 9)
-                                            isTremolo2 = true;
-                                        aa = slarURL3toURL4Envelope[aa];
+                                    if (fromSomethingBox) {
+                                        aa = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
+                                    }
+                                    else {
+                                        aa = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
+                                        if ((beforeTwo && fromGoldBox) || (fromBeepBox))
+                                            aa = pregoldToEnvelope[aa];
+                                        if (fromJummBox)
+                                            aa = jummToUltraEnvelope[aa];
+                                        if (!fromSlarmoosBox && aa >= 2)
+                                            aa++;
+                                        if (!fromSlarmoosBox || beforeThree) {
+                                            updatedEnvelopes = true;
+                                            perEnvelopeSpeed = Config.envelopes[aa].speed;
+                                            aa = Config.envelopes[aa].type;
+                                        }
+                                        else if (beforeFour && aa >= 3)
+                                            aa++;
+                                        if ((fromSlarmoosBox && !beforeThree && beforeFour) || updatedEnvelopes) {
+                                            if (aa == 9)
+                                                isTremolo2 = true;
+                                            aa = slarURL3toURL4Envelope[aa];
+                                        }
                                     }
                                     const envelope = clamp(0, ((fromSlarmoosBox && !beforeThree || updatedEnvelopes) ? Config.newEnvelopes.length : Config.envelopes.length), aa);
                                     let pitchEnvelopeStart = 0;
