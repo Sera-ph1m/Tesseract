@@ -7697,27 +7697,25 @@ export class Song {
 
                 const channel: Channel = new Channel();
 
-                let isNoiseChannel: boolean = false;
-                let isModChannel: boolean = false;
                 if (channelObject["type"] != undefined) {
-                    isNoiseChannel = (channelObject["type"] == "drum");
-                    isModChannel = (channelObject["type"] == "mod");
+                    if (channelObject["type"] == "drum") channel.type = ChannelType.Noise;
+                    else if (channelObject["type"] == "mod") channel.type = ChannelType.Mod;
                 } else {
                     // for older files, assume drums are channel 3.
-                    isNoiseChannel = (channelIndex >= 3);
+                    if (channelIndex >= 3) channel.type = ChannelType.Noise;
                 }
-                if (isNoiseChannel) {
+
+                if (channel.type === ChannelType.Noise) {
                     newNoiseChannels.push(channel);
-                } else if (isModChannel) {
+                } else if (channel.type === ChannelType.Mod) {
                     newModChannels.push(channel);
-                }
-                else {
+                } else {
                     newPitchChannels.push(channel);
                 }
 
                 if (channelObject["octaveScrollBar"] != undefined) {
                     channel.octave = clamp(0, Config.pitchOctaves, (channelObject["octaveScrollBar"] | 0) + 1);
-                    if (isNoiseChannel) channel.octave = 0;
+                    if (channel.type === ChannelType.Noise) channel.octave = 0;
                 }
 
                 if (channelObject["name"] != undefined) {
@@ -7731,9 +7729,9 @@ export class Song {
                     const instrumentObjects: any[] = channelObject["instruments"];
                     for (let i: number = 0; i < instrumentObjects.length; i++) {
                         if (i >= this.getMaxInstrumentsPerChannel()) break;
-                        const instrument: Instrument = new Instrument(isNoiseChannel, isModChannel);
+                        const instrument: Instrument = new Instrument(channel.type === ChannelType.Noise, channel.type === ChannelType.Mod);
                         channel.instruments[i] = instrument;
-                        instrument.fromJsonObject(instrumentObjects[i], isNoiseChannel, isModChannel, false, false, legacyGlobalReverb, format);
+                        instrument.fromJsonObject(instrumentObjects[i], channel.type === ChannelType.Noise, channel.type === ChannelType.Mod, false, false, legacyGlobalReverb, format);
                     }
 
                 }
@@ -7746,7 +7744,7 @@ export class Song {
                     if (channelObject["patterns"]) patternObject = channelObject["patterns"][i];
                     if (patternObject == undefined) continue;
 
-                    pattern.fromJsonObject(patternObject, this, channel, importedPartsPerBeat, isNoiseChannel, isModChannel, format);
+                    pattern.fromJsonObject(patternObject, this, channel, importedPartsPerBeat, channel.type === ChannelType.Noise, channel.type === ChannelType.Mod, format);
                 }
                 channel.patterns.length = this.patternsPerChannel;
 

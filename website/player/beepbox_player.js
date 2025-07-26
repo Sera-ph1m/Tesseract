@@ -16463,19 +16463,20 @@ var beepbox = (function (exports) {
                 for (let channelIndex = 0; channelIndex < jsonObject["channels"].length; channelIndex++) {
                     let channelObject = jsonObject["channels"][channelIndex];
                     const channel = new Channel();
-                    let isNoiseChannel = false;
-                    let isModChannel = false;
                     if (channelObject["type"] != undefined) {
-                        isNoiseChannel = (channelObject["type"] == "drum");
-                        isModChannel = (channelObject["type"] == "mod");
+                        if (channelObject["type"] == "drum")
+                            channel.type = ChannelType.Noise;
+                        else if (channelObject["type"] == "mod")
+                            channel.type = ChannelType.Mod;
                     }
                     else {
-                        isNoiseChannel = (channelIndex >= 3);
+                        if (channelIndex >= 3)
+                            channel.type = ChannelType.Noise;
                     }
-                    if (isNoiseChannel) {
+                    if (channel.type === ChannelType.Noise) {
                         newNoiseChannels.push(channel);
                     }
-                    else if (isModChannel) {
+                    else if (channel.type === ChannelType.Mod) {
                         newModChannels.push(channel);
                     }
                     else {
@@ -16483,7 +16484,7 @@ var beepbox = (function (exports) {
                     }
                     if (channelObject["octaveScrollBar"] != undefined) {
                         channel.octave = clamp(0, Config.pitchOctaves, (channelObject["octaveScrollBar"] | 0) + 1);
-                        if (isNoiseChannel)
+                        if (channel.type === ChannelType.Noise)
                             channel.octave = 0;
                     }
                     if (channelObject["name"] != undefined) {
@@ -16497,9 +16498,9 @@ var beepbox = (function (exports) {
                         for (let i = 0; i < instrumentObjects.length; i++) {
                             if (i >= this.getMaxInstrumentsPerChannel())
                                 break;
-                            const instrument = new Instrument(isNoiseChannel, isModChannel);
+                            const instrument = new Instrument(channel.type === ChannelType.Noise, channel.type === ChannelType.Mod);
                             channel.instruments[i] = instrument;
-                            instrument.fromJsonObject(instrumentObjects[i], isNoiseChannel, isModChannel, false, false, legacyGlobalReverb, format);
+                            instrument.fromJsonObject(instrumentObjects[i], channel.type === ChannelType.Noise, channel.type === ChannelType.Mod, false, false, legacyGlobalReverb, format);
                         }
                     }
                     for (let i = 0; i < this.patternsPerChannel; i++) {
@@ -16510,7 +16511,7 @@ var beepbox = (function (exports) {
                             patternObject = channelObject["patterns"][i];
                         if (patternObject == undefined)
                             continue;
-                        pattern.fromJsonObject(patternObject, this, channel, importedPartsPerBeat, isNoiseChannel, isModChannel, format);
+                        pattern.fromJsonObject(patternObject, this, channel, importedPartsPerBeat, channel.type === ChannelType.Noise, channel.type === ChannelType.Mod, format);
                     }
                     channel.patterns.length = this.patternsPerChannel;
                     for (let i = 0; i < this.barCount; i++) {
