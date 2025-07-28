@@ -12622,6 +12622,13 @@ var beepbox = (function (exports) {
                 }
             }
         }
+        restoreChannel(channel, index) {
+            const remap = (oldIndex) => (oldIndex >= index ? oldIndex + 1 : oldIndex);
+            this._updateAllModTargetIndices(remap);
+            this.channels.splice(index, 0, channel);
+            this.updateDefaultChannelNames();
+            events.raise("channelsChanged", null);
+        }
         addChannel(type, position = this.channels.length - 1) {
             const insertIndex = position + 1;
             const remap = (oldIndex) => (oldIndex >= insertIndex ? oldIndex + 1 : oldIndex);
@@ -12658,7 +12665,6 @@ var beepbox = (function (exports) {
             this._updateAllModTargetIndices(remap);
             this.channels.splice(index, 1);
             this.updateDefaultChannelNames();
-            events.raise("channelsChanged", null);
         }
         removeChannelType(type) {
             const candidates = this._getChannelsOfType(type);
@@ -14212,11 +14218,12 @@ var beepbox = (function (exports) {
                                     if (instrument.type == 4) {
                                         for (let i = 0; i < Config.drumCount; i++) {
                                             let aa = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
-                                            if ((beforeTwo && fromGoldBox) || (!fromGoldBox && !fromUltraBox && !fromSlarmoosBox))
-                                                aa = pregoldToEnvelope[aa];
-                                            if (!fromSlarmoosBox && aa >= 2)
-                                                aa++;
-                                            instrument.drumsetEnvelopes[i] = clamp(0, Config.envelopes.length, aa);
+                                            if (!fromSomethingBox) {
+                                                if ((beforeTwo && fromGoldBox) || (!fromGoldBox && !fromUltraBox && !fromSlarmoosBox))
+                                                    aa = pregoldToEnvelope[aa];
+                                                if (!fromSlarmoosBox && aa >= 2)
+                                                    aa++;
+                                            }
                                         }
                                     }
                                 }

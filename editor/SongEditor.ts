@@ -162,6 +162,8 @@ import {
 	ChangeGrainRange,
 	ChangeMonophonicTone,
 	ChangeChannelOrder,
+    ChangeAddChannel,
+    ChangeRemoveChannel
 } from "./changes";
 
 import { TrackEditor } from "./TrackEditor";
@@ -4417,11 +4419,11 @@ export class SongEditor {
 					} else {
 						type = ChannelType.Pitch;
 					}
-					this.doc.song.addChannel(type, currentChannel);
-                } else if (event.shiftKey) {
-                    const width = this.doc.selection.boxSelectionWidth
-                    this.doc.selection.boxSelectionX0 -= width;
-                    this.doc.selection.boxSelectionX1 -= width;
+					this.doc.record(new ChangeAddChannel(this.doc, type, currentChannel));
+				} else if (event.shiftKey) {
+					const width = this.doc.selection.boxSelectionWidth;
+					this.doc.selection.boxSelectionX0 -= width;
+					this.doc.selection.boxSelectionX1 -= width;
                     this.doc.selection.insertBars();
                 } else {
                     this.doc.selection.insertBars();
@@ -4434,9 +4436,10 @@ export class SongEditor {
                 this._loopEditor.setLoopAt(this.doc.synth.loopBarStart, this.doc.synth.loopBarEnd);
 
                 if (event.ctrlKey || event.metaKey) {
-                    this.doc.song.removeChannel(this.doc.channel);
+                    this.doc.record(new ChangeRemoveChannel(this.doc, this.doc.channel));
                 } else {
                     this.doc.selection.deleteBars();
+                    this.doc.notifier.changed();
                 }
                 this._barScrollBar.animatePlayhead();
                 event.preventDefault();

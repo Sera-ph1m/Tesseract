@@ -1,7 +1,7 @@
 // Copyright (c) 2012-2022 John Nesky and contributing authors, distributed under the MIT license, see accompanying the LICENSE.md file.
 
 import { Dictionary, Config } from "../synth/SynthConfig";
-import { Note, NotePin, Pattern } from "../synth/synth";
+import { Note, NotePin, Pattern, ChannelType } from "../synth/synth";
 import { SongDocument } from "./SongDocument";
 import { ChangeGroup } from "./Change";
 import { ColorConfig } from "./ColorConfig";
@@ -206,15 +206,18 @@ export class Selection {
     }
 
     public insertChannel(): void {
-        const group: ChangeGroup = new ChangeGroup();
-        const insertIndex: number = this.boxSelectionChannel + this.boxSelectionHeight;
-        const isNoise: boolean = this._doc.song.getChannelIsNoise(insertIndex - 1);
-        const isMod: boolean = this._doc.song.getChannelIsMod(insertIndex - 1)
-        group.append(new ChangeAddChannel(this._doc, insertIndex, isNoise, isMod));
-        if (!group.isNoop()) {
-            this.boxSelectionY0 = this.boxSelectionY1 = insertIndex;
-            group.append(new ChangeChannelBar(this._doc, insertIndex, this._doc.bar));
-            this._doc.record(group);
+		const selectionHeight: number = this.boxSelectionHeight;
+		const insertAfterPosition: number = this.boxSelectionChannel + selectionHeight - 1;
+		// Determine channel type based on the last channel in the selection.
+		const referenceChannel: number = insertAfterPosition;
+		const isNoise: boolean = this._doc.song.getChannelIsNoise(referenceChannel);
+		const isMod: boolean = this._doc.song.getChannelIsMod(referenceChannel);
+		const type: ChannelType = isMod ? ChannelType.Mod : isNoise ? ChannelType.Noise : ChannelType.Pitch;
+
+		for (let i = 0; i < selectionHeight; i++) {
+			// Record each channel addition as a separate, undoable action.
+			// The position is constant because each time we add a channel, the subsequent ones get pushed down.
+			this._doc.record(new ChangeAddChannel(this._doc, type, insertAfterPosition));
         }
     }
 
@@ -242,7 +245,13 @@ export class Selection {
     }
 
     public deleteChannel(): void {
-        this._doc.record(new ChangeRemoveChannel(this._doc, this.boxSelectionChannel, this.boxSelectionChannel + this.boxSelectionHeight - 1));
+		const startChannel: number = this.boxSelectionChannel;
+		const endChannel: number = this.boxSelectionChannel + this.boxSelectionHeight;
+		// Important to loop backwards when removing multiple items to preserve indices.
+		for (let i = endChannel - 1; i >= startChannel; i--) {
+            // Record each channel deletion as a separate, undoable action.
+			this._doc.record(new ChangeRemoveChannel(this._doc, i));
+		}
         this.boxSelectionY0 = this.boxSelectionY1 = this._doc.channel;
         ColorConfig.resetColors();
     }

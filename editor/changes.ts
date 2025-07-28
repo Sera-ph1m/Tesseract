@@ -7,6 +7,7 @@ import { Change, ChangeGroup, ChangeSequence, UndoableChange } from "./Change";
 import { SongDocument } from "./SongDocument";
 import { ColorConfig } from "./ColorConfig";
 import { Slider } from "./HTMLWrapper";
+import { ChannelType } from "../synth/synth";
 
 export function patternsContainSameInstruments(pattern1Instruments: number[], pattern2Instruments: number[]): boolean {
     const pattern2Has1Instruments: boolean = pattern1Instruments.every(instrument => pattern2Instruments.indexOf(instrument) != -1);
@@ -31,6 +32,9 @@ export function discardInvalidPatternInstruments(instruments: number[], song: So
         instruments[0] = 0;
     }
 }
+
+
+
 
 export function unionOfUsedNotes(pattern: Pattern, flags: boolean[]): void {
     for (const note of pattern.notes) {
@@ -2100,75 +2104,51 @@ export class ChangeChannelCount extends Change {
     }
 }
 
-export class ChangeAddChannel extends ChangeGroup {
-    constructor(doc: SongDocument, index: number, isNoise: boolean, isMod: boolean) {
-        super();
-        const newPitchChannelCount: number = doc.song.pitchChannelCount + (isNoise || isMod ? 0 : 1);
-        const newNoiseChannelCount: number = doc.song.noiseChannelCount + (!isNoise || isMod ? 0 : 1);
-        const newModChannelCount: number = doc.song.modChannelCount + (isNoise || !isMod ? 0 : 1);
 
-        if (newPitchChannelCount <= Config.pitchChannelCountMax && newNoiseChannelCount <= Config.noiseChannelCountMax && newModChannelCount <= Config.modChannelCountMax) {
-            const addedChannelIndex: number = isMod ? doc.song.pitchChannelCount + doc.song.noiseChannelCount + doc.song.modChannelCount : (isNoise ? doc.song.pitchChannelCount + doc.song.noiseChannelCount : doc.song.pitchChannelCount);
-            this.append(new ChangeChannelCount(doc, newPitchChannelCount, newNoiseChannelCount, newModChannelCount));
-            if (addedChannelIndex - 1 >= index) {
-                this.append(new ChangeChannelOrder(doc, index, addedChannelIndex - 1, 1));
-            }
 
-            doc.synth.computeLatestModValues();
-            doc.recalcChannelNames = true;
-        }
+export class ChangeAddChannel extends Change {
+    private _channelType: ChannelType;
+    private _position: number;
+
+    constructor(doc: SongDocument, type: ChannelType, position: number) {
+        super(); // No arguments here.
+        this._channelType = type;
+        this._position = position;
+
+        // Perform the action immediately in the constructor, using the passed 'doc'.
+        doc.song.addChannel(this._channelType, this._position);
+        doc.notifier.changed();
+        this._didSomething();
+    }
+
+    protected _undo(doc: SongDocument): void {
+        // addChannel inserts at position + 1.
+        doc.song.removeChannel(this._position + 1);
+        doc.notifier.changed();
     }
 }
 
-export class ChangeRemoveChannel extends ChangeGroup {
-    constructor(doc: SongDocument, minIndex: number, maxIndex: number) {
-        super();
 
-        const oldMax: number = maxIndex;
+export class ChangeRemoveChannel extends Change {
+	private _removedChannel: Channel;
+	private _index: number;
 
-        // Update modulators - if a higher index was removed, shift down
-        for (let modChannel: number = doc.song.pitchChannelCount + doc.song.noiseChannelCount; modChannel < doc.song.channels.length; modChannel++) {
-            for (let instrumentIndex: number = 0; instrumentIndex < doc.song.channels[modChannel].instruments.length; instrumentIndex++) {
-                const modInstrument: Instrument = doc.song.channels[modChannel].instruments[instrumentIndex];
-                for (let mod: number = 0; mod < Config.modCount; mod++) {
-                    if (modInstrument.modChannels[mod] >= minIndex && modInstrument.modChannels[mod] <= oldMax) {
-                        this.append(new ChangeModChannel(doc, mod, 0, modInstrument));
-                    }
-                    else if (modInstrument.modChannels[mod] > oldMax) {
-                        this.append(new ChangeModChannel(doc, mod, modInstrument.modChannels[mod] - (oldMax - minIndex + 1) + 2, modInstrument));
-                    }
-                }
-            }
-        }
+	constructor(doc: SongDocument, index: number) {
+		super(); // No arguments here.
+		// IMPORTANT: Capture the state *before* performing the action.
+		this._removedChannel = doc.song.channels[index];
+		this._index = index;
 
-        while (maxIndex >= minIndex) {
-            const isNoise: boolean = doc.song.getChannelIsNoise(maxIndex);
-            const isMod: boolean = doc.song.getChannelIsMod(maxIndex);
-            doc.song.channels.splice(maxIndex, 1);
-            if (isNoise) {
-                doc.song.noiseChannelCount--;
-            } else if (isMod) {
-                doc.song.modChannelCount--;
-            } else {
-                doc.song.pitchChannelCount--;
-            }
-            maxIndex--;
-        }
+		// Perform the action immediately in the constructor, using the passed 'doc'.
+		doc.song.removeChannel(this._index);
+		doc.notifier.changed();
+		this._didSomething();
+	}
 
-        if (doc.song.pitchChannelCount < Config.pitchChannelCountMin) {
-            this.append(new ChangeChannelCount(doc, Config.pitchChannelCountMin, doc.song.noiseChannelCount, doc.song.modChannelCount));
-        }
-
-        ColorConfig.resetColors();
-        doc.recalcChannelNames = true;
-
-        this.append(new ChangeChannelBar(doc, Math.max(0, minIndex - 1), doc.bar));
-
-        doc.synth.computeLatestModValues();
-
-        this._didSomething();
-        doc.notifier.changed();
-    }
+	protected _undo(doc: SongDocument): void {
+		doc.song.restoreChannel(this._removedChannel, this._index);
+		doc.notifier.changed();
+	}
 }
 
 export class ChangeChannelBar extends Change {
@@ -2844,7 +2824,7 @@ export class ChangeSongFilterAddPoint extends UndoableChange {
             this._point = point;
             this._index = index;
     
-                this._didSomething();
+            this._didSomething();
             this.redo();
         }
 

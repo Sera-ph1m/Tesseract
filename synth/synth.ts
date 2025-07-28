@@ -3627,6 +3627,18 @@ export class Song {
         }
     }
 
+        public restoreChannel(channel: Channel, index: number): void {
+            // Update all existing modulators. Any target with an index >= index
+            // will be shifted one position to the right.
+            const remap = (oldIndex: number) => (oldIndex >= index ? oldIndex + 1 : oldIndex);
+            this._updateAllModTargetIndices(remap);
+        
+            this.channels.splice(index, 0, channel);
+        
+            this.updateDefaultChannelNames();
+            events.raise("channelsChanged", null);
+        }
+
         public addChannel(type: ChannelType, position: number = this.channels.length - 1): void {
         const insertIndex = position + 1;
         
@@ -3678,7 +3690,6 @@ export class Song {
         this._updateAllModTargetIndices(remap);
         this.channels.splice(index, 1);
         this.updateDefaultChannelNames();
-        events.raise("channelsChanged", null);
     }
 
 
@@ -5368,9 +5379,10 @@ export class Song {
                     if (instrument.type == InstrumentType.drumset) {
                         for (let i: number = 0; i < Config.drumCount; i++) {
                             let aa: number = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
+                        if (!fromSomethingBox) {
                             if ((beforeTwo && fromGoldBox) || (!fromGoldBox && !fromUltraBox && !fromSlarmoosBox)) aa = pregoldToEnvelope[aa];
                             if (!fromSlarmoosBox && aa >= 2) aa++; //2 for pitch
-                            instrument.drumsetEnvelopes[i] = clamp(0, Config.envelopes.length, aa);
+                        }
                         }
                     }
                 }

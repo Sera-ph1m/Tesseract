@@ -5,7 +5,7 @@ import { HTML } from "imperative-html/dist/esm/elements-strict";
 import { ColorConfig } from "./ColorConfig";
 import { ChannelRow } from "./ChannelRow";
 import { InputBox } from "./HTMLWrapper";
-import { ChangeChannelOrder, ChangeChannelName } from "./changes";
+import { ChangeChannelOrder, ChangeChannelName, ChangeRemoveChannel, ChangeAddChannel } from "./changes";
 import { Config } from "../synth/SynthConfig";
 import { ChannelType } from "../synth/synth";
 import { SongEditor } from "./SongEditor";
@@ -284,15 +284,12 @@ export class MuteEditor {
 				} else {
 					type = ChannelType.Pitch;
 				}
-				this._doc.song.addChannel(type, this._channelDropDownChannel);
-				this._doc.song.updateDefaultChannelNames();
+				this._doc.record(new ChangeAddChannel(this._doc, type, this._channelDropDownChannel));
 				this._doc.notifier.changed();
 				break;
 			}
 			case "chnDelete": {
-				this._doc.song.removeChannel(this._channelDropDownChannel);
-				this._doc.song.updateDefaultChannelNames();
-				this._doc.notifier.changed();
+				this._doc.record(new ChangeRemoveChannel(this._doc, this._channelDropDownChannel));
 				break;
 			}
 		}

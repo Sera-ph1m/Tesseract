@@ -128,7 +128,7 @@ export class SongDocument {
         this._validateDocState();
         this.performance = new SongPerformance(this);
         
-        (window as any).updateUI = () => this.notifier.notifyWatchers();
+        (window as any).updateUI = () => { this.notifier.notifyWatchers(); this.notifier.changed(); };
     }
 
     public toggleDisplayBrowserUrl() {

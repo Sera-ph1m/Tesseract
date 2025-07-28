@@ -14515,6 +14515,13 @@ li.select2-results__option[role=group] > strong:hover {
                 }
             }
         }
+        restoreChannel(channel, index) {
+            const remap = (oldIndex) => (oldIndex >= index ? oldIndex + 1 : oldIndex);
+            this._updateAllModTargetIndices(remap);
+            this.channels.splice(index, 0, channel);
+            this.updateDefaultChannelNames();
+            events.raise("channelsChanged", null);
+        }
         addChannel(type, position = this.channels.length - 1) {
             const insertIndex = position + 1;
             const remap = (oldIndex) => (oldIndex >= insertIndex ? oldIndex + 1 : oldIndex);
@@ -14551,7 +14558,6 @@ li.select2-results__option[role=group] > strong:hover {
             this._updateAllModTargetIndices(remap);
             this.channels.splice(index, 1);
             this.updateDefaultChannelNames();
-            events.raise("channelsChanged", null);
         }
         removeChannelType(type) {
             const candidates = this._getChannelsOfType(type);
@@ -16105,11 +16111,12 @@ li.select2-results__option[role=group] > strong:hover {
                                     if (instrument.type == 4) {
                                         for (let i = 0; i < Config.drumCount; i++) {
                                             let aa = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
-                                            if ((beforeTwo && fromGoldBox) || (!fromGoldBox && !fromUltraBox && !fromSlarmoosBox))
-                                                aa = pregoldToEnvelope[aa];
-                                            if (!fromSlarmoosBox && aa >= 2)
-                                                aa++;
-                                            instrument.drumsetEnvelopes[i] = clamp(0, Config.envelopes.length, aa);
+                                            if (!fromSomethingBox) {
+                                                if ((beforeTwo && fromGoldBox) || (!fromGoldBox && !fromUltraBox && !fromSlarmoosBox))
+                                                    aa = pregoldToEnvelope[aa];
+                                                if (!fromSlarmoosBox && aa >= 2)
+                                                    aa++;
+                                            }
                                         }
                                     }
                                 }
@@ -28271,133 +28278,31 @@ li.select2-results__option[role=group] > strong:hover {
             this._didSomething();
         }
     }
-    class ChangeChannelCount extends Change {
-        constructor(doc, newPitchChannelCount, newNoiseChannelCount, newModChannelCount) {
+    class ChangeAddChannel extends Change {
+        constructor(doc, type, position) {
             super();
-            if (doc.song.pitchChannelCount != newPitchChannelCount || doc.song.noiseChannelCount != newNoiseChannelCount || doc.song.modChannelCount != newModChannelCount) {
-                const newChannels = [];
-                function changeGroup(newCount, oldCount, newStart, oldStart, octave, isNoise, isMod) {
-                    for (let i = 0; i < newCount; i++) {
-                        const channelIndex = i + newStart;
-                        const oldChannel = i + oldStart;
-                        if (i < oldCount) {
-                            newChannels[channelIndex] = doc.song.channels[oldChannel];
-                        }
-                        else {
-                            newChannels[channelIndex] = new Channel();
-                            newChannels[channelIndex].octave = octave;
-                            for (let j = 0; j < Config.instrumentCountMin; j++) {
-                                const instrument = new Instrument(isNoise, isMod);
-                                if (!isMod) {
-                                    const presetValue = pickRandomPresetValue(isNoise);
-                                    const preset = EditorConfig.valueToPreset(presetValue);
-                                    instrument.fromJsonObject(preset.settings, isNoise, isMod, doc.song.rhythm == 0 || doc.song.rhythm == 2, doc.song.rhythm >= 2);
-                                    instrument.preset = presetValue;
-                                    instrument.effects |= 1 << 2;
-                                }
-                                else {
-                                    instrument.setTypeAndReset(10, isNoise, isMod);
-                                }
-                                newChannels[channelIndex].instruments[j] = instrument;
-                            }
-                            for (let j = 0; j < doc.song.patternsPerChannel; j++) {
-                                newChannels[channelIndex].patterns[j] = new Pattern();
-                            }
-                            for (let j = 0; j < doc.song.barCount; j++) {
-                                newChannels[channelIndex].bars[j] = 0;
-                            }
-                        }
-                    }
-                }
-                changeGroup(newPitchChannelCount, doc.song.pitchChannelCount, 0, 0, 3, false, false);
-                changeGroup(newNoiseChannelCount, doc.song.noiseChannelCount, newPitchChannelCount, doc.song.pitchChannelCount, 0, true, false);
-                changeGroup(newModChannelCount, doc.song.modChannelCount, newNoiseChannelCount + newPitchChannelCount, doc.song.pitchChannelCount + doc.song.noiseChannelCount, 0, false, true);
-                let oldPitchCount = doc.song.pitchChannelCount;
-                doc.song.pitchChannelCount = newPitchChannelCount;
-                doc.song.noiseChannelCount = newNoiseChannelCount;
-                doc.song.modChannelCount = newModChannelCount;
-                for (let channelIndex = 0; channelIndex < doc.song.getChannelCount(); channelIndex++) {
-                    doc.song.channels[channelIndex] = newChannels[channelIndex];
-                }
-                doc.song.channels.length = doc.song.getChannelCount();
-                doc.channel = Math.min(doc.channel, newPitchChannelCount + newNoiseChannelCount + newModChannelCount - 1);
-                for (let channelIndex = doc.song.pitchChannelCount + doc.song.noiseChannelCount; channelIndex < doc.song.getChannelCount(); channelIndex++) {
-                    for (let instrumentIdx = 0; instrumentIdx < doc.song.channels[channelIndex].instruments.length; instrumentIdx++) {
-                        for (let mod = 0; mod < Config.modCount; mod++) {
-                            let instrument = doc.song.channels[channelIndex].instruments[instrumentIdx];
-                            let modChannel = instrument.modChannels[mod];
-                            if ((modChannel >= doc.song.pitchChannelCount && modChannel < oldPitchCount) || modChannel >= doc.song.pitchChannelCount + doc.song.noiseChannelCount) {
-                                instrument.modulators[mod] = Config.modulators.dictionary["none"].index;
-                            }
-                            if (modChannel >= oldPitchCount && oldPitchCount < newPitchChannelCount) {
-                                instrument.modChannels[mod] += newPitchChannelCount - oldPitchCount;
-                            }
-                        }
-                    }
-                }
-                doc.notifier.changed();
-                ColorConfig.resetColors();
-                this._didSomething();
-            }
-        }
-    }
-    class ChangeAddChannel extends ChangeGroup {
-        constructor(doc, index, isNoise, isMod) {
-            super();
-            const newPitchChannelCount = doc.song.pitchChannelCount + (isNoise || isMod ? 0 : 1);
-            const newNoiseChannelCount = doc.song.noiseChannelCount + (!isNoise || isMod ? 0 : 1);
-            const newModChannelCount = doc.song.modChannelCount + (isNoise || !isMod ? 0 : 1);
-            if (newPitchChannelCount <= Config.pitchChannelCountMax && newNoiseChannelCount <= Config.noiseChannelCountMax && newModChannelCount <= Config.modChannelCountMax) {
-                const addedChannelIndex = isMod ? doc.song.pitchChannelCount + doc.song.noiseChannelCount + doc.song.modChannelCount : (isNoise ? doc.song.pitchChannelCount + doc.song.noiseChannelCount : doc.song.pitchChannelCount);
-                this.append(new ChangeChannelCount(doc, newPitchChannelCount, newNoiseChannelCount, newModChannelCount));
-                if (addedChannelIndex - 1 >= index) {
-                    this.append(new ChangeChannelOrder(doc, index, addedChannelIndex - 1, 1));
-                }
-                doc.synth.computeLatestModValues();
-                doc.recalcChannelNames = true;
-            }
-        }
-    }
-    class ChangeRemoveChannel extends ChangeGroup {
-        constructor(doc, minIndex, maxIndex) {
-            super();
-            const oldMax = maxIndex;
-            for (let modChannel = doc.song.pitchChannelCount + doc.song.noiseChannelCount; modChannel < doc.song.channels.length; modChannel++) {
-                for (let instrumentIndex = 0; instrumentIndex < doc.song.channels[modChannel].instruments.length; instrumentIndex++) {
-                    const modInstrument = doc.song.channels[modChannel].instruments[instrumentIndex];
-                    for (let mod = 0; mod < Config.modCount; mod++) {
-                        if (modInstrument.modChannels[mod] >= minIndex && modInstrument.modChannels[mod] <= oldMax) {
-                            this.append(new ChangeModChannel(doc, mod, 0, modInstrument));
-                        }
-                        else if (modInstrument.modChannels[mod] > oldMax) {
-                            this.append(new ChangeModChannel(doc, mod, modInstrument.modChannels[mod] - (oldMax - minIndex + 1) + 2, modInstrument));
-                        }
-                    }
-                }
-            }
-            while (maxIndex >= minIndex) {
-                const isNoise = doc.song.getChannelIsNoise(maxIndex);
-                const isMod = doc.song.getChannelIsMod(maxIndex);
-                doc.song.channels.splice(maxIndex, 1);
-                if (isNoise) {
-                    doc.song.noiseChannelCount--;
-                }
-                else if (isMod) {
-                    doc.song.modChannelCount--;
-                }
-                else {
-                    doc.song.pitchChannelCount--;
-                }
-                maxIndex--;
-            }
-            if (doc.song.pitchChannelCount < Config.pitchChannelCountMin) {
-                this.append(new ChangeChannelCount(doc, Config.pitchChannelCountMin, doc.song.noiseChannelCount, doc.song.modChannelCount));
-            }
-            ColorConfig.resetColors();
-            doc.recalcChannelNames = true;
-            this.append(new ChangeChannelBar(doc, Math.max(0, minIndex - 1), doc.bar));
-            doc.synth.computeLatestModValues();
+            this._channelType = type;
+            this._position = position;
+            doc.song.addChannel(this._channelType, this._position);
+            doc.notifier.changed();
             this._didSomething();
+        }
+        _undo(doc) {
+            doc.song.removeChannel(this._position + 1);
+            doc.notifier.changed();
+        }
+    }
+    class ChangeRemoveChannel extends Change {
+        constructor(doc, index) {
+            super();
+            this._removedChannel = doc.song.channels[index];
+            this._index = index;
+            doc.song.removeChannel(this._index);
+            doc.notifier.changed();
+            this._didSomething();
+        }
+        _undo(doc) {
+            doc.song.restoreChannel(this._removedChannel, this._index);
             doc.notifier.changed();
         }
     }
@@ -32545,15 +32450,14 @@ li.select2-results__option[role=group] > strong:hover {
             this.boxSelectionX1 += width;
         }
         insertChannel() {
-            const group = new ChangeGroup();
-            const insertIndex = this.boxSelectionChannel + this.boxSelectionHeight;
-            const isNoise = this._doc.song.getChannelIsNoise(insertIndex - 1);
-            const isMod = this._doc.song.getChannelIsMod(insertIndex - 1);
-            group.append(new ChangeAddChannel(this._doc, insertIndex, isNoise, isMod));
-            if (!group.isNoop()) {
-                this.boxSelectionY0 = this.boxSelectionY1 = insertIndex;
-                group.append(new ChangeChannelBar(this._doc, insertIndex, this._doc.bar));
-                this._doc.record(group);
+            const selectionHeight = this.boxSelectionHeight;
+            const insertAfterPosition = this.boxSelectionChannel + selectionHeight - 1;
+            const referenceChannel = insertAfterPosition;
+            const isNoise = this._doc.song.getChannelIsNoise(referenceChannel);
+            const isMod = this._doc.song.getChannelIsMod(referenceChannel);
+            const type = isMod ? ChannelType.Mod : isNoise ? ChannelType.Noise : ChannelType.Pitch;
+            for (let i = 0; i < selectionHeight; i++) {
+                this._doc.record(new ChangeAddChannel(this._doc, type, insertAfterPosition));
             }
         }
         deleteBars() {
@@ -32578,7 +32482,11 @@ li.select2-results__option[role=group] > strong:hover {
             this._doc.record(group);
         }
         deleteChannel() {
-            this._doc.record(new ChangeRemoveChannel(this._doc, this.boxSelectionChannel, this.boxSelectionChannel + this.boxSelectionHeight - 1));
+            const startChannel = this.boxSelectionChannel;
+            const endChannel = this.boxSelectionChannel + this.boxSelectionHeight;
+            for (let i = endChannel - 1; i >= startChannel; i--) {
+                this._doc.record(new ChangeRemoveChannel(this._doc, i));
+            }
             this.boxSelectionY0 = this.boxSelectionY1 = this._doc.channel;
             ColorConfig.resetColors();
         }
@@ -33524,7 +33432,7 @@ li.select2-results__option[role=group] > strong:hover {
             }
             this._validateDocState();
             this.performance = new SongPerformance(this);
-            window.updateUI = () => this.notifier.notifyWatchers();
+            window.updateUI = () => { this.notifier.notifyWatchers(); this.notifier.changed(); };
         }
         toggleDisplayBrowserUrl() {
             const state = this._getHistoryState();
@@ -40372,15 +40280,12 @@ You should be redirected to the song at:<br /><br />
                         else {
                             type = ChannelType.Pitch;
                         }
-                        this._doc.song.addChannel(type, this._channelDropDownChannel);
-                        this._doc.song.updateDefaultChannelNames();
+                        this._doc.record(new ChangeAddChannel(this._doc, type, this._channelDropDownChannel));
                         this._doc.notifier.changed();
                         break;
                     }
                     case "chnDelete": {
-                        this._doc.song.removeChannel(this._channelDropDownChannel);
-                        this._doc.song.updateDefaultChannelNames();
-                        this._doc.notifier.changed();
+                        this._doc.record(new ChangeRemoveChannel(this._doc, this._channelDropDownChannel));
                         break;
                     }
                 }
@@ -49501,7 +49406,7 @@ You should be redirected to the song at:<br /><br />
                             else {
                                 type = ChannelType.Pitch;
                             }
-                            this.doc.song.addChannel(type, currentChannel);
+                            this.doc.record(new ChangeAddChannel(this.doc, type, currentChannel));
                         }
                         else if (event.shiftKey) {
                             const width = this.doc.selection.boxSelectionWidth;
@@ -49519,10 +49424,11 @@ You should be redirected to the song at:<br /><br />
                         this.doc.synth.loopBarEnd = -1;
                         this._loopEditor.setLoopAt(this.doc.synth.loopBarStart, this.doc.synth.loopBarEnd);
                         if (event.ctrlKey || event.metaKey) {
-                            this.doc.song.removeChannel(this.doc.channel);
+                            this.doc.record(new ChangeRemoveChannel(this.doc, this.doc.channel));
                         }
                         else {
                             this.doc.selection.deleteBars();
+                            this.doc.notifier.changed();
                         }
                         this._barScrollBar.animatePlayhead();
                         event.preventDefault();
