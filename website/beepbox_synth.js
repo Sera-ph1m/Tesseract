@@ -6860,7 +6860,7 @@ var beepbox = (function (exports) {
                                 if (fromSomethingBox) {
                                     this.rhythm = clamp(0, Config.rhythms.length, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
                                 }
-                                else if (!fromUltraBox && !fromSlarmoosBox) {
+                                else if (!fromUltraBox && !fromSlarmoosBox && !fromSomethingBox) {
                                     let newRhythm = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
                                     this.rhythm = clamp(0, Config.rhythms.length, newRhythm);
                                     if (fromJummBox && beforeThree || fromBeepBox) {
@@ -7032,7 +7032,7 @@ var beepbox = (function (exports) {
                                             const pregoldToEnvelope = [0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, 16, 17, 18, 19, 20, 21, 23, 24, 25, 27, 28, 29, 32, 33, 34, 31, 11];
                                             const legacySettings = legacySettingsCache[instrumentChannelIterator][instrumentIndexIterator];
                                             let aa = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
-                                            if ((beforeTwo && fromGoldBox) || (!fromGoldBox && !fromUltraBox && !fromSlarmoosBox))
+                                            if ((beforeTwo && fromGoldBox) || (!fromGoldBox && !fromUltraBox && !fromSlarmoosBox && !fromSomethingBox))
                                                 aa = pregoldToEnvelope[aa];
                                             legacySettings.pulseEnvelope = Song._envelopeFromLegacyIndex(aa);
                                             instrument.convertLegacySettings(legacySettings, forceSimpleFilter);
@@ -7248,12 +7248,12 @@ var beepbox = (function (exports) {
                                 const instrument = this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator];
                                 const pregoldToEnvelope = [0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, 16, 17, 18, 19, 20, 21, 23, 24, 25, 27, 28, 29, 32, 33, 34, 31, 11];
                                 if ((beforeNine && fromBeepBox) || (beforeFive && fromJummBox) || (beforeFour && fromGoldBox)) {
-                                    if ((beforeTwo && fromGoldBox) || (!fromGoldBox && !fromUltraBox && !fromSlarmoosBox)) {
+                                    if ((beforeTwo && fromGoldBox) || (!fromGoldBox && !fromUltraBox && !fromSlarmoosBox && !fromSomethingBox)) {
                                     }
                                     if (instrument.type == 4) {
                                         for (let i = 0; i < Config.drumCount; i++) {
                                             let aa = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
-                                            if ((beforeTwo && fromGoldBox) || (!fromGoldBox && !fromUltraBox && !fromSlarmoosBox))
+                                            if ((beforeTwo && fromGoldBox) || (!fromGoldBox && !fromUltraBox && !fromSlarmoosBox && !fromSomethingBox))
                                                 aa = pregoldToEnvelope[aa];
                                             instrument.drumsetEnvelopes[i] = Song._envelopeFromLegacyIndex(aa).index;
                                         }
@@ -7261,7 +7261,7 @@ var beepbox = (function (exports) {
                                     else {
                                         const legacySettings = legacySettingsCache[instrumentChannelIterator][instrumentIndexIterator];
                                         let aa = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
-                                        if ((beforeTwo && fromGoldBox) || (!fromGoldBox && !fromUltraBox && !fromSlarmoosBox))
+                                        if ((beforeTwo && fromGoldBox) || (!fromGoldBox && !fromUltraBox && !fromSlarmoosBox && !fromSomethingBox))
                                             aa = pregoldToEnvelope[aa];
                                         legacySettings.filterEnvelope = Song._envelopeFromLegacyIndex(aa);
                                         instrument.convertLegacySettings(legacySettings, forceSimpleFilter);
@@ -7295,7 +7295,7 @@ var beepbox = (function (exports) {
                                     const pregoldToEnvelope = [0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, 16, 17, 18, 19, 20, 21, 23, 24, 25, 27, 28, 29, 32, 33, 34, 31, 11];
                                     const legacySettings = legacySettingsCache[instrumentChannelIterator][instrumentIndexIterator];
                                     let aa = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
-                                    if ((beforeTwo && fromGoldBox) || (!fromGoldBox && !fromUltraBox && !fromSlarmoosBox))
+                                    if ((beforeTwo && fromGoldBox) || (!fromGoldBox && !fromUltraBox && !fromSlarmoosBox && !fromSomethingBox))
                                         aa = pregoldToEnvelope[aa];
                                     legacySettings.pulseEnvelope = Song._envelopeFromLegacyIndex(aa);
                                     instrument.convertLegacySettings(legacySettings, forceSimpleFilter);
@@ -7355,7 +7355,7 @@ var beepbox = (function (exports) {
                                             }
                                         }
                                     }
-                                    else if ((beforeFour && !fromGoldBox && !fromUltraBox && !fromSlarmoosBox) || fromBeepBox) {
+                                    else if ((beforeFour && !fromGoldBox && !fromUltraBox && !fromSlarmoosBox && !fromSomethingBox) || fromBeepBox) {
                                         const settings = legacySettings[clamp(0, legacySettings.length, base64CharCodeToInt[compressed.charCodeAt(charIndex++)])];
                                         const instrument = this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator];
                                         instrument.fadeIn = Synth.secondsToFadeInSetting(settings.fadeInSeconds);
@@ -7582,7 +7582,7 @@ var beepbox = (function (exports) {
                                 else {
                                     const instrument = this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator];
                                     instrument.unison = clamp(0, Config.unisons.length + 1, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
-                                    const unisonLength = (beforeFive || !fromSlarmoosBox) ? 27 : Config.unisons.length;
+                                    const unisonLength = (beforeFive || !fromSlarmoosBox && !fromSomethingBox) ? 27 : Config.unisons.length;
                                     if (((fromUltraBox && !beforeFive) || fromSlarmoosBox) && (instrument.unison == unisonLength)) {
                                         instrument.unison = Config.unisons.length;
                                         instrument.unisonVoices = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
@@ -7931,7 +7931,7 @@ var beepbox = (function (exports) {
                                     if (fromSomethingBox) {
                                         channelNameLength = ((base64CharCodeToInt[compressed.charCodeAt(charIndex++)] << 6) + base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
                                     }
-                                    else if (beforeFour && !fromGoldBox && !fromUltraBox && !fromSlarmoosBox) {
+                                    else if (beforeFour && !fromGoldBox && !fromUltraBox && !fromSlarmoosBox && !fromSomethingBox) {
                                         channelNameLength = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
                                     }
                                     else {
@@ -8068,7 +8068,7 @@ var beepbox = (function (exports) {
                                     const instrument = this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator];
                                     const legacySettings = legacySettingsCache[instrumentChannelIterator][instrumentIndexIterator];
                                     let aa = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
-                                    if ((beforeTwo && fromGoldBox) || (!fromGoldBox && !fromUltraBox && !fromSlarmoosBox))
+                                    if ((beforeTwo && fromGoldBox) || (!fromGoldBox && !fromUltraBox && !fromSlarmoosBox && !fromSomethingBox))
                                         aa = pregoldToEnvelope[aa];
                                     legacySettings.feedbackEnvelope = Song._envelopeFromLegacyIndex(base64CharCodeToInt[aa]);
                                     instrument.convertLegacySettings(legacySettings, forceSimpleFilter);
@@ -8088,7 +8088,7 @@ var beepbox = (function (exports) {
                                         instrument.operators[o].frequency = freqToGold3[clamp(0, freqToGold3.length, base64CharCodeToInt[compressed.charCodeAt(charIndex++)])];
                                     }
                                 }
-                                else if (!fromGoldBox && !fromUltraBox && !fromSlarmoosBox) {
+                                else if (!fromGoldBox && !fromUltraBox && !fromSlarmoosBox && !fromSomethingBox) {
                                     const freqToUltraBox = [4, 5, 6, 7, 8, 10, 12, 13, 14, 15, 16, 18, 20, 23, 27, 2, 1, 9, 17, 19, 21, 23, 0, 3];
                                     for (let o = 0; o < (instrument.type == 11 ? 6 : Config.operatorCount); o++) {
                                         instrument.operators[o].frequency = freqToUltraBox[clamp(0, freqToUltraBox.length, base64CharCodeToInt[compressed.charCodeAt(charIndex++)])];
@@ -8162,9 +8162,9 @@ var beepbox = (function (exports) {
                                                 aa = pregoldToEnvelope[aa];
                                             if (fromJummBox)
                                                 aa = jummToUltraEnvelope[aa];
-                                            if (!fromSlarmoosBox && aa >= 2)
+                                            if (!fromSlarmoosBox && !fromSomethingBox && aa >= 2)
                                                 aa++;
-                                            if (!fromSlarmoosBox || beforeThree) {
+                                            if (!fromSomethingBox && !fromSlarmoosBox || beforeThree) {
                                                 updatedEnvelopes = true;
                                                 perEnvelopeSpeed = Config.envelopes[aa].speed;
                                                 aa = Config.envelopes[aa].type;
@@ -8224,7 +8224,7 @@ var beepbox = (function (exports) {
                                             perEnvelopeLowerBound = base64CharCodeToInt[compressed.charCodeAt(charIndex++)] / 10;
                                             perEnvelopeUpperBound = base64CharCodeToInt[compressed.charCodeAt(charIndex++)] / 10;
                                         }
-                                        if (!fromSlarmoosBox || beforeFour) {
+                                        if (!fromSomethingBox && !fromSlarmoosBox || beforeFour) {
                                             if (isTremolo2) {
                                                 waveform = 0;
                                                 if (envelopeInverse) {
@@ -8768,7 +8768,7 @@ var beepbox = (function (exports) {
                                                         note.continuesLastPattern = (bits.read(1) == 1);
                                                     }
                                                     else {
-                                                        if ((beforeFour && !fromUltraBox && !fromSlarmoosBox) || fromBeepBox) {
+                                                        if ((beforeFour && !fromUltraBox && !fromSlarmoosBox && !fromSomethingBox) || fromBeepBox) {
                                                             note.continuesLastPattern = false;
                                                         }
                                                         else {
