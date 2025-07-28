@@ -12,6 +12,7 @@ import { Preferences } from "./Preferences";
 import { Change } from "./Change";
 import { ChangeNotifier } from "./ChangeNotifier";
 import { ChangeSong, setDefaultInstruments, discardInvalidPatternInstruments, ChangeHoldingModRecording } from "./changes";
+import { events } from "../global/Events";
 
 interface HistoryState {
     canUndo: boolean;
@@ -101,6 +102,7 @@ export class SongDocument {
         this._replaceState(state, songString);
         window.addEventListener("hashchange", this._whenHistoryStateChanged);
         window.addEventListener("popstate", this._whenHistoryStateChanged);
+        events.listen("channelsChanged", this._cleanDocument);
 
         this.bar = state.bar | 0;
         this.channel = state.channel | 0;
@@ -125,6 +127,8 @@ export class SongDocument {
 
         this._validateDocState();
         this.performance = new SongPerformance(this);
+        
+        (window as any).updateUI = () => this.notifier.notifyWatchers();
     }
 
     public toggleDisplayBrowserUrl() {

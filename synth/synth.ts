@@ -15,6 +15,86 @@ declare global {
     }
 }
 
+const songTagNameMap: { [key: number]: string } = {
+	[CharCode.a]: "beatCount",
+	[CharCode.b]: "bars",
+	[CharCode.c]: "songEq",
+	[CharCode.d]: "fadeInOut",
+	[CharCode.e]: "loopEnd",
+	[CharCode.f]: "eqFilter",
+	[CharCode.g]: "barCount",
+	[CharCode.h]: "unison",
+	[CharCode.i]: "instrumentCount",
+	[CharCode.j]: "patternCount",
+	[CharCode.k]: "key",
+	[CharCode.l]: "loopStart",
+	[CharCode.m]: "reverb",
+	[CharCode.n]: "channelCount",
+	[CharCode.o]: "channelOctave",
+	[CharCode.p]: "patterns",
+	[CharCode.q]: "effects",
+	[CharCode.r]: "rhythm",
+	[CharCode.s]: "scale",
+	[CharCode.t]: "tempo",
+	[CharCode.u]: "preset",
+	[CharCode.v]: "volume",
+	[CharCode.w]: "wave",
+	[CharCode.x]: "supersaw",
+	[CharCode.y]: "loopControls",
+	[CharCode.z]: "drumsetEnvelopes",
+	[CharCode.A]: "algorithm",
+	[CharCode.B]: "feedbackAmplitude",
+	[CharCode.C]: "chord",
+	[CharCode.D]: "detune",
+	[CharCode.E]: "envelopes",
+	[CharCode.F]: "feedbackType",
+	[CharCode.G]: "arpeggioSpeed",
+	[CharCode.H]: "harmonics",
+	[CharCode.I]: "stringSustain",
+	[CharCode.L]: "pan",
+	[CharCode.M]: "customChipWave",
+	[CharCode.N]: "songTitle",
+	[CharCode.O]: "limiterSettings",
+	[CharCode.P]: "operatorAmplitudes",
+	[CharCode.Q]: "operatorFrequencies",
+	[CharCode.R]: "operatorWaves",
+	[CharCode.S]: "spectrum",
+	[CharCode.T]: "startInstrument",
+	[CharCode.U]: "channelNames",
+	[CharCode.V]: "feedbackEnvelope",
+	[CharCode.W]: "pulseWidth",
+	[CharCode.X]: "aliases",
+};
+
+export function getSongTagName(charCode: number): string {  // export to shut up the compiler
+	return songTagNameMap[charCode] || "Unknown";
+}
+
+class URLDebugger {
+	private static _active: boolean = false;
+	private static _log: any[] = [];
+	private static _url: string = "";
+
+	public static start(url: string): void {
+		this._active = true;
+		this._log = [];
+		this._url = url;
+		console.log("URL Debugger Activated.");
+	}
+
+	public static log(tag: string, tagName: string, startIndex: number, endIndex: number, value: any): void {
+		if (!this._active) return;
+		this._log.push({ tag, tagName, value, raw: this._url.substring(startIndex, endIndex), indices: `${startIndex} - ${endIndex}` });
+	}
+
+	public static end(): void {
+		if (!this._active) return;
+		console.log("URL Parsing Finished. Log:");
+		console.table(this._log);
+		this._active = false;
+	}
+}
+
 const epsilon: number = (1.0e-24); // For detecting and avoiding float denormals, which have poor performance.
 
 // For performance debugging:
@@ -3583,6 +3663,7 @@ export class Song {
         this.channels.splice(insertIndex, 0, newChannel);
 
         this.updateDefaultChannelNames();
+        events.raise("channelsChanged", null);
     }
 
     public removeChannel(index: number): void {
@@ -3597,6 +3678,7 @@ export class Song {
         this._updateAllModTargetIndices(remap);
         this.channels.splice(index, 1);
         this.updateDefaultChannelNames();
+        events.raise("channelsChanged", null);
     }
 
 
@@ -3794,7 +3876,7 @@ export class Song {
         // This ensures the saved data is correct regardless of channel order.
         this.channels.forEach(channel => {
             if (channel.type === ChannelType.Pitch) {
-                buffer.push(base64IntToCharCode[channel.octave]);
+                buffer.push(base64IntToCharCode[channel.octave | 0]);
             }
         });
 
@@ -4445,10 +4527,17 @@ export class Song {
             this.initToDefault(true);
             return;
         }
+        this.channels.length = 0;
+        
         let charIndex: number = 0;
         // skip whitespace.
         while (compressed.charCodeAt(charIndex) <= CharCode.SPACE) charIndex++;
         // skip hash mark.
+        if (compressed.startsWith("##")) {
+			URLDebugger.start(compressed);
+			// Remove one hash so the rest of the logic doesn't get confused.
+			compressed = compressed.substring(1);
+		}
         if (compressed.charCodeAt(charIndex) == CharCode.HASH) charIndex++;
         // if it starts with curly brace, treat it as JSON.
         if (compressed.charCodeAt(charIndex) == CharCode.LEFT_CURLY_BRACE) {
@@ -4623,7 +4712,8 @@ export class Song {
         let command: number;
         let useSlowerArpSpeed: boolean = false;
         let useFastTwoNoteArp: boolean = false;
-        while (charIndex < compressed.length) switch (command = compressed.charCodeAt(charIndex++)) {
+		try {
+			while (charIndex < compressed.length) switch (command = compressed.charCodeAt(charIndex++)) {
             case SongTagCode.songTitle: {
                 // Length of song name string
                 var songNameLength = (base64CharCodeToInt[compressed.charCodeAt(charIndex++)] << 6) + base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
@@ -4633,6 +4723,7 @@ export class Song {
                 charIndex += songNameLength;
             } break;
             case SongTagCode.channelCount: {
+                const startIndex = charIndex;
                 if (fromSomethingBox) {
                     // SomethingBox format: read total count, then each channel's type.
                     const totalChannels =
@@ -4680,8 +4771,10 @@ export class Song {
                         }
                     }
                 }
+                URLDebugger.log("n", "channel count", startIndex, charIndex, { pitch: this.pitchChannelCount, noise: this.noiseChannelCount, mod: this.modChannelCount });
             } break;
             case SongTagCode.scale: {
+                const startIndex = charIndex;
                 this.scale = clamp(0, Config.scales.length, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
                 // All the scales were jumbled around by Jummbox. Just convert to free.
                 if (this.scale == Config.scales["dictionary"]["Custom"].index) {
@@ -4690,8 +4783,10 @@ export class Song {
                     }
                 }
                 if (fromBeepBox) this.scale = 0;
+                URLDebugger.log("s", "scale", startIndex, charIndex, { scale: this.scale, custom: this.scaleCustom });
             } break;
             case SongTagCode.key: {
+                const startIndex = charIndex;
                 if (beforeSeven && fromBeepBox) {
                     this.key = clamp(0, Config.keys.length, 11 - base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
                     this.octave = 0;
@@ -4712,22 +4807,28 @@ export class Song {
                     this.key = clamp(0, Config.keys.length, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
                     this.octave = clamp(Config.octaveMin, Config.octaveMax + 1, base64CharCodeToInt[compressed.charCodeAt(charIndex++)] + Config.octaveMin);
                 }
+                URLDebugger.log("k", "key", startIndex, charIndex, { key: this.key, octave: this.octave });
             } break;
             case SongTagCode.loopStart: {
+                const startIndex = charIndex;
                 if (beforeFive && fromBeepBox) {
                     this.loopStart = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
                 } else {
                     this.loopStart = (base64CharCodeToInt[compressed.charCodeAt(charIndex++)] << 6) + base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
                 }
+                URLDebugger.log("l", "loopStart", startIndex, charIndex, this.loopStart);
             } break;
             case SongTagCode.loopEnd: {
+                const startIndex = charIndex;
                 if (beforeFive && fromBeepBox) {
                     this.loopLength = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
                 } else {
                     this.loopLength = (base64CharCodeToInt[compressed.charCodeAt(charIndex++)] << 6) + base64CharCodeToInt[compressed.charCodeAt(charIndex++)] + 1;
                 }
+                URLDebugger.log("e", "loopEnd", startIndex, charIndex, this.loopLength);
             } break;
             case SongTagCode.tempo: {
+                const startIndex = charIndex;
                 if (beforeFour && fromBeepBox) {
                     this.tempo = [95, 120, 151, 190][base64CharCodeToInt[compressed.charCodeAt(charIndex++)]];
                 } else if (beforeSeven && fromBeepBox) {
@@ -4736,8 +4837,10 @@ export class Song {
                     this.tempo = (base64CharCodeToInt[compressed.charCodeAt(charIndex++)] << 6) | (base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
                 }
                 this.tempo = clamp(Config.tempoMin, Config.tempoMax + 1, this.tempo);
+                URLDebugger.log("t", "tempo", startIndex, charIndex, this.tempo);
             } break;
             case SongTagCode.reverb: {
+                const startIndex = charIndex;
                 if (beforeNine && fromBeepBox) {
                     legacyGlobalReverb = base64CharCodeToInt[compressed.charCodeAt(charIndex++)] * 12;
                     legacyGlobalReverb = clamp(0, Config.reverbRange, legacyGlobalReverb);
@@ -4747,16 +4850,20 @@ export class Song {
                 } else {
                     // Do nothing, BeepBox v9+ do not support song-wide reverb - JummBox still does via modulator.
                 }
+                URLDebugger.log("m", "reverb", startIndex, charIndex, legacyGlobalReverb);
             } break;
             case SongTagCode.beatCount: {
+                const startIndex = charIndex;
                 if (beforeThree && fromBeepBox) {
                     this.beatsPerBar = [6, 7, 8, 9, 10][base64CharCodeToInt[compressed.charCodeAt(charIndex++)]];
                 } else {
                     this.beatsPerBar = base64CharCodeToInt[compressed.charCodeAt(charIndex++)] + 1;
                 }
                 this.beatsPerBar = Math.max(Config.beatsPerBarMin, Math.min(Config.beatsPerBarMax, this.beatsPerBar));
+                URLDebugger.log("a", "beatCount", startIndex, charIndex, this.beatsPerBar);
             } break;
             case SongTagCode.barCount: {
+                const startIndex = charIndex;
                 const barCount: number = (base64CharCodeToInt[compressed.charCodeAt(charIndex++)] << 6) + base64CharCodeToInt[compressed.charCodeAt(charIndex++)] + 1;
                 this.barCount = validateRange(Config.barCountMin, Config.barCountMax, barCount);
                 for (let channelIndex: number = 0; channelIndex < this.getChannelCount(); channelIndex++) {
@@ -4765,8 +4872,10 @@ export class Song {
                     }
                     this.channels[channelIndex].bars.length = this.barCount;
                 }
+                URLDebugger.log("g", "barCount", startIndex, charIndex, this.barCount);
             } break;
             case SongTagCode.patternCount: {
+                const startIndex = charIndex;
                 let patternsPerChannel: number;
                 if (beforeEight && fromBeepBox) {
                     patternsPerChannel = base64CharCodeToInt[compressed.charCodeAt(charIndex++)] + 1;
@@ -4782,8 +4891,10 @@ export class Song {
                     }
                     patterns.length = this.patternsPerChannel;
                 }
+                URLDebugger.log("j", "patternCount", startIndex, charIndex, this.patternsPerChannel);
             } break;
             case SongTagCode.instrumentCount: {
+                const startIndex = charIndex;
                 if (fromSomethingBox) {
                     const instrumentsFlagBits: number = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
                     this.layeredInstruments = (instrumentsFlagBits & (1 << 1)) != 0;
@@ -4827,9 +4938,10 @@ export class Song {
                             }
                         }
                     }
-                
+                    URLDebugger.log("i", "instrumentCount", startIndex, charIndex, { layered: this.layeredInstruments, pattern: this.patternInstruments });
             } break;
             case SongTagCode.rhythm: {
+                const startIndex = charIndex;
                if (fromSomethingBox) {
                    this.rhythm = clamp(0, Config.rhythms.length, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
                } else if (!fromUltraBox && !fromSlarmoosBox) {
@@ -4853,8 +4965,10 @@ export class Song {
                 } else {
                     this.rhythm = clamp(0, Config.rhythms.length, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
                 }
+                URLDebugger.log("r", "rhythm", startIndex, charIndex, this.rhythm);
             } break;
             case SongTagCode.channelOctave: {
+                const startIndex = charIndex;
                if (fromSomethingBox) {
                    this.channels.forEach(channel => {
                        if (channel.type === ChannelType.Pitch) {
@@ -4879,8 +4993,10 @@ export class Song {
                        }
                    }
                 }
+                URLDebugger.log("o", "channelOctave", startIndex, charIndex, this.channels.map(c => c.octave));
             } break;
             case SongTagCode.startInstrument: {
+                const startIndex = charIndex;
                 instrumentIndexIterator++;
                 if (instrumentIndexIterator >= this.channels[instrumentChannelIterator].instruments.length) {
                     instrumentChannelIterator++;
@@ -4925,8 +5041,10 @@ export class Song {
                         instrument.effects |= 1 << EffectType.chord;
                     }
                 }
+                URLDebugger.log("T", "startInstrument", startIndex, charIndex, { channel: instrumentChannelIterator, instrument: instrumentIndexIterator, type: instrument.type });
             } break;
             case SongTagCode.preset: {
+                const startIndex = charIndex;
                 const presetValue: number = (base64CharCodeToInt[compressed.charCodeAt(charIndex++)] << 6) | (base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
                 this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator].preset = presetValue;
                 // Picked string was inserted before custom chip in JB v5, so bump up preset index.
@@ -4952,9 +5070,11 @@ export class Song {
                 if (fromBeepBox && presetValue == EditorConfig.nameToPresetValue("grand piano 1")) {
                     this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator].preset = EditorConfig.nameToPresetValue("grand piano 3")!;
                 }
+                URLDebugger.log("u", "preset", startIndex, charIndex, presetValue);
             } break;
             
             case SongTagCode.wave: { // 119, which is the same as SongTagCode.pulseWidth
+                const startIndex = charIndex;
                 const instrument = this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator];
  
                 // First, handle the very old, self-contained BeepBox legacy formats.
@@ -5027,11 +5147,12 @@ export class Song {
                         }
                     }
                 }
+                URLDebugger.log("w", "wave", startIndex, charIndex, { type: instrument.type, chipWave: instrument.chipWave, chipNoise: instrument.chipNoise, pulseWidth: instrument.pulseWidth });
             } break;
             
 	case SongTagCode.eqFilter: {
+        const startIndex = charIndex;
         if ((beforeNine && fromBeepBox) || (beforeFive && fromJummBox) || (beforeFour && fromGoldBox)) {
-            // This block handles various legacy formats correctly.
             if (beforeSeven && fromBeepBox) {
                 const legacyToCutoff: number[] = [10, 6, 3, 0, 8, 5, 2];
                 const legacyToEnvelope: string[] = ["none", "none", "none", "none", "decay 1", "decay 2", "decay 3"];
@@ -5087,7 +5208,6 @@ export class Song {
             if (fromBeepBox || typeCheck == 0) {
                 instrument.eqFilterType = false;
                 
-                // CORRECTED LOGIC: Read the next byte for ALL modern formats that have it.
                 if (fromJummBox || fromGoldBox || fromUltraBox || fromSlarmoosBox || fromSomethingBox) {
                     typeCheck = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
                 }
@@ -5137,12 +5257,13 @@ export class Song {
                 instrument.eqFilterSimpleCut = clamp(0, Config.filterSimpleCutRange, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
                 instrument.eqFilterSimplePeak = clamp(0, Config.filterSimplePeakRange, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
             }
+            URLDebugger.log("f", "eqFilter", startIndex, charIndex, { type: instrument.eqFilterType, cut: instrument.eqFilterSimpleCut, peak: instrument.eqFilterSimplePeak, points: instrument.eqFilter.controlPointCount });
         }
     } break;
             
 	
 	case SongTagCode.loopControls: {
-        // CORRECTED LOGIC: Read loop controls for all modern formats that write them.
+        const startIndex = charIndex;
         if (fromSomethingBox || fromSlarmoosBox || fromUltraBox) {
             if (beforeThree && fromUltraBox) {
                 // Still have to support the old and bad loop control data format written as a test, sigh.
@@ -5216,8 +5337,10 @@ export class Song {
             instrument.convertLegacySettings(legacySettings, forceSimpleFilter);
 
         }
+        URLDebugger.log("y", "loopControls", startIndex, charIndex, "Complex logic, skipped value logging.");
     } break;
             case SongTagCode.drumsetEnvelopes: {
+                const startIndex = charIndex;
                 const instrument: Instrument = this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator];
                 const pregoldToEnvelope: number[] = [0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, 16, 17, 18, 19, 20, 21, 23, 24, 25, 27, 28, 29, 32, 33, 34, 31, 11];
                 if ((beforeNine && fromBeepBox) || (beforeFive && fromJummBox) || (beforeFour && fromGoldBox)) {
@@ -5241,16 +5364,20 @@ export class Song {
                         instrument.convertLegacySettings(legacySettings, forceSimpleFilter);
                     }
                 } else {
-                    // This tag is now only used for drumset filter envelopes.
-                    for (let i: number = 0; i < Config.drumCount; i++) {
-                        let aa: number = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
-                        if ((beforeTwo && fromGoldBox) || (!fromGoldBox && !fromUltraBox && !fromSlarmoosBox)) aa = pregoldToEnvelope[aa];
-                        if (!fromSlarmoosBox && aa >= 2) aa++; //2 for pitch
-                        instrument.drumsetEnvelopes[i] = clamp(0, Config.envelopes.length, aa);
+                    // In modern formats, this tag is only used for drumset filter envelopes.
+                    if (instrument.type == InstrumentType.drumset) {
+                        for (let i: number = 0; i < Config.drumCount; i++) {
+                            let aa: number = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
+                            if ((beforeTwo && fromGoldBox) || (!fromGoldBox && !fromUltraBox && !fromSlarmoosBox)) aa = pregoldToEnvelope[aa];
+                            if (!fromSlarmoosBox && aa >= 2) aa++; //2 for pitch
+                            instrument.drumsetEnvelopes[i] = clamp(0, Config.envelopes.length, aa);
+                        }
                     }
                 }
+                URLDebugger.log("z", "drumsetEnvelopes", startIndex, charIndex, "Complex logic, skipped value logging.");
             } break;
             case SongTagCode.pulseWidth: {
+                const startIndex = charIndex;
                 const instrument: Instrument = this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator];
                 instrument.pulseWidth = clamp(0, Config.pulseWidthRange + (+(fromJummBox)) + 1, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
                 if (fromBeepBox) {
@@ -5267,23 +5394,24 @@ export class Song {
                     instrument.convertLegacySettings(legacySettings, forceSimpleFilter);
                 }
  
-                // CORRECTED LOGIC: Read decimalOffset for all modern formats that write it.
                 if (fromSomethingBox || (fromUltraBox && !beforeFour) || fromSlarmoosBox) {
                     instrument.decimalOffset = clamp(0, 99 + 1, (base64CharCodeToInt[compressed.charCodeAt(charIndex++)] << 6) + base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
                 }
- 
+                URLDebugger.log("W", "pulseWidth", startIndex, charIndex, { width: instrument.pulseWidth, offset: instrument.decimalOffset });
             } break;
 
             case SongTagCode.stringSustain: {
+                const startIndex = charIndex;
                 const instrument: Instrument = this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator];
                 const sustainValue: number = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
                 instrument.stringSustain = clamp(0, Config.stringSustainRange, sustainValue & 0x1F);
                 instrument.stringSustainType = Config.enableAcousticSustain ? clamp(0, SustainType.length, sustainValue >> 5) : SustainType.bright;
+                URLDebugger.log("I", "stringSustain", startIndex, charIndex, { sustain: instrument.stringSustain, type: instrument.stringSustainType });
             } break;
             
 	case SongTagCode.fadeInOut: {
+        const startIndex = charIndex;
         if ((beforeNine && fromBeepBox) || ((fromJummBox && beforeFive) || (beforeFour && fromGoldBox))) {
-            // This block handles various legacy formats correctly.
             const legacySettings = [
                 { transition: "interrupt", fadeInSeconds: 0.0, fadeOutTicks: -1 },
                 { transition: "normal", fadeInSeconds: 0.0, fadeOutTicks: -3 },
@@ -5346,14 +5474,15 @@ export class Song {
             instrument.fadeIn = clamp(0, Config.fadeInRange, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
             instrument.fadeOut = clamp(0, Config.fadeOutTicks.length, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
             
-            // CORRECTED LOGIC: Read the third byte for ALL modern formats that write it.
             if (fromSomethingBox || fromJummBox || fromGoldBox || fromUltraBox || fromSlarmoosBox) {
                 instrument.clicklessTransition = base64CharCodeToInt[compressed.charCodeAt(charIndex++)] ? true : false;
             }
         }
+        URLDebugger.log("d", "fadeInOut", startIndex, charIndex, { fadeIn: this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator].fadeIn, fadeOut: this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator].fadeOut });
     } break;
     
             case SongTagCode.songEq: { //deprecated vibrato tag repurposed for songEq
+                const startIndex = charIndex;
                 if ((beforeNine && fromBeepBox) || ((fromJummBox && beforeFive) || (beforeFour && fromGoldBox))) {
                     if (beforeSeven && fromBeepBox) {
                         if (beforeThree && fromBeepBox) {
@@ -5464,7 +5593,6 @@ export class Song {
                    // Get subfilters as well. Skip Index 0, is a copy of the base filter.
                    this.eqSubFilters[0] = this.eqFilter;
 
-                   // CORRECTED LOGIC: Read subfilters for all modern formats that support them.
                    if (fromSomethingBox || (fromSlarmoosBox && !beforeFour)) {
                        let usingSubFilterBitfield: number = (base64CharCodeToInt[compressed.charCodeAt(charIndex++)] << 6) | (base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
                        for (let j: number = 0; j < Config.filterMorphCount - 1; j++) {
@@ -5489,8 +5617,10 @@ export class Song {
                        }
                    }
                }
+               URLDebugger.log("c", "songEq", startIndex, charIndex, "skipped value logging for this");
            } break;
             case SongTagCode.arpeggioSpeed: {
+                const startIndex = charIndex;
                 // Deprecated, but supported for legacy purposes
                 if ((fromJummBox && beforeFive) || (beforeFour && fromGoldBox)) {
                     const instrument: Instrument = this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator];
@@ -5500,8 +5630,10 @@ export class Song {
                 else {
                     // Do nothing, deprecated for now
                 }
+                URLDebugger.log("G", "arpeggioSpeed", startIndex, charIndex, "Legacy tag, skipped value logging.");
             } break;
             case SongTagCode.unison: {
+                const startIndex = charIndex;
                 if (beforeThree && fromBeepBox) {
                     const channelIndex: number = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
                     const instrument = this.channels[channelIndex].instruments[0];
@@ -5585,9 +5717,10 @@ export class Song {
                         instrument.unisonSign = Config.unisons[instrument.unison].sign;
                     }
                 }
-
+                URLDebugger.log("h", "unison", startIndex, charIndex, "Complex logic, skipped value logging.");
             } break;
             case SongTagCode.chord: {
+                const startIndex = charIndex;
                 if ((beforeNine && fromBeepBox) || ((fromJummBox && beforeFive) || (beforeFour && fromGoldBox))) {
                     const instrument: Instrument = this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator];
                     instrument.chord = clamp(0, Config.chords.length, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
@@ -5598,14 +5731,15 @@ export class Song {
                 } else {
                     // Do nothing? This song tag code is deprecated for now.
                 }
+                URLDebugger.log("C", "chord", startIndex, charIndex, "Legacy tag, skipped value logging.");
             } break;
             
 	
             
             case SongTagCode.effects: {
+                const startIndex = charIndex;
                 const instrument: Instrument = this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator];
                 if ((beforeNine && fromBeepBox) || ((fromJummBox && beforeFive) || (beforeFour && fromGoldBox))) {
-                    // This block handles various legacy formats correctly.
                     instrument.effects = (base64CharCodeToInt[compressed.charCodeAt(charIndex++)] & ((1 << EffectType.length) - 1));
                     if (legacyGlobalReverb == 0 && !((fromJummBox && beforeFive) || (beforeFour && fromGoldBox))) {
                         instrument.effects &= ~(1 << EffectType.reverb);
@@ -5640,7 +5774,6 @@ export class Song {
                         if (fromBeepBox || typeCheck == 0) {
                             instrument.noteFilterType = false;
                             
-                            // CORRECTED LOGIC: Read the next byte for ALL modern formats that have it.
                             if (fromJummBox || fromGoldBox || fromUltraBox || fromSlarmoosBox || fromSomethingBox) {
                                 typeCheck = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
                             }
@@ -5781,8 +5914,10 @@ export class Song {
                     }
                 }
                 instrument.effects &= (1 << EffectType.length) - 1;
+                URLDebugger.log("q", "effects", startIndex, charIndex, "Complex logic, skipped value logging.");
             } break;
             case SongTagCode.volume: {
+                const startIndex = charIndex;
                 if (beforeThree && fromBeepBox) {
                     const channelIndex: number = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
                     const instrument: Instrument = this.channels[channelIndex].instruments[0];
@@ -5805,8 +5940,10 @@ export class Song {
                     // Volume is stored in two bytes in jummbox just in case range ever exceeds one byte, e.g. through later waffling on the subject.
                     instrument.volume = Math.round(clamp(-Config.volumeRange / 2, Config.volumeRange / 2 + 1, ((base64CharCodeToInt[compressed.charCodeAt(charIndex++)] << 6) | (base64CharCodeToInt[compressed.charCodeAt(charIndex++)])) - Config.volumeRange / 2));
                 }
+                URLDebugger.log("v", "volume", startIndex, charIndex, this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator].volume);
             } break;
             case SongTagCode.pan: {
+                const startIndex = charIndex;
                 if (beforeNine && fromBeepBox) {
                     // Beepbox has a panMax of 8 (9 total positions), Jummbox has a panMax of 100 (101 total positions)
                     const instrument: Instrument = this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator];
@@ -5821,8 +5958,10 @@ export class Song {
                 } else {
                     // Do nothing? This song tag code is deprecated for now.
                 }
+                URLDebugger.log("L", "pan", startIndex, charIndex, "Legacy tag, skipped value logging.");
             } break;
             case SongTagCode.detune: {
+                const startIndex = charIndex;
                 const instrument: Instrument = this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator];
 
                 if ((fromJummBox && beforeFive) || (beforeFour && fromGoldBox)) {
@@ -5832,8 +5971,10 @@ export class Song {
                 } else {
                     // Now in v5, tag code is deprecated and handled thru detune effects.
                 }
+                URLDebugger.log("D", "detune", startIndex, charIndex, "Legacy tag, skipped value logging.");
             } break;
             case SongTagCode.customChipWave: {
+                const startIndex = charIndex;
                 let instrument: Instrument = this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator];
                 // Pop custom wave values
                 for (let j: number = 0; j < 64; j++) {
@@ -5858,9 +5999,10 @@ export class Song {
 
                 // 65th, last sample is for anti-aliasing
                 instrument.customChipWaveIntegral[64] = 0.0;
-
+                URLDebugger.log("M", "customChipWave", startIndex, charIndex, "Skipped value logging.");
             } break;
             case SongTagCode.limiterSettings: {
+                const startIndex = charIndex;
                 let nextValue: number = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
 
                 // Check if limiter settings are used... if not, restore to default
@@ -5878,8 +6020,10 @@ export class Song {
                     this.limitThreshold = base64CharCodeToInt[compressed.charCodeAt(charIndex++)] / 20.0;
                     this.masterGain = ((base64CharCodeToInt[compressed.charCodeAt(charIndex++)] << 6) + base64CharCodeToInt[compressed.charCodeAt(charIndex++)]) / 50.0;
                 }
+                URLDebugger.log("O", "limiterSettings", startIndex, charIndex, "Skipped value logging.");
             } break;
             case SongTagCode.channelNames: {
+                const startIndex = charIndex;
                 for (let channel: number = 0; channel < this.getChannelCount(); channel++) {
                     // Length of channel name string. Due to some crazy Unicode characters this needs to be 2 bytes...
                    let channelNameLength;
@@ -5895,8 +6039,10 @@ export class Song {
 
                     charIndex += channelNameLength;
                 }
+                URLDebugger.log("U", "channelNames", startIndex, charIndex, this.channels.map(c => c.name));
             } break;
             case SongTagCode.algorithm: {
+                const startIndex = charIndex;
                 const instrument: Instrument = this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator];
                 if (instrument.type == InstrumentType.fm) {
                     instrument.algorithm = clamp(0, Config.algorithms.length, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
@@ -5933,8 +6079,10 @@ export class Song {
                     const legacySettings: LegacySettings = legacySettingsCache![instrumentChannelIterator][instrumentIndexIterator];
                     instrument.convertLegacySettings(legacySettings, forceSimpleFilter);
                 }
+                URLDebugger.log("A", "algorithm", startIndex, charIndex, "Complex logic, skipped value logging.");
             } break;
             case SongTagCode.supersaw: {
+                const startIndex = charIndex;
                 if (fromGoldBox && !beforeFour && beforeSix) {
                     //is it more useful to save base64 characters or url length?
                     const chipWaveForCompat = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
@@ -5967,8 +6115,10 @@ export class Song {
                     instrument.supersawSpread = clamp(0, Config.supersawSpreadMax + 1, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
                     instrument.supersawShape = clamp(0, Config.supersawShapeMax + 1, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
                 }
+                URLDebugger.log("x", "supersaw", startIndex, charIndex, "Complex logic, skipped value logging.");
             } break;
             case SongTagCode.feedbackType: {
+                const startIndex = charIndex;
                 const instrument: Instrument = this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator];
                 if (instrument.type == InstrumentType.fm) {
                     instrument.feedbackType = clamp(0, Config.feedbacks.length, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
@@ -5995,12 +6145,15 @@ export class Song {
                         charIndex++; //???? weirdly needs to skip the end character or it'll use that next loop instead of like just moving to the next one itself
                     }
                 }
-
+                URLDebugger.log("F", "feedbackType", startIndex, charIndex, "Complex logic, skipped value logging.");
             } break;
             case SongTagCode.feedbackAmplitude: {
+                const startIndex = charIndex;
                 this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator].feedbackAmplitude = clamp(0, Config.operatorAmplitudeMax + 1, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
+                URLDebugger.log("B", "feedbackAmplitude", startIndex, charIndex, this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator].feedbackAmplitude);
             } break;
             case SongTagCode.feedbackEnvelope: {
+                const startIndex = charIndex;
                 if ((beforeNine && fromBeepBox) || (beforeFive && fromJummBox) || (beforeFour && fromGoldBox)) {
                     const pregoldToEnvelope: number[] = [0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, 16, 17, 18, 19, 20, 21, 23, 24, 25, 27, 28, 29, 32, 33, 34, 31, 11];
                     const instrument: Instrument = this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator];
@@ -6013,8 +6166,10 @@ export class Song {
                 } else {
                     // Do nothing? This song tag code is deprecated for now.
                 }
+                URLDebugger.log("V", "feedbackEnvelope", startIndex, charIndex, "Legacy tag, skipped value logging.");
             } break;
             case SongTagCode.operatorFrequencies: {
+                const startIndex = charIndex;
                 const instrument = this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator];
                 if (beforeThree && fromGoldBox) {
                     const freqToGold3 = [4, 5, 6, 7, 8, 10, 12, 13, 14, 15, 16, 18, 20, 22, 24, 2, 1, 9, 17, 19, 21, 23, 0, 3];
@@ -6036,16 +6191,20 @@ export class Song {
                         instrument.operators[o].frequency = clamp(0, Config.operatorFrequencies.length, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
                     }
                 }
+                URLDebugger.log("Q", "operatorFrequencies", startIndex, charIndex, instrument.operators.map(op => op.frequency));
             } break;
             case SongTagCode.operatorAmplitudes: {
+                const startIndex = charIndex;
                 const instrument: Instrument = this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator];
                 for (let o: number = 0; o < (instrument.type == InstrumentType.fm6op ? 6 : Config.operatorCount); o++) {
                     instrument.operators[o].amplitude = clamp(0, Config.operatorAmplitudeMax + 1, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
                 }
+                URLDebugger.log("P", "operatorAmplitudes", startIndex, charIndex, instrument.operators.map(op => op.amplitude));
             } break;
             
 	
             case SongTagCode.envelopes: {
+                const startIndex = charIndex;
                 const pregoldToEnvelope: number[] = [0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, 16, 17, 18, 19, 20, 21, 23, 24, 25, 27, 28, 29, 32, 33, 34, 31, 11];
                 const jummToUltraEnvelope: number[] = [0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, 16, 17, 18, 19, 20, 21, 23, 24, 25, 58, 59, 60];
                 const slarURL3toURL4Envelope: number[] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 8, 9, 10, 11, 12, 13, 14];
@@ -6113,7 +6272,6 @@ export class Song {
                         let envelopeInverse: boolean = false;
                         let envelopeDiscrete: boolean = globalEnvelopeDiscrete;
                         
-                        // CORRECTED LOGIC: This block must run for somethingbox.
                         if (fromSomethingBox || (fromSlarmoosBox && !beforeThree)) {
                             if (Config.newEnvelopes[envelope].name == "pitch") {
                                 if (!instrument.isNoiseInstrument) {
@@ -6194,8 +6352,10 @@ export class Song {
                         }
                     }
                 }
+                URLDebugger.log("E", "envelopes", startIndex, charIndex, "Complex logic, skipped value logging.");
             } break;
             case SongTagCode.operatorWaves: {
+                const startIndex = charIndex;
                 const instrument: Instrument = this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator];
 
                 if (beforeThree && fromGoldBox) {
@@ -6225,9 +6385,10 @@ export class Song {
                         }
                     }
                 }
-
+                URLDebugger.log("R", "operatorWaves", startIndex, charIndex, instrument.operators.map(op => op.waveform));
             } break;
             case SongTagCode.spectrum: {
+                const startIndex = charIndex;
                 const instrument: Instrument = this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator];
                 if (instrument.type == InstrumentType.spectrum) {
                     const byteCount: number = Math.ceil(Config.spectrumControlPoints * Config.spectrumControlPointBits / 6)
@@ -6250,8 +6411,10 @@ export class Song {
                 } else {
                     throw new Error("Unhandled instrument type for spectrum song tag code.");
                 }
+                URLDebugger.log("S", "spectrum", startIndex, charIndex, "Skipped value logging.");
             } break;
             case SongTagCode.harmonics: {
+                const startIndex = charIndex;
                 const instrument: Instrument = this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator];
                 const byteCount: number = Math.ceil(Config.harmonicsControlPoints * Config.harmonicsControlPointBits / 6);
                 const bits: BitFieldReader = new BitFieldReader(compressed, charIndex, charIndex + byteCount);
@@ -6260,8 +6423,10 @@ export class Song {
                 }
                 instrument.harmonicsWave.markCustomWaveDirty();
                 charIndex += byteCount;
+                URLDebugger.log("H", "harmonics", startIndex, charIndex, "Skipped value logging.");
             } break;
             case SongTagCode.aliases: {
+                const startIndex = charIndex;
                 if ((fromJummBox && beforeFive) || (fromGoldBox && beforeFour)) {
                     const instrument: Instrument = this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator];
                     instrument.aliases = (base64CharCodeToInt[compressed.charCodeAt(charIndex++)]) ? true : false;
@@ -6275,9 +6440,11 @@ export class Song {
                         instrument.decimalOffset = clamp(0, 50 + 1, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
                     }
                 }
+                URLDebugger.log("X", "aliases", startIndex, charIndex, "Legacy tag, skipped value logging.");
             }
                 break;
             case SongTagCode.bars: {
+                const startIndex = charIndex;
                 let subStringLength: number;
                 if (beforeThree && fromBeepBox) {
                     const channelIndex: number = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
@@ -6309,8 +6476,10 @@ export class Song {
                     }
                 }
                 charIndex += subStringLength;
+                URLDebugger.log("b", "bars", startIndex, charIndex, "Skipped value logging.");
             } break;
             case SongTagCode.patterns: {
+                const startIndex = charIndex;
                 let bitStringLength: number = 0;
                 let channelIndex: number;
                 let largerChords: boolean = !((beforeFour && fromJummBox) || fromBeepBox);
@@ -6384,7 +6553,6 @@ export class Song {
                                          instrument.modChannels[mod] = targetChannel;
                                          instrument.modInstruments[mod] = clamp(0, this.channels[targetChannel].instruments.length + 2, bits.read(neededModInstrumentIndexBits));
                                        } else {
-                                           // Legacy format: Can only target pitch or noise channels.
                                           const legacyIndex = bits.read(8);
                                           let channelsFound = 0;
                                           let targetFound = false;
@@ -6402,7 +6570,6 @@ export class Song {
                                        }
                                     break;
                                     case 1: // Noise
-                                       // Legacy format: The stored index is relative to noise channels.
                                        const relativeNoiseIndex = bits.read(8);
                                        let absoluteNoiseIndex = 0;
                                        let noiseChannelsFound = 0;
@@ -6430,12 +6597,7 @@ export class Song {
                                     instrument.modulators[mod] = bits.read(6);
                                 }
 
- 
-//                               // In legacy formats, a status of 1 meant "noise channel" and the index was relative.
-//                              if (status == 1) {
-//                                  const noiseChannelIndex = instrument.modChannels[mod] - this.pitchChannelCount;
-//                                  instrument.modChannels[mod] = this.channels.findIndex((ch, i) => this.getChannelIsNoise(i) && i >= this.pitchChannelCount && (i - this.pitchChannelCount) === noiseChannelIndex);
-//                              }
+
 
                                 if (!jumfive && (Config.modulators[instrument.modulators[mod]].name == "eq filter" || Config.modulators[instrument.modulators[mod]].name == "note filter" || Config.modulators[instrument.modulators[mod]].name == "song eq")) {
                                     instrument.modFilterTypes[mod] = bits.read(6);
@@ -6791,11 +6953,20 @@ export class Song {
                         }
                     }
                 }
+                URLDebugger.log("p", "patterns", startIndex, charIndex, "Complex logic, skipped value logging.");
             } break;
             default: {
                 throw new Error("Unrecognized song tag code " + String.fromCharCode(command) + " at index " + (charIndex - 1) + " " + compressed.substring(/*charIndex - 2*/0, charIndex));
             } break;
         }
+		} catch (error) {
+			console.error("Error during parsing:", error);
+			console.error(`Parsing failed near index ${charIndex}. Context: "...${compressed.substring(Math.max(0, charIndex - 15), charIndex)}[ERROR HERE]${compressed.substring(charIndex, charIndex + 15)}..."`);
+			// Re-throw so normal error handling can proceed if necessary.
+			throw error;
+		} finally {
+			URLDebugger.end();
+		}
 
         if (Config.willReloadForCustomSamples) {
             window.location.hash = this.toBase64String();
