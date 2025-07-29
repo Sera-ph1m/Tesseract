@@ -20489,8 +20489,9 @@ li.select2-results__option[role=group] > strong:hover {
                     }
                 }
                 let currentPart = this.beat * Config.partsPerBeat + this.part;
-                for (let channelIndex = this.song.pitchChannelCount + this.song.noiseChannelCount; channelIndex < this.song.getChannelCount(); channelIndex++) {
-                    if (!(this.song.channels[channelIndex].muted)) {
+                for (let channelIndex = 0; channelIndex < this.song.getChannelCount(); channelIndex++) {
+                    const channel = this.song.channels[channelIndex];
+                    if (channel.type === ChannelType.Mod && !channel.muted) {
                         let pattern;
                         for (let currentBar = this.bar; currentBar >= 0; currentBar--) {
                             pattern = this.song.getPattern(channelIndex, currentBar);
@@ -20732,14 +20733,18 @@ li.select2-results__option[role=group] > strong:hover {
             if (this.song == null)
                 return 0;
             let partsInBar = Config.partsPerBeat * this.song.beatsPerBar;
-            for (let channel = this.song.pitchChannelCount + this.song.noiseChannelCount; channel < this.song.getChannelCount(); channel++) {
-                let pattern = this.song.getPattern(channel, bar);
+            for (let channelIndex = 0; channelIndex < this.song.getChannelCount(); channelIndex++) {
+                const channel = this.song.channels[channelIndex];
+                if (channel.type !== ChannelType.Mod)
+                    continue;
+                let pattern = this.song.getPattern(channelIndex, bar);
                 if (pattern != null) {
-                    let instrument = this.song.channels[channel].instruments[pattern.instruments[0]];
+                    let instrument = channel.instruments[pattern.instruments[0]];
                     for (let mod = 0; mod < Config.modCount; mod++) {
-                        if (instrument.modulators[mod] == Config.modulators.dictionary["next bar"].index) {
+                        if (instrument.modulators[mod] ==
+                            Config.modulators.dictionary["next bar"].index) {
                             for (const note of pattern.notes) {
-                                if (note.pitches[0] == (Config.modCount - 1 - mod)) {
+                                if (note.pitches[0] == Config.modCount - 1 - mod) {
                                     if (partsInBar > note.start)
                                         partsInBar = note.start;
                                 }
@@ -20758,18 +20763,19 @@ li.select2-results__option[role=group] > strong:hover {
             let hasTempoMods = false;
             let hasNextBarMods = false;
             let prevTempo = this.song.tempo;
-            for (let channel = this.song.getChannelCount() - 1; channel >= this.song.pitchChannelCount + this.song.noiseChannelCount; channel--) {
+            for (let channelIndex = 0; channelIndex < this.song.getChannelCount(); channelIndex++) {
+                const channel = this.song.channels[channelIndex];
+                if (channel.type !== ChannelType.Mod)
+                    continue;
                 for (let bar = startBar; bar < endBar; bar++) {
-                    let pattern = this.song.getPattern(channel, bar);
+                    let pattern = this.song.getPattern(channelIndex, bar);
                     if (pattern != null) {
-                        let instrument = this.song.channels[channel].instruments[pattern.instruments[0]];
+                        let instrument = channel.instruments[pattern.instruments[0]];
                         for (let mod = 0; mod < Config.modCount; mod++) {
-                            if (instrument.modulators[mod] == Config.modulators.dictionary["tempo"].index) {
+                            if (instrument.modulators[mod] == Config.modulators.dictionary["tempo"].index)
                                 hasTempoMods = true;
-                            }
-                            if (instrument.modulators[mod] == Config.modulators.dictionary["next bar"].index) {
+                            if (instrument.modulators[mod] == Config.modulators.dictionary["next bar"].index)
                                 hasNextBarMods = true;
-                            }
                         }
                     }
                 }
@@ -20778,27 +20784,39 @@ li.select2-results__option[role=group] > strong:hover {
                 let latestTempoPin = null;
                 let latestTempoValue = 0;
                 for (let bar = startBar - 1; bar >= 0; bar--) {
-                    for (let channel = this.song.getChannelCount() - 1; channel >= this.song.pitchChannelCount + this.song.noiseChannelCount; channel--) {
-                        let pattern = this.song.getPattern(channel, bar);
+                    for (let channelIndex = 0; channelIndex < this.song.getChannelCount(); channelIndex++) {
+                        const channel = this.song.channels[channelIndex];
+                        if (channel.type !== ChannelType.Mod)
+                            continue;
+                        let pattern = this.song.getPattern(channelIndex, bar);
                         if (pattern != null) {
                             let instrumentIdx = pattern.instruments[0];
-                            let instrument = this.song.channels[channel].instruments[instrumentIdx];
+                            let instrument = this.song.channels[channelIndex].instruments[instrumentIdx];
                             let partsInBar = this.findPartsInBar(bar);
                             for (const note of pattern.notes) {
                                 if (instrument.modulators[Config.modCount - 1 - note.pitches[0]] == Config.modulators.dictionary["tempo"].index) {
-                                    if (note.start < partsInBar && (latestTempoPin == null || note.end > latestTempoPin)) {
+                                    if (note.start < partsInBar &&
+                                        (latestTempoPin == null || note.end > latestTempoPin)) {
                                         if (note.end <= partsInBar) {
                                             latestTempoPin = note.end;
-                                            latestTempoValue = note.pins[note.pins.length - 1].size;
+                                            latestTempoValue =
+                                                note.pins[note.pins.length - 1].size;
                                         }
                                         else {
                                             latestTempoPin = partsInBar;
                                             for (let pinIdx = 0; pinIdx < note.pins.length; pinIdx++) {
-                                                if (note.pins[pinIdx].time + note.start > partsInBar) {
-                                                    const transitionLength = note.pins[pinIdx].time - note.pins[pinIdx - 1].time;
-                                                    const toNextBarLength = partsInBar - note.start - note.pins[pinIdx - 1].time;
-                                                    const deltaVolume = note.pins[pinIdx].size - note.pins[pinIdx - 1].size;
-                                                    latestTempoValue = Math.round(note.pins[pinIdx - 1].size + deltaVolume * toNextBarLength / transitionLength);
+                                                if (note.pins[pinIdx].time + note.start >
+                                                    partsInBar) {
+                                                    const transitionLength = note.pins[pinIdx].time -
+                                                        note.pins[pinIdx - 1].time;
+                                                    const toNextBarLength = partsInBar -
+                                                        note.start -
+                                                        note.pins[pinIdx - 1].time;
+                                                    const deltaVolume = note.pins[pinIdx].size -
+                                                        note.pins[pinIdx - 1].size;
+                                                    latestTempoValue = Math.round(note.pins[pinIdx - 1].size +
+                                                        (deltaVolume * toNextBarLength) /
+                                                            transitionLength);
                                                     pinIdx = note.pins.length;
                                                 }
                                             }
@@ -20809,8 +20827,10 @@ li.select2-results__option[role=group] > strong:hover {
                         }
                     }
                     if (latestTempoPin != null) {
-                        prevTempo = latestTempoValue + Config.modulators.dictionary["tempo"].convertRealFactor;
-                        bar = -1;
+                        prevTempo =
+                            latestTempoValue +
+                                Config.modulators.dictionary["tempo"].convertRealFactor;
+                        break;
                     }
                 }
             }
@@ -20826,11 +20846,14 @@ li.select2-results__option[role=group] > strong:hover {
                     }
                     if (hasTempoMods) {
                         let foundMod = false;
-                        for (let channel = this.song.getChannelCount() - 1; channel >= this.song.pitchChannelCount + this.song.noiseChannelCount; channel--) {
+                        for (let channelIndex = 0; channelIndex < this.song.getChannelCount(); channelIndex++) {
+                            const channel = this.song.channels[channelIndex];
+                            if (channel.type !== ChannelType.Mod)
+                                continue;
                             if (foundMod == false) {
-                                let pattern = this.song.getPattern(channel, bar);
+                                let pattern = this.song.getPattern(channelIndex, bar);
                                 if (pattern != null) {
-                                    let instrument = this.song.channels[channel].instruments[pattern.instruments[0]];
+                                    let instrument = channel.instruments[pattern.instruments[0]];
                                     for (let mod = 0; mod < Config.modCount; mod++) {
                                         if (foundMod == false && instrument.modulators[mod] == Config.modulators.dictionary["tempo"].index
                                             && pattern.notes.find(n => n.pitches[0] == (Config.modCount - 1 - mod))) {
@@ -21506,17 +21529,19 @@ li.select2-results__option[role=group] > strong:hover {
                             const partTimeTickEnd = (ticksIntoBar + 1) / Config.ticksPerPart;
                             const partTimeStart = partTimeTickStart + (partTimeTickEnd - partTimeTickStart) * startRatio;
                             const partTimeEnd = partTimeTickStart + (partTimeTickEnd - partTimeTickStart) * endRatio;
-                            let useVibratoSpeed = instrument.vibratoSpeed;
-                            instrumentState.vibratoTime = instrumentState.nextVibratoTime;
-                            if (this.isModActive(Config.modulators.dictionary["vibrato speed"].index, channelIndex, instrumentIndex)) {
-                                useVibratoSpeed = this.getModValue(Config.modulators.dictionary["vibrato speed"].index, channelIndex, instrumentIndex);
-                            }
-                            if (useVibratoSpeed == 0) {
-                                instrumentState.vibratoTime = 0;
-                                instrumentState.nextVibratoTime = 0;
-                            }
-                            else {
-                                instrumentState.nextVibratoTime += useVibratoSpeed * 0.1 * (partTimeEnd - partTimeStart);
+                            if (this.song.channels[channelIndex].type !== ChannelType.Mod) {
+                                let useVibratoSpeed = instrument.vibratoSpeed;
+                                instrumentState.vibratoTime = instrumentState.nextVibratoTime;
+                                if (this.isModActive(Config.modulators.dictionary["vibrato speed"].index, channelIndex, instrumentIndex)) {
+                                    useVibratoSpeed = this.getModValue(Config.modulators.dictionary["vibrato speed"].index, channelIndex, instrumentIndex);
+                                }
+                                if (useVibratoSpeed == 0) {
+                                    instrumentState.vibratoTime = 0;
+                                    instrumentState.nextVibratoTime = 0;
+                                }
+                                else {
+                                    instrumentState.nextVibratoTime += useVibratoSpeed * 0.1 * (partTimeEnd - partTimeStart);
+                                }
                             }
                         }
                     }
@@ -21701,20 +21726,18 @@ li.select2-results__option[role=group] > strong:hover {
                             envelopeComputer.clearEnvelopes();
                         }
                     }
-                    for (let channel = 0; channel < this.song.pitchChannelCount + this.song.noiseChannelCount; channel++) {
-                        for (let instrumentIdx = 0; instrumentIdx < this.song.channels[channel].instruments.length; instrumentIdx++) {
-                            let instrument = this.song.channels[channel].instruments[instrumentIdx];
-                            if (instrument.tmpEqFilterEnd != null) {
-                                instrument.tmpEqFilterStart = instrument.tmpEqFilterEnd;
-                            }
-                            else {
-                                instrument.tmpEqFilterStart = instrument.eqFilter;
-                            }
-                            if (instrument.tmpNoteFilterEnd != null) {
-                                instrument.tmpNoteFilterStart = instrument.tmpNoteFilterEnd;
-                            }
-                            else {
-                                instrument.tmpNoteFilterStart = instrument.noteFilter;
+                    for (let channelIndex = 0; channelIndex < this.song.getChannelCount(); channelIndex++) {
+                        if (this.song.channels[channelIndex].type !== ChannelType.Mod) {
+                            for (let instrumentIdx = 0; instrumentIdx < this.song.channels[channelIndex].instruments.length; instrumentIdx++) {
+                                let instrument = this.song.channels[channelIndex].instruments[instrumentIdx];
+                                if (instrument.tmpEqFilterEnd != null)
+                                    instrument.tmpEqFilterStart = instrument.tmpEqFilterEnd;
+                                else
+                                    instrument.tmpEqFilterStart = instrument.eqFilter;
+                                if (instrument.tmpNoteFilterEnd != null)
+                                    instrument.tmpNoteFilterStart = instrument.tmpNoteFilterEnd;
+                                else
+                                    instrument.tmpNoteFilterStart = instrument.noteFilter;
                             }
                         }
                     }
@@ -21786,10 +21809,13 @@ li.select2-results__option[role=group] > strong:hover {
                 }
                 const maxInstrumentsPerChannel = this.song.getMaxInstrumentsPerChannel();
                 for (let setting = 0; setting < Config.modulators.length; setting++) {
-                    for (let channel = 0; channel < this.song.pitchChannelCount + this.song.noiseChannelCount; channel++) {
+                    for (let channelIndex = 0; channelIndex < this.song.getChannelCount(); channelIndex++) {
+                        const channel = this.song.channels[channelIndex];
+                        if (channel.type === ChannelType.Mod)
+                            continue;
                         for (let instrument = 0; instrument < maxInstrumentsPerChannel; instrument++) {
-                            if (this.nextModInsValues != null && this.nextModInsValues[channel] != null && this.nextModInsValues[channel][instrument] != null && this.nextModInsValues[channel][instrument][setting] != null) {
-                                this.modInsValues[channel][instrument][setting] = this.nextModInsValues[channel][instrument][setting];
+                            if (this.nextModInsValues != null && this.nextModInsValues[channelIndex] != null && this.nextModInsValues[channelIndex][instrument] != null && this.nextModInsValues[channelIndex][instrument][setting] != null) {
+                                this.modInsValues[channelIndex][instrument][setting] = this.nextModInsValues[channelIndex][instrument][setting];
                             }
                         }
                     }

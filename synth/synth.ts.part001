@@ -1,0 +1,2514 @@
+// Copyright (c) 2012-2022 John Nesky and contributing authors, distributed under the MIT license, see accompanying the LICENSE.md file.
+
+import { startLoadingSample, sampleLoadingState, SampleLoadingState, sampleLoadEvents, SampleLoadedEvent, SampleLoadingStatus, loadBuiltInSamples, Dictionary, DictionaryArray, toNameMap, FilterType, SustainType, EnvelopeType, InstrumentType, EffectType, EnvelopeComputeIndex, Transition, Unison, Chord, Vibrato, Envelope, AutomationTarget, Config, getDrumWave, drawNoiseSpectrum, getArpeggioPitchIndex, performIntegralOld, getPulseWidthRatio, effectsIncludeTransition, effectsIncludeChord, effectsIncludePitchShift, effectsIncludeDetune, effectsIncludeVibrato, effectsIncludeNoteFilter, effectsIncludeDistortion, effectsIncludeBitcrusher, effectsIncludePanning, effectsIncludeChorus, effectsIncludeEcho, effectsIncludeReverb, /*effectsIncludeNoteRange,*/ effectsIncludeRingModulation, effectsIncludeGranular, effectsIncludeDiscreteSlide, OperatorWave, LFOEnvelopeTypes, RandomEnvelopeTypes, GranularEnvelopeType, calculateRingModHertz } from "./SynthConfig";
+import { Preset, EditorConfig } from "../editor/EditorConfig";
+import { scaleElementsByFactor, inverseRealFourierTransform } from "./FFT";
+import { Deque } from "./Deque";
+import { events } from "../global/Events";
+import { FilterCoefficients, FrequencyResponse, DynamicBiquadFilter, warpInfinityToNyquist } from "./filtering";
+import { xxHash32 } from "js-xxhash";
+
+declare global {
+    interface Window {
+        AudioContext: any;
+        webkitAudioContext: any;
+    }
+}
+
+const songTagNameMap: { [key: number]: string } = {
+	[CharCode.a]: "beatCount",
+	[CharCode.b]: "bars",
+	[CharCode.c]: "songEq",
+	[CharCode.d]: "fadeInOut",
+	[CharCode.e]: "loopEnd",
+	[CharCode.f]: "eqFilter",
+	[CharCode.g]: "barCount",
+	[CharCode.h]: "unison",
+	[CharCode.i]: "instrumentCount",
+	[CharCode.j]: "patternCount",
+	[CharCode.k]: "key",
+	[CharCode.l]: "loopStart",
+	[CharCode.m]: "reverb",
+	[CharCode.n]: "channelCount",
+	[CharCode.o]: "channelOctave",
+	[CharCode.p]: "patterns",
+	[CharCode.q]: "effects",
+	[CharCode.r]: "rhythm",
+	[CharCode.s]: "scale",
+	[CharCode.t]: "tempo",
+	[CharCode.u]: "preset",
+	[CharCode.v]: "volume",
+	[CharCode.w]: "wave",
+	[CharCode.x]: "supersaw",
+	[CharCode.y]: "loopControls",
+	[CharCode.z]: "drumsetEnvelopes",
+	[CharCode.A]: "algorithm",
+	[CharCode.B]: "feedbackAmplitude",
+	[CharCode.C]: "chord",
+	[CharCode.D]: "detune",
+	[CharCode.E]: "envelopes",
+	[CharCode.F]: "feedbackType",
+	[CharCode.G]: "arpeggioSpeed",
+	[CharCode.H]: "harmonics",
+	[CharCode.I]: "stringSustain",
+	[CharCode.L]: "pan",
+	[CharCode.M]: "customChipWave",
+	[CharCode.N]: "songTitle",
+	[CharCode.O]: "limiterSettings",
+	[CharCode.P]: "operatorAmplitudes",
+	[CharCode.Q]: "operatorFrequencies",
+	[CharCode.R]: "operatorWaves",
+	[CharCode.S]: "spectrum",
+	[CharCode.T]: "startInstrument",
+	[CharCode.U]: "channelNames",
+	[CharCode.V]: "feedbackEnvelope",
+	[CharCode.W]: "pulseWidth",
+	[CharCode.X]: "aliases",
+};
+
+export function getSongTagName(charCode: number): string {  // export to shut up the compiler
+	return songTagNameMap[charCode] || "Unknown";
+}
+
+class URLDebugger {
+	private static _active: boolean = false;
+	private static _log: any[] = [];
+	private static _url: string = "";
+
+	public static start(url: string): void {
+		this._active = true;
+		this._log = [];
+		this._url = url;
+		console.log("URL Debugger Activated.");
+	}
+
+	public static log(tag: string, tagName: string, startIndex: number, endIndex: number, value: any): void {
+		if (!this._active) return;
+		this._log.push({ tag, tagName, value, raw: this._url.substring(startIndex, endIndex), indices: `${startIndex} - ${endIndex}` });
+	}
+
+	public static end(): void {
+		if (!this._active) return;
+		console.log("URL Parsing Finished. Log:");
+		console.table(this._log);
+		this._active = false;
+	}
+}
+
+const epsilon: number = (1.0e-24); // For detecting and avoiding float denormals, which have poor performance.
+
+// For performance debugging:
+//let samplesAccumulated: number = 0;
+//let samplePerformance: number = 0;
+
+export function clamp(min: number, max: number, val: number): number {
+    max = max - 1;
+    if (val <= max) {
+        if (val >= min) return val;
+        else return min;
+    } else {
+        return max;
+    }
+}
+
+function validateRange(min: number, max: number, val: number): number {
+    if (min <= val && val <= max) return val;
+    throw new Error(`Value ${val} not in range [${min}, ${max}]`);
+}
+
+export function parseFloatWithDefault<T>(s: string, defaultValue: T): number | T {
+    let result: number | T = parseFloat(s);
+    if (Number.isNaN(result)) result = defaultValue;
+    return result;
+}
+
+export function parseIntWithDefault<T>(s: string, defaultValue: T): number | T {
+    let result: number | T = parseInt(s);
+    if (Number.isNaN(result)) result = defaultValue;
+    return result;
+}
+
+function encode32BitNumber(buffer: number[], x: number): void {
+    // 0b11_
+    buffer.push(base64IntToCharCode[(x >>> (6 * 5)) & 0x3]);
+    //      111111_
+    buffer.push(base64IntToCharCode[(x >>> (6 * 4)) & 0x3f]);
+    //             111111_
+    buffer.push(base64IntToCharCode[(x >>> (6 * 3)) & 0x3f]);
+    //                    111111_
+    buffer.push(base64IntToCharCode[(x >>> (6 * 2)) & 0x3f]);
+    //                           111111_
+    buffer.push(base64IntToCharCode[(x >>> (6 * 1)) & 0x3f]);
+    //                                  111111
+    buffer.push(base64IntToCharCode[(x >>> (6 * 0)) & 0x3f]);
+}
+
+// @TODO: This is error-prone, because the caller has to remember to increment
+// charIndex by 6 afterwards.
+function decode32BitNumber(compressed: string, charIndex: number): number {
+    let x: number = 0;
+    // 0b11_
+    x |= base64CharCodeToInt[compressed.charCodeAt(charIndex++)] << (6 * 5);
+    //      111111_
+    x |= base64CharCodeToInt[compressed.charCodeAt(charIndex++)] << (6 * 4);
+    //             111111_
+    x |= base64CharCodeToInt[compressed.charCodeAt(charIndex++)] << (6 * 3);
+    //                    111111_
+    x |= base64CharCodeToInt[compressed.charCodeAt(charIndex++)] << (6 * 2);
+    //                           111111_
+    x |= base64CharCodeToInt[compressed.charCodeAt(charIndex++)] << (6 * 1);
+    //                                  111111
+    x |= base64CharCodeToInt[compressed.charCodeAt(charIndex++)] << (6 * 0);
+    return x;
+}
+
+function encodeUnisonSettings(buffer: number[], v: number, s: number, o: number, e: number, i: number): void {
+    // TODO: make these sign bits more efficient (bundle them together)
+    buffer.push(base64IntToCharCode[v]);
+
+    // TODO: make these use bitshifts instead for consistency
+    buffer.push(base64IntToCharCode[Number((s > 0))]);
+    let cleanS = Math.round(Math.abs(s) * 1000);
+    let cleanSDivided = Math.floor(cleanS / 63);
+    buffer.push(base64IntToCharCode[cleanS % 63], base64IntToCharCode[cleanSDivided % 63], base64IntToCharCode[Math.floor(cleanSDivided / 63)]);
+
+    buffer.push(base64IntToCharCode[Number((o > 0))]);
+    let cleanO = Math.round(Math.abs(o) * 1000);
+    let cleanODivided = Math.floor(cleanO / 63);
+    buffer.push(base64IntToCharCode[cleanO % 63], base64IntToCharCode[cleanODivided % 63], base64IntToCharCode[Math.floor(cleanODivided / 63)]);
+
+    buffer.push(base64IntToCharCode[Number((e > 0))]);
+    let cleanE = Math.round(Math.abs(e) * 1000);
+    buffer.push(base64IntToCharCode[cleanE % 63], base64IntToCharCode[Math.floor(cleanE / 63)]);
+
+    buffer.push(base64IntToCharCode[Number((i > 0))]);
+    let cleanI = Math.round(Math.abs(i) * 1000);
+    buffer.push(base64IntToCharCode[cleanI % 63], base64IntToCharCode[Math.floor(cleanI / 63)]);
+}
+
+function convertLegacyKeyToKeyAndOctave(rawKeyIndex: number): [number, number] {
+    let key: number = clamp(0, Config.keys.length, rawKeyIndex);
+    let octave: number = 0;
+    // This conversion code depends on C through B being
+    // available as keys, of course.
+    if (rawKeyIndex === 12) {
+        // { name: "C+", isWhiteKey: false, basePitch: 24 }
+        key = 0;
+        octave = 1;
+    } else if (rawKeyIndex === 13) {
+        // { name: "G- (actually F#-)", isWhiteKey: false, basePitch: 6 }
+        key = 6;
+        octave = -1;
+    } else if (rawKeyIndex === 14) {
+        // { name: "C-", isWhiteKey: true, basePitch: 0 }
+        key = 0;
+        octave = -1;
+    } else if (rawKeyIndex === 15) {
+        // { name: "oh no (F-)", isWhiteKey: true, basePitch: 5 }
+        key = 5;
+        octave = -1;
+    }
+    return [key, octave];
+}
+
+const enum CharCode {
+    SPACE = 32,
+    HASH = 35,
+    PERCENT = 37,
+    AMPERSAND = 38,
+    PLUS = 43,
+    DASH = 45,
+    DOT = 46,
+    NUM_0 = 48,
+    NUM_1 = 49,
+    NUM_2 = 50,
+    NUM_3 = 51,
+    NUM_4 = 52,
+    NUM_5 = 53,
+    NUM_6 = 54,
+    NUM_7 = 55,
+    NUM_8 = 56,
+    NUM_9 = 57,
+    EQUALS = 61,
+    A = 65,
+    B = 66,
+    C = 67,
+    D = 68,
+    E = 69,
+    F = 70,
+    G = 71,
+    H = 72,
+    I = 73,
+    J = 74,
+    K = 75,
+    L = 76,
+    M = 77,
+    N = 78,
+    O = 79,
+    P = 80,
+    Q = 81,
+    R = 82,
+    S = 83,
+    T = 84,
+    U = 85,
+    V = 86,
+    W = 87,
+    X = 88,
+    Y = 89,
+    Z = 90,
+    UNDERSCORE = 95,
+    a = 97,
+    b = 98,
+    c = 99,
+    d = 100,
+    e = 101,
+    f = 102,
+    g = 103,
+    h = 104,
+    i = 105,
+    j = 106,
+    k = 107,
+    l = 108,
+    m = 109,
+    n = 110,
+    o = 111,
+    p = 112,
+    q = 113,
+    r = 114,
+    s = 115,
+    t = 116,
+    u = 117,
+    v = 118,
+    w = 119,
+    x = 120,
+    y = 121,
+    z = 122,
+    LEFT_CURLY_BRACE = 123,
+    RIGHT_CURLY_BRACE = 125,
+}
+
+const enum SongTagCode {
+    beatCount = CharCode.a, // added in BeepBox URL version 2
+    bars = CharCode.b, // added in BeepBox URL version 2
+    songEq = CharCode.c, // added in BeepBox URL version 2 for vibrato, switched to song eq in Slarmoo's Box 1.3
+    fadeInOut = CharCode.d, // added in BeepBox URL version 3 for transition, switched to fadeInOut in 9
+    loopEnd = CharCode.e, // added in BeepBox URL version 2
+    eqFilter = CharCode.f, // added in BeepBox URL version 3
+    barCount = CharCode.g, // added in BeepBox URL version 3
+    unison = CharCode.h, // added in BeepBox URL version 2
+    instrumentCount = CharCode.i, // added in BeepBox URL version 3
+    patternCount = CharCode.j, // added in BeepBox URL version 3
+    key = CharCode.k, // added in BeepBox URL version 2
+    loopStart = CharCode.l, // added in BeepBox URL version 2
+    reverb = CharCode.m, // added in BeepBox URL version 5, DEPRECATED
+    channelCount = CharCode.n, // added in BeepBox URL version 6
+    channelOctave = CharCode.o, // added in BeepBox URL version 3
+    patterns = CharCode.p, // added in BeepBox URL version 2
+    effects = CharCode.q, // added in BeepBox URL version 7
+    rhythm = CharCode.r, // added in BeepBox URL version 2
+    scale = CharCode.s, // added in BeepBox URL version 2
+    tempo = CharCode.t, // added in BeepBox URL version 2
+    preset = CharCode.u, // added in BeepBox URL version 7
+    volume = CharCode.v, // added in BeepBox URL version 2
+    wave = CharCode.w, // added in BeepBox URL version 2
+    supersaw = CharCode.x, // added in BeepBox URL version 9 ([UB] was used for chip wave but is now DEPRECATED)
+    loopControls = CharCode.y, // added in BeepBox URL version 7, DEPRECATED, [UB] repurposed for chip wave loop controls
+    drumsetEnvelopes = CharCode.z, // added in BeepBox URL version 7 for filter envelopes, still used for drumset envelopes
+    algorithm = CharCode.A, // added in BeepBox URL version 6
+    feedbackAmplitude = CharCode.B, // added in BeepBox URL version 6
+    chord = CharCode.C, // added in BeepBox URL version 7, DEPRECATED
+    detune = CharCode.D, // added in JummBox URL version 3(?) for detune, DEPRECATED
+    envelopes = CharCode.E, // added in BeepBox URL version 6 for FM operator envelopes, repurposed in 9 for general envelopes.
+    feedbackType = CharCode.F, // added in BeepBox URL version 6
+    arpeggioSpeed = CharCode.G, // added in JummBox URL version 3 for arpeggioSpeed, DEPRECATED
+    harmonics = CharCode.H, // added in BeepBox URL version 7
+    stringSustain = CharCode.I, // added in BeepBox URL version 9
+    //	                    = CharCode.J,
+    //	                    = CharCode.K,
+    pan = CharCode.L, // added between 8 and 9, DEPRECATED
+    customChipWave = CharCode.M, // added in JummBox URL version 1(?) for customChipWave
+    songTitle = CharCode.N, // added in JummBox URL version 1(?) for songTitle
+    limiterSettings = CharCode.O, // added in JummBox URL version 3(?) for limiterSettings
+    operatorAmplitudes = CharCode.P, // added in BeepBox URL version 6
+    operatorFrequencies = CharCode.Q, // added in BeepBox URL version 6
+    operatorWaves = CharCode.R, // added in JummBox URL version 4 for operatorWaves
+    spectrum = CharCode.S, // added in BeepBox URL version 7
+    startInstrument = CharCode.T, // added in BeepBox URL version 6
+    channelNames = CharCode.U, // added in JummBox URL version 4(?) for channelNames
+    feedbackEnvelope = CharCode.V, // added in BeepBox URL version 6, DEPRECATED
+    pulseWidth = CharCode.W, // added in BeepBox URL version 7
+    aliases = CharCode.X, // added in JummBox URL version 4 for aliases, DEPRECATED, [UB] repurposed for PWM decimal offset (DEPRECATED as well)
+    //                      = CharCode.Y, 
+    //	                    = CharCode.Z,
+    //	                    = CharCode.NUM_0,
+    //	                    = CharCode.NUM_1,
+    //	                    = CharCode.NUM_2,
+    //	                    = CharCode.NUM_3,
+    //	                    = CharCode.NUM_4,
+    //	                    = CharCode.NUM_5,
+    //	                    = CharCode.NUM_6,
+    //	                    = CharCode.NUM_7,
+    //	                    = CharCode.NUM_8,
+    //	                    = CharCode.NUM_9,
+    //	                    = CharCode.DASH,
+    //	                    = CharCode.UNDERSCORE,
+
+}
+
+const base64IntToCharCode: ReadonlyArray<number> = [48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 45, 95];
+const base64CharCodeToInt: ReadonlyArray<number> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 62, 62, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 0, 0, 0, 0, 0, 0, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 0, 0, 0, 0, 63, 0, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 0, 0, 0, 0, 0]; // 62 could be represented by either "-" or "." for historical reasons. New songs should use "-".
+
+class BitFieldReader {
+    private _bits: number[] = [];
+    private _readIndex: number = 0;
+
+    constructor(source: string, startIndex: number, stopIndex: number) {
+        for (let i: number = startIndex; i < stopIndex; i++) {
+            const value: number = base64CharCodeToInt[source.charCodeAt(i)];
+            this._bits.push((value >> 5) & 0x1);
+            this._bits.push((value >> 4) & 0x1);
+            this._bits.push((value >> 3) & 0x1);
+            this._bits.push((value >> 2) & 0x1);
+            this._bits.push((value >> 1) & 0x1);
+            this._bits.push(value & 0x1);
+        }
+    }
+
+    public read(bitCount: number): number {
+        let result: number = 0;
+        while (bitCount > 0) {
+            result = result << 1;
+            result += this._bits[this._readIndex++];
+            bitCount--;
+        }
+        return result;
+    }
+
+    public readLongTail(minValue: number, minBits: number): number {
+        let result: number = minValue;
+        let numBits: number = minBits;
+        while (this._bits[this._readIndex++]) {
+            result += 1 << numBits;
+            numBits++;
+        }
+        while (numBits > 0) {
+            numBits--;
+            if (this._bits[this._readIndex++]) {
+                result += 1 << numBits;
+            }
+        }
+        return result;
+    }
+
+    public readPartDuration(): number {
+        return this.readLongTail(1, 3);
+    }
+
+    public readLegacyPartDuration(): number {
+        return this.readLongTail(1, 2);
+    }
+
+    public readPinCount(): number {
+        return this.readLongTail(1, 0);
+    }
+
+    public readPitchInterval(): number {
+        if (this.read(1)) {
+            return -this.readLongTail(1, 3);
+        } else {
+            return this.readLongTail(1, 3);
+        }
+    }
+}
+
+class BitFieldWriter {
+    private _index: number = 0;
+    private _bits: number[] = [];
+
+    public clear() {
+        this._index = 0;
+    }
+
+    public write(bitCount: number, value: number): void {
+        bitCount--;
+        while (bitCount >= 0) {
+            this._bits[this._index++] = (value >>> bitCount) & 1;
+            bitCount--;
+        }
+    }
+
+    public writeLongTail(minValue: number, minBits: number, value: number): void {
+        if (value < minValue) throw new Error("value out of bounds");
+        value -= minValue;
+        let numBits: number = minBits;
+        while (value >= (1 << numBits)) {
+            this._bits[this._index++] = 1;
+            value -= 1 << numBits;
+            numBits++;
+        }
+        this._bits[this._index++] = 0;
+        while (numBits > 0) {
+            numBits--;
+            this._bits[this._index++] = (value >>> numBits) & 1;
+        }
+    }
+
+    public writePartDuration(value: number): void {
+        this.writeLongTail(1, 3, value);
+    }
+
+    public writePinCount(value: number): void {
+        this.writeLongTail(1, 0, value);
+    }
+
+    public writePitchInterval(value: number): void {
+        if (value < 0) {
+            this.write(1, 1); // sign
+            this.writeLongTail(1, 3, -value);
+        } else {
+            this.write(1, 0); // sign
+            this.writeLongTail(1, 3, value);
+        }
+    }
+
+    public concat(other: BitFieldWriter): void {
+        for (let i: number = 0; i < other._index; i++) {
+            this._bits[this._index++] = other._bits[i];
+        }
+    }
+
+    public encodeBase64(buffer: number[]): number[] {
+        let tempIndex: number = this._index;
+        // Pad with zeros to make the array length a multiple of 6.
+        while (tempIndex % 6 != 0) {
+            this._bits[tempIndex++] = 0;
+        }
+        for (let i: number = 0; i < tempIndex; i += 6) {
+            const value: number = (this._bits[i] << 5) | (this._bits[i + 1] << 4) | (this._bits[i + 2] << 3) | (this._bits[i + 3] << 2) | (this._bits[i + 4] << 1) | this._bits[i + 5];
+            buffer.push(base64IntToCharCode[value]);
+        }
+        return buffer;
+    }
+
+    public lengthBase64(): number {
+        return Math.ceil(this._index / 6);
+    }
+}
+
+export interface NotePin {
+    interval: number;
+    time: number;
+    size: number;
+}
+
+export function makeNotePin(interval: number, time: number, size: number): NotePin {
+    return { interval: interval, time: time, size: size };
+}
+
+export class Note {
+    public pitches: number[];
+    public pins: NotePin[];
+    public start: number;
+    public end: number;
+    public continuesLastPattern: boolean;
+
+    public constructor(pitch: number, start: number, end: number, size: number, fadeout: boolean = false) {
+        this.pitches = [pitch];
+        this.pins = [makeNotePin(0, 0, size), makeNotePin(0, end - start, fadeout ? 0 : size)];
+        this.start = start;
+        this.end = end;
+        this.continuesLastPattern = false;
+    }
+
+    public pickMainInterval(): number {
+        let longestFlatIntervalDuration: number = 0;
+        let mainInterval: number = 0;
+        for (let pinIndex: number = 1; pinIndex < this.pins.length; pinIndex++) {
+            const pinA: NotePin = this.pins[pinIndex - 1];
+            const pinB: NotePin = this.pins[pinIndex];
+            if (pinA.interval == pinB.interval) {
+                const duration: number = pinB.time - pinA.time;
+                if (longestFlatIntervalDuration < duration) {
+                    longestFlatIntervalDuration = duration;
+                    mainInterval = pinA.interval;
+                }
+            }
+        }
+        if (longestFlatIntervalDuration == 0) {
+            let loudestSize: number = 0;
+            for (let pinIndex: number = 0; pinIndex < this.pins.length; pinIndex++) {
+                const pin: NotePin = this.pins[pinIndex];
+                if (loudestSize < pin.size) {
+                    loudestSize = pin.size;
+                    mainInterval = pin.interval;
+                }
+            }
+        }
+        return mainInterval;
+    }
+
+    public clone(): Note {
+        const newNote: Note = new Note(-1, this.start, this.end, 3);
+        newNote.pitches = this.pitches.concat();
+        newNote.pins = [];
+        for (const pin of this.pins) {
+            newNote.pins.push(makeNotePin(pin.interval, pin.time, pin.size));
+        }
+        newNote.continuesLastPattern = this.continuesLastPattern;
+        return newNote;
+    }
+
+    public getEndPinIndex(part: number): number {
+        let endPinIndex: number;
+        for (endPinIndex = 1; endPinIndex < this.pins.length - 1; endPinIndex++) {
+            if (this.pins[endPinIndex].time + this.start > part) break;
+        }
+        return endPinIndex;
+    }
+}
+
+export class Pattern {
+    public notes: Note[] = [];
+    public readonly instruments: number[] = [0];
+
+    public cloneNotes(): Note[] {
+        const result: Note[] = [];
+        for (const note of this.notes) {
+            result.push(note.clone());
+        }
+        return result;
+    }
+
+    public reset(): void {
+        this.notes.length = 0;
+        this.instruments[0] = 0;
+        this.instruments.length = 1;
+    }
+
+    public toJsonObject(song: Song, channel: Channel, isModChannel: boolean): any {
+        const noteArray: Object[] = [];
+        for (const note of this.notes) {
+            // Only one ins per pattern is enforced in mod channels.
+            let instrument: Instrument = channel.instruments[this.instruments[0]];
+            let mod: number = Math.max(0, Config.modCount - note.pitches[0] - 1);
+            let volumeCap: number = song.getVolumeCapForSetting(isModChannel, instrument.modulators[mod], instrument.modFilterTypes[mod]);
+            const pointArray: Object[] = [];
+            for (const pin of note.pins) {
+                let useVol: number = isModChannel ? Math.round(pin.size) : Math.round(pin.size * 100 / volumeCap);
+                pointArray.push({
+                    "tick": (pin.time + note.start) * Config.rhythms[song.rhythm].stepsPerBeat / Config.partsPerBeat,
+                    "pitchBend": pin.interval,
+                    "volume": useVol,
+                    "forMod": isModChannel,
+                });
+            }
+
+            const noteObject: any = {
+                "pitches": note.pitches,
+                "points": pointArray,
+            };
+            if (note.start == 0) {
+                noteObject["continuesLastPattern"] = note.continuesLastPattern;
+            }
+            noteArray.push(noteObject);
+        }
+
+        const patternObject: any = { "notes": noteArray };
+        if (song.patternInstruments) {
+            patternObject["instruments"] = this.instruments.map(i => i + 1);
+        }
+        return patternObject;
+    }
+
+    public fromJsonObject(patternObject: any, song: Song, channel: Channel, importedPartsPerBeat: number, isNoiseChannel: boolean, isModChannel: boolean, jsonFormat: string = "auto"): void {
+        const format: string = jsonFormat.toLowerCase();
+
+        if (song.patternInstruments) {
+            if (Array.isArray(patternObject["instruments"])) {
+                const instruments: any[] = patternObject["instruments"];
+                const instrumentCount: number = clamp(Config.instrumentCountMin, song.getMaxInstrumentsPerPatternForChannel(channel) + 1, instruments.length);
+                for (let j: number = 0; j < instrumentCount; j++) {
+                    this.instruments[j] = clamp(0, channel.instruments.length, (instruments[j] | 0) - 1);
+                }
+                this.instruments.length = instrumentCount;
+            } else {
+                this.instruments[0] = clamp(0, channel.instruments.length, (patternObject["instrument"] | 0) - 1);
+                this.instruments.length = 1;
+            }
+        }
+
+        if (patternObject["notes"] && patternObject["notes"].length > 0) {
+            const maxNoteCount: number = Math.min(song.beatsPerBar * Config.partsPerBeat * (isModChannel ? Config.modCount : 1), patternObject["notes"].length >>> 0);
+
+            // TODO: Consider supporting notes specified in any timing order, sorting them and truncating as necessary.
+            //let tickClock: number = 0;
+            for (let j: number = 0; j < patternObject["notes"].length; j++) {
+                if (j >= maxNoteCount) break;
+
+                const noteObject = patternObject["notes"][j];
+                if (!noteObject || !noteObject["pitches"] || !(noteObject["pitches"].length >= 1) || !noteObject["points"] || !(noteObject["points"].length >= 2)) {
+                    continue;
+                }
+
+                const note: Note = new Note(0, 0, 0, 0);
+                note.pitches = [];
+                note.pins = [];
+
+                for (let k: number = 0; k < noteObject["pitches"].length; k++) {
+                    const pitch: number = noteObject["pitches"][k] | 0;
+                    if (note.pitches.indexOf(pitch) != -1) continue;
+                    note.pitches.push(pitch);
+                    if (note.pitches.length >= Config.maxChordSize) break;
+                }
+                if (note.pitches.length < 1) continue;
+
+                //let noteClock: number = tickClock;
+                let startInterval: number = 0;
+
+                let instrument: Instrument = channel.instruments[this.instruments[0]];
+                let mod: number = Math.max(0, Config.modCount - note.pitches[0] - 1);
+
+                for (let k: number = 0; k < noteObject["points"].length; k++) {
+                    const pointObject: any = noteObject["points"][k];
+                    if (pointObject == undefined || pointObject["tick"] == undefined) continue;
+                    const interval: number = (pointObject["pitchBend"] == undefined) ? 0 : (pointObject["pitchBend"] | 0);
+
+                    const time: number = Math.round((+pointObject["tick"]) * Config.partsPerBeat / importedPartsPerBeat);
+
+                    // Only one instrument per pattern allowed in mod channels.
+                    let volumeCap: number = song.getVolumeCapForSetting(isModChannel, instrument.modulators[mod], instrument.modFilterTypes[mod]);
+
+                    // The strange volume formula used for notes is not needed for mods. Some rounding errors were possible.
+                    // A "forMod" signifier was added to new JSON export to detect when the higher precision export was used in a file.
+                    let size: number;
+                    if (pointObject["volume"] == undefined) {
+                        size = volumeCap;
+                    } else if (pointObject["forMod"] == undefined) {
+                        size = Math.max(0, Math.min(volumeCap, Math.round((pointObject["volume"] | 0) * volumeCap / 100)));
+                    }
+                    else {
+                        size = ((pointObject["forMod"] | 0) > 0) ? Math.round(pointObject["volume"] | 0) : Math.max(0, Math.min(volumeCap, Math.round((pointObject["volume"] | 0) * volumeCap / 100)));
+                    }
+
+                    if (time > song.beatsPerBar * Config.partsPerBeat) continue;
+                    if (note.pins.length == 0) {
+                        //if (time < noteClock) continue;
+                        note.start = time;
+                        startInterval = interval;
+                    } else {
+                        //if (time <= noteClock) continue;
+                    }
+                    //noteClock = time;
+
+                    note.pins.push(makeNotePin(interval - startInterval, time - note.start, size));
+                }
+                if (note.pins.length < 2) continue;
+
+                note.end = note.pins[note.pins.length - 1].time + note.start;
+
+                const maxPitch: number = isNoiseChannel ? Config.drumCount - 1 : Config.maxPitch;
+                let lowestPitch: number = maxPitch;
+                let highestPitch: number = 0;
+                for (let k: number = 0; k < note.pitches.length; k++) {
+                    note.pitches[k] += startInterval;
+                    if (note.pitches[k] < 0 || note.pitches[k] > maxPitch) {
+                        note.pitches.splice(k, 1);
+                        k--;
+                    }
+                    if (note.pitches[k] < lowestPitch) lowestPitch = note.pitches[k];
+                    if (note.pitches[k] > highestPitch) highestPitch = note.pitches[k];
+                }
+                if (note.pitches.length < 1) continue;
+
+                for (let k: number = 0; k < note.pins.length; k++) {
+                    const pin: NotePin = note.pins[k];
+                    if (pin.interval + lowestPitch < 0) pin.interval = -lowestPitch;
+                    if (pin.interval + highestPitch > maxPitch) pin.interval = maxPitch - highestPitch;
+                    if (k >= 2) {
+                        if (pin.interval == note.pins[k - 1].interval &&
+                            pin.interval == note.pins[k - 2].interval &&
+                            pin.size == note.pins[k - 1].size &&
+                            pin.size == note.pins[k - 2].size) {
+                            note.pins.splice(k - 1, 1);
+                            k--;
+                        }
+                    }
+                }
+
+                if (note.start == 0) {
+                    note.continuesLastPattern = (noteObject["continuesLastPattern"] === true);
+                } else {
+                    note.continuesLastPattern = false;
+                }
+
+                if ((format != "ultrabox" && format != "slarmoosbox") && instrument.modulators[mod] == Config.modulators.dictionary["tempo"].index) {
+                    for (const pin of note.pins) {
+                        const oldMin: number = 30;
+                        const newMin: number = 1;
+                        const old: number = pin.size + oldMin;
+                        pin.size = old - newMin; // convertRealFactor will add back newMin as necessary
+                    }
+                }
+
+                this.notes.push(note);
+            }
+        }
+    }
+}
+
+export class Operator {
+    public frequency: number = 4;
+    public amplitude: number = 0;
+    public waveform: number = 0;
+    public pulseWidth: number = 0.5;
+
+    constructor(index: number) {
+        this.reset(index);
+    }
+
+    public reset(index: number): void {
+        this.frequency = 4; //defualt to 1x
+        this.amplitude = (index <= 1) ? Config.operatorAmplitudeMax : 0;
+        this.waveform = 0;
+        this.pulseWidth = 5;
+    }
+
+    public copy(other: Operator): void {
+        this.frequency = other.frequency;
+        this.amplitude = other.amplitude;
+        this.waveform = other.waveform;
+        this.pulseWidth = other.pulseWidth;
+    }
+}
+
+export class CustomAlgorithm {
+    public name: string = "";
+    public carrierCount: number = 0;
+    public modulatedBy: number[][] = [[], [], [], [], [], []];
+    public associatedCarrier: number[] = [];
+
+    constructor() {
+        this.fromPreset(1);
+    }
+
+    public set(carriers: number, modulation: number[][]) {
+        this.reset();
+        this.carrierCount = carriers;
+        for (let i = 0; i < this.modulatedBy.length; i++) {
+            this.modulatedBy[i] = modulation[i];
+            if (i < carriers) {
+                this.associatedCarrier[i] = i + 1;
+            }
+            this.name += (i + 1);
+            for (let j = 0; j < modulation[i].length; j++) {
+                this.name += modulation[i][j];
+                if (modulation[i][j] > carriers - 1) {
+                    this.associatedCarrier[modulation[i][j] - 1] = i + 1;
+                }
+                this.name += ",";
+            }
+            if (i < carriers) {
+                this.name += "|";
+            } else {
+                this.name += ".";
+            }
+        }
+    }
+
+    public reset(): void {
+        this.name = ""
+        this.carrierCount = 1;
+        this.modulatedBy = [[2, 3, 4, 5, 6], [], [], [], [], []];
+        this.associatedCarrier = [1, 1, 1, 1, 1, 1];
+    }
+
+    public copy(other: CustomAlgorithm): void {
+        this.name = other.name;
+        this.carrierCount = other.carrierCount;
+        this.modulatedBy = other.modulatedBy;
+        this.associatedCarrier = other.associatedCarrier;
+    }
+
+    public fromPreset(other: number): void {
+        this.reset();
+        let preset = Config.algorithms6Op[other]
+        this.name = preset.name;
+        this.carrierCount = preset.carrierCount;
+        for (var i = 0; i < preset.modulatedBy.length; i++) {
+            this.modulatedBy[i] = Array.from(preset.modulatedBy[i]);
+            this.associatedCarrier[i] = preset.associatedCarrier[i];
+        }
+    }
+}
+
+export class CustomFeedBack { //feels redunant
+    public name: string = "";
+    public indices: number[][] = [[], [], [], [], [], []];
+
+    constructor() {
+        this.fromPreset(1);
+    }
+
+    public set(inIndices: number[][]) {
+        this.reset();
+        for (let i = 0; i < this.indices.length; i++) {
+            this.indices[i] = inIndices[i];
+            for (let j = 0; j < inIndices[i].length; j++) {
+                this.name += inIndices[i][j];
+                this.name += ",";
+            }
+            this.name += ".";
+        }
+    }
+
+    public reset(): void {
+        this.reset;
+        this.name = "";
+        this.indices = [[1], [], [], [], [], []];
+    }
+
+    public copy(other: CustomFeedBack): void {
+        this.name = other.name;
+        this.indices = other.indices;
+    }
+
+    public fromPreset(other: number): void {
+        this.reset();
+        let preset = Config.feedbacks6Op[other]
+        for (var i = 0; i < preset.indices.length; i++) {
+            this.indices[i] = Array.from(preset.indices[i]);
+            for (let j = 0; j < preset.indices[i].length; j++) {
+                this.name += preset.indices[i][j];
+                this.name += ",";
+            }
+            this.name += ".";
+        }
+    }
+}
+
+export class SpectrumWave {
+    public spectrum: number[] = [];
+    public hash: number = -1;
+
+    constructor(isNoiseChannel: boolean) {
+        this.reset(isNoiseChannel);
+    }
+
+    public reset(isNoiseChannel: boolean): void {
+        for (let i: number = 0; i < Config.spectrumControlPoints; i++) {
+            if (isNoiseChannel) {
+                this.spectrum[i] = Math.round(Config.spectrumMax * (1 / Math.sqrt(1 + i / 3)));
+            } else {
+                const isHarmonic: boolean = i == 0 || i == 7 || i == 11 || i == 14 || i == 16 || i == 18 || i == 21 || i == 23 || i >= 25;
+                this.spectrum[i] = isHarmonic ? Math.max(0, Math.round(Config.spectrumMax * (1 - i / 30))) : 0;
+            }
+        }
+        this.markCustomWaveDirty();
+    }
+
+    public markCustomWaveDirty(): void {
+        const hashMult: number = Synth.fittingPowerOfTwo(Config.spectrumMax + 2) - 1;
+        let hash: number = 0;
+        for (const point of this.spectrum) hash = ((hash * hashMult) + point) >>> 0;
+        this.hash = hash;
+    }
+}
+
+class SpectrumWaveState {
+    public wave: Float32Array | null = null;
+    private _hash: number = -1;
+
+    public getCustomWave(settings: SpectrumWave, lowestOctave: number): Float32Array {
+        if (this._hash == settings.hash) return this.wave!;
+        this._hash = settings.hash;
+
+        const waveLength: number = Config.spectrumNoiseLength;
+        if (this.wave == null || this.wave.length != waveLength + 1) {
+            this.wave = new Float32Array(waveLength + 1);
+        }
+        const wave: Float32Array = this.wave;
+
+        for (let i: number = 0; i < waveLength; i++) {
+            wave[i] = 0;
+        }
+
+        const highestOctave: number = 14;
+        const falloffRatio: number = 0.25;
+        // Nudge the 2/7 and 4/7 control points so that they form harmonic intervals.
+        const pitchTweak: number[] = [0, 1 / 7, Math.log2(5 / 4), 3 / 7, Math.log2(3 / 2), 5 / 7, 6 / 7];
+        function controlPointToOctave(point: number): number {
+            return lowestOctave + Math.floor(point / Config.spectrumControlPointsPerOctave) + pitchTweak[(point + Config.spectrumControlPointsPerOctave) % Config.spectrumControlPointsPerOctave];
+        }
+
+        let combinedAmplitude: number = 1;
+        for (let i: number = 0; i < Config.spectrumControlPoints + 1; i++) {
+            const value1: number = (i <= 0) ? 0 : settings.spectrum[i - 1];
+            const value2: number = (i >= Config.spectrumControlPoints) ? settings.spectrum[Config.spectrumControlPoints - 1] : settings.spectrum[i];
+            const octave1: number = controlPointToOctave(i - 1);
+            let octave2: number = controlPointToOctave(i);
+            if (i >= Config.spectrumControlPoints) octave2 = highestOctave + (octave2 - highestOctave) * falloffRatio;
+            if (value1 == 0 && value2 == 0) continue;
+
+            combinedAmplitude += 0.02 * drawNoiseSpectrum(wave, waveLength, octave1, octave2, value1 / Config.spectrumMax, value2 / Config.spectrumMax, -0.5);
+        }
+        if (settings.spectrum[Config.spectrumControlPoints - 1] > 0) {
+            combinedAmplitude += 0.02 * drawNoiseSpectrum(wave, waveLength, highestOctave + (controlPointToOctave(Config.spectrumControlPoints) - highestOctave) * falloffRatio, highestOctave, settings.spectrum[Config.spectrumControlPoints - 1] / Config.spectrumMax, 0, -0.5);
+        }
+
+        inverseRealFourierTransform(wave, waveLength);
+        scaleElementsByFactor(wave, 5.0 / (Math.sqrt(waveLength) * Math.pow(combinedAmplitude, 0.75)));
+
+        // Duplicate the first sample at the end for easier wrap-around interpolation.
+        wave[waveLength] = wave[0];
+
+        return wave;
+    }
+}
+
+export class HarmonicsWave {
+    public harmonics: number[] = [];
+    public hash: number = -1;
+
+    constructor() {
+        this.reset();
+    }
+
+    public reset(): void {
+        for (let i: number = 0; i < Config.harmonicsControlPoints; i++) {
+            this.harmonics[i] = 0;
+        }
+        this.harmonics[0] = Config.harmonicsMax;
+        this.harmonics[3] = Config.harmonicsMax;
+        this.harmonics[6] = Config.harmonicsMax;
+        this.markCustomWaveDirty();
+    }
+
+    public markCustomWaveDirty(): void {
+        const hashMult: number = Synth.fittingPowerOfTwo(Config.harmonicsMax + 2) - 1;
+        let hash: number = 0;
+        for (const point of this.harmonics) hash = ((hash * hashMult) + point) >>> 0;
+        this.hash = hash;
+    }
+}
+
+class HarmonicsWaveState {
+    public wave: Float32Array | null = null;
+    private _hash: number = -1;
+    private _generatedForType: InstrumentType;
+
+    public getCustomWave(settings: HarmonicsWave, instrumentType: InstrumentType): Float32Array {
+        if (this._hash == settings.hash && this._generatedForType == instrumentType) return this.wave!;
+        this._hash = settings.hash;
+        this._generatedForType = instrumentType;
+
+        const harmonicsRendered: number = (instrumentType == InstrumentType.pickedString) ? Config.harmonicsRenderedForPickedString : Config.harmonicsRendered;
+
+        const waveLength: number = Config.harmonicsWavelength;
+        const retroWave: Float32Array = getDrumWave(0, null, null);
+
+        if (this.wave == null || this.wave.length != waveLength + 1) {
+            this.wave = new Float32Array(waveLength + 1);
+        }
+        const wave: Float32Array = this.wave;
+
+        for (let i: number = 0; i < waveLength; i++) {
+            wave[i] = 0;
+        }
+
+        const overallSlope: number = -0.25;
+        let combinedControlPointAmplitude: number = 1;
+
+        for (let harmonicIndex: number = 0; harmonicIndex < harmonicsRendered; harmonicIndex++) {
+            const harmonicFreq: number = harmonicIndex + 1;
+            let controlValue: number = harmonicIndex < Config.harmonicsControlPoints ? settings.harmonics[harmonicIndex] : settings.harmonics[Config.harmonicsControlPoints - 1];
+            if (harmonicIndex >= Config.harmonicsControlPoints) {
+                controlValue *= 1 - (harmonicIndex - Config.harmonicsControlPoints) / (harmonicsRendered - Config.harmonicsControlPoints);
+            }
+            const normalizedValue: number = controlValue / Config.harmonicsMax;
+            let amplitude: number = Math.pow(2, controlValue - Config.harmonicsMax + 1) * Math.sqrt(normalizedValue);
+            if (harmonicIndex < Config.harmonicsControlPoints) {
+                combinedControlPointAmplitude += amplitude;
+            }
+            amplitude *= Math.pow(harmonicFreq, overallSlope);
+
+            // Multiply all the sine wave amplitudes by 1 or -1 based on the LFSR
+            // retro wave (effectively random) to avoid egregiously tall spikes.
+            amplitude *= retroWave[harmonicIndex + 589];
+
+            wave[waveLength - harmonicFreq] = amplitude;
+        }
+
+        inverseRealFourierTransform(wave, waveLength);
+
+        // Limit the maximum wave amplitude.
+        const mult: number = 1 / Math.pow(combinedControlPointAmplitude, 0.7);
+        for (let i: number = 0; i < wave.length; i++) wave[i] *= mult;
+
+        performIntegralOld(wave);
+
+        // The first sample should be zero, and we'll duplicate it at the end for easier interpolation.
+        wave[waveLength] = wave[0];
+
+        return wave;
+    }
+}
+
+class Grain {
+    public delayLinePosition: number; // Relative to latest sample
+
+    public ageInSamples: number;
+    public maxAgeInSamples: number;
+    public delay: number;
+
+    //parabolic envelope implementation
+    public parabolicEnvelopeAmplitude: number;
+    public parabolicEnvelopeSlope: number;
+    public parabolicEnvelopeCurve: number;
+
+    //raised cosine bell envelope implementation
+    public rcbEnvelopeAmplitude: number;
+    public rcbEnvelopeAttackIndex: number;
+    public rcbEnvelopeReleaseIndex: number;
+    public rcbEnvelopeSustain: number;
+
+    constructor() {
+        this.delayLinePosition = 0;
+
+        this.ageInSamples = 0;
+        this.maxAgeInSamples = 0;
+        this.delay = 0;
+
+        this.parabolicEnvelopeAmplitude = 0;
+        this.parabolicEnvelopeSlope = 0;
+        this.parabolicEnvelopeCurve = 0;
+
+        this.rcbEnvelopeAmplitude = 0;
+        this.rcbEnvelopeAttackIndex = 0;
+        this.rcbEnvelopeReleaseIndex = 0;
+        this.rcbEnvelopeSustain = 0;
+    }
+
+    public initializeParabolicEnvelope(durationInSamples: number, amplitude: number): void {
+        this.parabolicEnvelopeAmplitude = 0;
+        const invDuration: number = 1.0 / durationInSamples;
+        const invDurationSquared: number = invDuration * invDuration;
+        this.parabolicEnvelopeSlope = 4.0 * amplitude * (invDuration - invDurationSquared);
+        this.parabolicEnvelopeCurve = -8.0 * amplitude * invDurationSquared;
+    }
+
+    public updateParabolicEnvelope(): void {
+        this.parabolicEnvelopeAmplitude += this.parabolicEnvelopeSlope;
+        this.parabolicEnvelopeSlope += this.parabolicEnvelopeCurve;
+    }
+
+    public initializeRCBEnvelope(durationInSamples: number, amplitude: number): void {
+        // attack:
+        this.rcbEnvelopeAttackIndex = Math.floor(durationInSamples / 6);
+        // sustain:
+        this.rcbEnvelopeSustain = amplitude;
+        // release:
+        this.rcbEnvelopeReleaseIndex = Math.floor(durationInSamples * 5 / 6);
+    }
+
+    public updateRCBEnvelope(): void {
+        if (this.ageInSamples < this.rcbEnvelopeAttackIndex) { //attack
+            this.rcbEnvelopeAmplitude = (1.0 + Math.cos(Math.PI + (Math.PI * (this.ageInSamples / this.rcbEnvelopeAttackIndex) * (this.rcbEnvelopeSustain / 2.0))));
+        } else if (this.ageInSamples > this.rcbEnvelopeReleaseIndex) { //release
+            this.rcbEnvelopeAmplitude = (1.0 + Math.cos(Math.PI * ((this.ageInSamples - this.rcbEnvelopeReleaseIndex) / this.rcbEnvelopeAttackIndex)) * (this.rcbEnvelopeSustain / 2.0));
+        } //sustain covered by the end of attack
+    }
+
+    public addDelay(delay: number): void {
+        this.delay = delay;
+    }
+}
+
+export class FilterControlPoint {
+    public freq: number = 0;
+    public gain: number = Config.filterGainCenter;
+    public type: FilterType = FilterType.peak;
+
+    public set(freqSetting: number, gainSetting: number): void {
+        this.freq = freqSetting;
+        this.gain = gainSetting;
+    }
+
+    public getHz(): number {
+        return FilterControlPoint.getHzFromSettingValue(this.freq);
+    }
+
+    public static getHzFromSettingValue(value: number): number {
+        return Config.filterFreqReferenceHz * Math.pow(2.0, (value - Config.filterFreqReferenceSetting) * Config.filterFreqStep);
+    }
+    public static getSettingValueFromHz(hz: number): number {
+        return Math.log2(hz / Config.filterFreqReferenceHz) / Config.filterFreqStep + Config.filterFreqReferenceSetting;
+    }
+    public static getRoundedSettingValueFromHz(hz: number): number {
+        return Math.max(0, Math.min(Config.filterFreqRange - 1, Math.round(FilterControlPoint.getSettingValueFromHz(hz))));
+    }
+
+    public getLinearGain(peakMult: number = 1.0): number {
+        const power: number = (this.gain - Config.filterGainCenter) * Config.filterGainStep;
+        const neutral: number = (this.type == FilterType.peak) ? 0.0 : -0.5;
+        const interpolatedPower: number = neutral + (power - neutral) * peakMult;
+        return Math.pow(2.0, interpolatedPower);
+    }
+    public static getRoundedSettingValueFromLinearGain(linearGain: number): number {
+        return Math.max(0, Math.min(Config.filterGainRange - 1, Math.round(Math.log2(linearGain) / Config.filterGainStep + Config.filterGainCenter)));
+    }
+
+    public toCoefficients(filter: FilterCoefficients, sampleRate: number, freqMult: number = 1.0, peakMult: number = 1.0): void {
+        const cornerRadiansPerSample: number = 2.0 * Math.PI * Math.max(Config.filterFreqMinHz, Math.min(Config.filterFreqMaxHz, freqMult * this.getHz())) / sampleRate;
+        const linearGain: number = this.getLinearGain(peakMult);
+        switch (this.type) {
+            case FilterType.lowPass:
+                filter.lowPass2ndOrderButterworth(cornerRadiansPerSample, linearGain);
+                break;
+            case FilterType.highPass:
+                filter.highPass2ndOrderButterworth(cornerRadiansPerSample, linearGain);
+                break;
+            case FilterType.peak:
+                filter.peak2ndOrder(cornerRadiansPerSample, linearGain, 1.0);
+                break;
+            default:
+                throw new Error();
+        }
+    }
+
+    public getVolumeCompensationMult(): number {
+        const octave: number = (this.freq - Config.filterFreqReferenceSetting) * Config.filterFreqStep;
+        const gainPow: number = (this.gain - Config.filterGainCenter) * Config.filterGainStep;
+        switch (this.type) {
+            case FilterType.lowPass:
+                const freqRelativeTo8khz: number = Math.pow(2.0, octave) * Config.filterFreqReferenceHz / 8000.0;
+                // Reverse the frequency warping from importing legacy simplified filters to imitate how the legacy filter cutoff setting affected volume.
+                const warpedFreq: number = (Math.sqrt(1.0 + 4.0 * freqRelativeTo8khz) - 1.0) / 2.0;
+                const warpedOctave: number = Math.log2(warpedFreq);
+                return Math.pow(0.5, 0.2 * Math.max(0.0, gainPow + 1.0) + Math.min(0.0, Math.max(-3.0, 0.595 * warpedOctave + 0.35 * Math.min(0.0, gainPow + 1.0))));
+            case FilterType.highPass:
+                return Math.pow(0.5, 0.125 * Math.max(0.0, gainPow + 1.0) + Math.min(0.0, 0.3 * (-octave - Math.log2(Config.filterFreqReferenceHz / 125.0)) + 0.2 * Math.min(0.0, gainPow + 1.0)));
+            case FilterType.peak:
+                const distanceFromCenter: number = octave + Math.log2(Config.filterFreqReferenceHz / 2000.0);
+                const freqLoudness: number = Math.pow(1.0 / (1.0 + Math.pow(distanceFromCenter / 3.0, 2.0)), 2.0);
+                return Math.pow(0.5, 0.125 * Math.max(0.0, gainPow) + 0.1 * freqLoudness * Math.min(0.0, gainPow));
+            default:
+                throw new Error();
+        }
+    }
+}
+
+export class FilterSettings {
+    public readonly controlPoints: FilterControlPoint[] = [];
+    public controlPointCount: number = 0;
+
+    constructor() {
+        this.reset();
+    }
+
+    reset(): void {
+        this.controlPointCount = 0;
+    }
+
+    addPoint(type: FilterType, freqSetting: number, gainSetting: number): void {
+        let controlPoint: FilterControlPoint;
+        if (this.controlPoints.length <= this.controlPointCount) {
+            controlPoint = new FilterControlPoint();
+            this.controlPoints[this.controlPointCount] = controlPoint;
+        } else {
+            controlPoint = this.controlPoints[this.controlPointCount];
+        }
+        this.controlPointCount++;
+        controlPoint.type = type;
+        controlPoint.set(freqSetting, gainSetting);
+    }
+
+    public toJsonObject(): Object {
+        const filterArray: any[] = [];
+        for (let i: number = 0; i < this.controlPointCount; i++) {
+            const point: FilterControlPoint = this.controlPoints[i];
+            filterArray.push({
+                "type": Config.filterTypeNames[point.type],
+                "cutoffHz": Math.round(point.getHz() * 100) / 100,
+                "linearGain": Math.round(point.getLinearGain() * 10000) / 10000,
+            });
+        }
+        return filterArray;
+    }
+
+    public fromJsonObject(filterObject: any): void {
+        this.controlPoints.length = 0;
+        if (filterObject) {
+            for (const pointObject of filterObject) {
+                const point: FilterControlPoint = new FilterControlPoint();
+                point.type = Config.filterTypeNames.indexOf(pointObject["type"]);
+                if (<any>point.type == -1) point.type = FilterType.peak;
+                if (pointObject["cutoffHz"] != undefined) {
+                    point.freq = FilterControlPoint.getRoundedSettingValueFromHz(pointObject["cutoffHz"]);
+                } else {
+                    point.freq = 0;
+                }
+                if (pointObject["linearGain"] != undefined) {
+                    point.gain = FilterControlPoint.getRoundedSettingValueFromLinearGain(pointObject["linearGain"]);
+                } else {
+                    point.gain = Config.filterGainCenter;
+                }
+                this.controlPoints.push(point);
+            }
+        }
+        this.controlPointCount = this.controlPoints.length;
+    }
+
+    // Returns true if all filter control points match in number and type (but not freq/gain)
+    public static filtersCanMorph(filterA: FilterSettings, filterB: FilterSettings): boolean {
+        if (filterA.controlPointCount != filterB.controlPointCount)
+            return false;
+        for (let i: number = 0; i < filterA.controlPointCount; i++) {
+            if (filterA.controlPoints[i].type != filterB.controlPoints[i].type)
+                return false;
+        }
+        return true;
+    }
+
+    // Interpolate two FilterSettings, where pos=0 is filterA and pos=1 is filterB
+    public static lerpFilters(filterA: FilterSettings, filterB: FilterSettings, pos: number): FilterSettings {
+
+        let lerpedFilter: FilterSettings = new FilterSettings();
+
+        // One setting or another is null, return the other.
+        if (filterA == null) {
+            return filterA;
+        }
+        if (filterB == null) {
+            return filterB;
+        }
+
+        pos = Math.max(0, Math.min(1, pos));
+
+        // Filter control points match in number and type
+        if (this.filtersCanMorph(filterA, filterB)) {
+            for (let i: number = 0; i < filterA.controlPointCount; i++) {
+                lerpedFilter.controlPoints[i] = new FilterControlPoint();
+                lerpedFilter.controlPoints[i].type = filterA.controlPoints[i].type;
+                lerpedFilter.controlPoints[i].freq = filterA.controlPoints[i].freq + (filterB.controlPoints[i].freq - filterA.controlPoints[i].freq) * pos;
+                lerpedFilter.controlPoints[i].gain = filterA.controlPoints[i].gain + (filterB.controlPoints[i].gain - filterA.controlPoints[i].gain) * pos;
+            }
+
+            lerpedFilter.controlPointCount = filterA.controlPointCount;
+
+            return lerpedFilter;
+        }
+        else {
+            // Not allowing morph of unmatching filters for now. It's a hornet's nest of problems, and I had it implemented and mostly working and it didn't sound very interesting since the shape becomes "mushy" in between
+            return (pos >= 1) ? filterB : filterA;
+        }
+    }
+
+    public convertLegacySettings(legacyCutoffSetting: number, legacyResonanceSetting: number, legacyEnv: Envelope): void {
+        this.reset();
+
+        const legacyFilterCutoffMaxHz: number = 8000; // This was carefully calculated to correspond to no change in response when filtering at 48000 samples per second... when using the legacy simplified low-pass filter.
+        const legacyFilterMax: number = 0.95;
+        const legacyFilterMaxRadians: number = Math.asin(legacyFilterMax / 2.0) * 2.0;
+        const legacyFilterMaxResonance: number = 0.95;
+        const legacyFilterCutoffRange: number = 11;
+        const legacyFilterResonanceRange: number = 8;
+
+        const resonant: boolean = (legacyResonanceSetting > 1);
+        const firstOrder: boolean = (legacyResonanceSetting == 0);
+        const cutoffAtMax: boolean = (legacyCutoffSetting == legacyFilterCutoffRange - 1);
+        const envDecays: boolean = (legacyEnv.type == EnvelopeType.flare || legacyEnv.type == EnvelopeType.twang || legacyEnv.type == EnvelopeType.decay || legacyEnv.type == EnvelopeType.noteSize);
+
+        const standardSampleRate: number = 48000;
+        const legacyHz: number = legacyFilterCutoffMaxHz * Math.pow(2.0, (legacyCutoffSetting - (legacyFilterCutoffRange - 1)) * 0.5);
+        const legacyRadians: number = Math.min(legacyFilterMaxRadians, 2 * Math.PI * legacyHz / standardSampleRate);
+
+        if (legacyEnv.type == EnvelopeType.none && !resonant && cutoffAtMax) {
+            // The response is flat and there's no envelopes, so don't even bother adding any control points.
+        } else if (firstOrder) {
+            // In general, a 1st order lowpass can be approximated by a 2nd order lowpass
+            // with a cutoff ~4 octaves higher (*16) and a gain of 1/16.
+            // However, BeepBox's original lowpass filters behaved oddly as they
+            // approach the nyquist frequency, so I've devised this curved conversion
+            // to guess at a perceptually appropriate new cutoff frequency and gain.
+            const extraOctaves: number = 3.5;
+            const targetRadians: number = legacyRadians * Math.pow(2.0, extraOctaves);
+            const curvedRadians: number = targetRadians / (1.0 + targetRadians / Math.PI);
+            const curvedHz: number = standardSampleRate * curvedRadians / (2.0 * Math.PI)
+            const freqSetting: number = FilterControlPoint.getRoundedSettingValueFromHz(curvedHz);
+            const finalHz: number = FilterControlPoint.getHzFromSettingValue(freqSetting);
+            const finalRadians: number = 2.0 * Math.PI * finalHz / standardSampleRate;
+
+            const legacyFilter: FilterCoefficients = new FilterCoefficients();
+            legacyFilter.lowPass1stOrderSimplified(legacyRadians);
+            const response: FrequencyResponse = new FrequencyResponse();
+            response.analyze(legacyFilter, finalRadians);
+            const legacyFilterGainAtNewRadians: number = response.magnitude();
+
+            let logGain: number = Math.log2(legacyFilterGainAtNewRadians);
+            // Bias slightly toward 2^(-extraOctaves):
+            logGain = -extraOctaves + (logGain + extraOctaves) * 0.82;
+            // Decaying envelopes move the cutoff frequency back into an area where the best approximation of the first order slope requires a lower gain setting.
+            if (envDecays) logGain = Math.min(logGain, -1.0);
+            const convertedGain: number = Math.pow(2.0, logGain);
+            const gainSetting: number = FilterControlPoint.getRoundedSettingValueFromLinearGain(convertedGain);
+
+            this.addPoint(FilterType.lowPass, freqSetting, gainSetting);
+        } else {
+            const intendedGain: number = 0.5 / (1.0 - legacyFilterMaxResonance * Math.sqrt(Math.max(0.0, legacyResonanceSetting - 1.0) / (legacyFilterResonanceRange - 2.0)));
+            const invertedGain: number = 0.5 / intendedGain;
+            const maxRadians: number = 2.0 * Math.PI * legacyFilterCutoffMaxHz / standardSampleRate;
+            const freqRatio: number = legacyRadians / maxRadians;
+            const targetRadians: number = legacyRadians * (freqRatio * Math.pow(invertedGain, 0.9) + 1.0);
+            const curvedRadians: number = legacyRadians + (targetRadians - legacyRadians) * invertedGain;
+            let curvedHz: number;
+            if (envDecays) {
+                curvedHz = standardSampleRate * Math.min(curvedRadians, legacyRadians * Math.pow(2, 0.25)) / (2.0 * Math.PI);
+            } else {
+                curvedHz = standardSampleRate * curvedRadians / (2.0 * Math.PI);
+            }
+            const freqSetting: number = FilterControlPoint.getRoundedSettingValueFromHz(curvedHz);
+
+            let legacyFilterGain: number;
+            if (envDecays) {
+                legacyFilterGain = intendedGain;
+            } else {
+                const legacyFilter: FilterCoefficients = new FilterCoefficients();
+                legacyFilter.lowPass2ndOrderSimplified(legacyRadians, intendedGain);
+                const response: FrequencyResponse = new FrequencyResponse();
+                response.analyze(legacyFilter, curvedRadians);
+                legacyFilterGain = response.magnitude();
+            }
+            if (!resonant) legacyFilterGain = Math.min(legacyFilterGain, Math.sqrt(0.5));
+            const gainSetting: number = FilterControlPoint.getRoundedSettingValueFromLinearGain(legacyFilterGain);
+
+            this.addPoint(FilterType.lowPass, freqSetting, gainSetting);
+        }
+
+        // Added for JummBox - making a 0 point filter does not truncate control points!
+        this.controlPoints.length = this.controlPointCount;
+    }
+
+    // Similar to above, but purpose-fit for quick conversions in synth calls.
+    public convertLegacySettingsForSynth(legacyCutoffSetting: number, legacyResonanceSetting: number, allowFirstOrder: boolean = false): void {
+        this.reset();
+
+        const legacyFilterCutoffMaxHz: number = 8000; // This was carefully calculated to correspond to no change in response when filtering at 48000 samples per second... when using the legacy simplified low-pass filter.
+        const legacyFilterMax: number = 0.95;
+        const legacyFilterMaxRadians: number = Math.asin(legacyFilterMax / 2.0) * 2.0;
+        const legacyFilterMaxResonance: number = 0.95;
+        const legacyFilterCutoffRange: number = 11;
+        const legacyFilterResonanceRange: number = 8;
+
+        const firstOrder: boolean = (legacyResonanceSetting == 0 && allowFirstOrder);
+        const standardSampleRate: number = 48000;
+        const legacyHz: number = legacyFilterCutoffMaxHz * Math.pow(2.0, (legacyCutoffSetting - (legacyFilterCutoffRange - 1)) * 0.5);
+        const legacyRadians: number = Math.min(legacyFilterMaxRadians, 2 * Math.PI * legacyHz / standardSampleRate);
+
+        if (firstOrder) {
+            // In general, a 1st order lowpass can be approximated by a 2nd order lowpass
+            // with a cutoff ~4 octaves higher (*16) and a gain of 1/16.
+            // However, BeepBox's original lowpass filters behaved oddly as they
+            // approach the nyquist frequency, so I've devised this curved conversion
+            // to guess at a perceptually appropriate new cutoff frequency and gain.
+            const extraOctaves: number = 3.5;
+            const targetRadians: number = legacyRadians * Math.pow(2.0, extraOctaves);
+            const curvedRadians: number = targetRadians / (1.0 + targetRadians / Math.PI);
+            const curvedHz: number = standardSampleRate * curvedRadians / (2.0 * Math.PI)
+            const freqSetting: number = FilterControlPoint.getRoundedSettingValueFromHz(curvedHz);
+            const finalHz: number = FilterControlPoint.getHzFromSettingValue(freqSetting);
+            const finalRadians: number = 2.0 * Math.PI * finalHz / standardSampleRate;
+
+            const legacyFilter: FilterCoefficients = new FilterCoefficients();
+            legacyFilter.lowPass1stOrderSimplified(legacyRadians);
+            const response: FrequencyResponse = new FrequencyResponse();
+            response.analyze(legacyFilter, finalRadians);
+            const legacyFilterGainAtNewRadians: number = response.magnitude();
+
+            let logGain: number = Math.log2(legacyFilterGainAtNewRadians);
+            // Bias slightly toward 2^(-extraOctaves):
+            logGain = -extraOctaves + (logGain + extraOctaves) * 0.82;
+            const convertedGain: number = Math.pow(2.0, logGain);
+            const gainSetting: number = FilterControlPoint.getRoundedSettingValueFromLinearGain(convertedGain);
+
+            this.addPoint(FilterType.lowPass, freqSetting, gainSetting);
+        } else {
+            const intendedGain: number = 0.5 / (1.0 - legacyFilterMaxResonance * Math.sqrt(Math.max(0.0, legacyResonanceSetting - 1.0) / (legacyFilterResonanceRange - 2.0)));
+            const invertedGain: number = 0.5 / intendedGain;
+            const maxRadians: number = 2.0 * Math.PI * legacyFilterCutoffMaxHz / standardSampleRate;
+            const freqRatio: number = legacyRadians / maxRadians;
+            const targetRadians: number = legacyRadians * (freqRatio * Math.pow(invertedGain, 0.9) + 1.0);
+            const curvedRadians: number = legacyRadians + (targetRadians - legacyRadians) * invertedGain;
+            let curvedHz: number;
+
+            curvedHz = standardSampleRate * curvedRadians / (2.0 * Math.PI);
+            const freqSetting: number = FilterControlPoint.getSettingValueFromHz(curvedHz);
+
+            let legacyFilterGain: number;
+
+            const legacyFilter: FilterCoefficients = new FilterCoefficients();
+            legacyFilter.lowPass2ndOrderSimplified(legacyRadians, intendedGain);
+            const response: FrequencyResponse = new FrequencyResponse();
+            response.analyze(legacyFilter, curvedRadians);
+            legacyFilterGain = response.magnitude();
+            const gainSetting: number = FilterControlPoint.getRoundedSettingValueFromLinearGain(legacyFilterGain);
+
+            this.addPoint(FilterType.lowPass, freqSetting, gainSetting);
+        }
+
+    }
+}
+
+export class EnvelopeSettings {
+    public target: number = 0;
+    public index: number = 0;
+    public envelope: number = 0;
+    //slarmoo's box 1.0
+    public pitchEnvelopeStart: number;
+    public pitchEnvelopeEnd: number;
+    public inverse: boolean;
+    //midbox
+    public perEnvelopeSpeed: number = Config.envelopes[this.envelope].speed;
+    public perEnvelopeLowerBound: number = 0;
+    public perEnvelopeUpperBound: number = 1;
+    //modulation support
+    public tempEnvelopeSpeed: number | null = null;
+    public tempEnvelopeLowerBound: number | null = null;
+    public tempEnvelopeUpperBound: number | null = null;
+    //pseudo random
+    public steps: number = 2;
+    public seed: number = 2;
+    //lfo and random types
+    public waveform: number = LFOEnvelopeTypes.sine;
+    //moved discrete into here
+    public discrete: boolean = false;
+
+    constructor(public isNoiseEnvelope: boolean) {
+        this.reset();
+    }
+
+    reset(): void {
+        this.target = 0;
+        this.index = 0;
+        this.envelope = 0;
+        this.pitchEnvelopeStart = 0;
+        this.pitchEnvelopeEnd = this.isNoiseEnvelope ? Config.drumCount - 1 : Config.maxPitch;
+        this.inverse = false;
+        this.isNoiseEnvelope = false;
+        this.perEnvelopeSpeed = Config.envelopes[this.envelope].speed;
+        this.perEnvelopeLowerBound = 0;
+        this.perEnvelopeUpperBound = 1;
+        this.tempEnvelopeSpeed = null;
+        this.tempEnvelopeLowerBound = null;
+        this.tempEnvelopeUpperBound = null;
+        this.steps = 2;
+        this.seed = 2;
+        this.waveform = LFOEnvelopeTypes.sine;
+        this.discrete = false;
+    }
+
+    public toJsonObject(): Object {
+        const envelopeObject: any = {
+            "target": Config.instrumentAutomationTargets[this.target].name,
+            "envelope": Config.newEnvelopes[this.envelope].name,
+            "inverse": this.inverse,
+            "perEnvelopeSpeed": this.perEnvelopeSpeed,
+            "perEnvelopeLowerBound": this.perEnvelopeLowerBound,
+            "perEnvelopeUpperBound": this.perEnvelopeUpperBound,
+            "discrete": this.discrete,
+        };
+        if (Config.instrumentAutomationTargets[this.target].maxCount > 1) {
+            envelopeObject["index"] = this.index;
+        }
+        if (Config.newEnvelopes[this.envelope].name == "pitch") {
+            envelopeObject["pitchEnvelopeStart"] = this.pitchEnvelopeStart;
+            envelopeObject["pitchEnvelopeEnd"] = this.pitchEnvelopeEnd;
+        } else if (Config.newEnvelopes[this.envelope].name == "random") {
+            envelopeObject["steps"] = this.steps;
+            envelopeObject["seed"] = this.seed;
+            envelopeObject["waveform"] = this.waveform;
+        } else if (Config.newEnvelopes[this.envelope].name == "lfo") {
+            envelopeObject["waveform"] = this.waveform;
+            envelopeObject["steps"] = this.steps;
+        }
+        return envelopeObject;
+    }
+
+    public fromJsonObject(envelopeObject: any, format: string): void {
+        this.reset();
+
+        let target: AutomationTarget = Config.instrumentAutomationTargets.dictionary[envelopeObject["target"]];
+        if (target == null) target = Config.instrumentAutomationTargets.dictionary["noteVolume"];
+        this.target = target.index;
+
+        let envelope: Envelope = Config.envelopes.dictionary["none"];
+        let isTremolo2: Boolean = false;
+        if (format == "slarmoosbox") {
+            if (envelopeObject["envelope"] == "tremolo2") {
+                envelope = Config.newEnvelopes[EnvelopeType.lfo];
+                isTremolo2 = true;
+            } else if (envelopeObject["envelope"] == "tremolo") {
+                envelope = Config.newEnvelopes[EnvelopeType.lfo];
+                isTremolo2 = false;
+            } else {
+                envelope = Config.newEnvelopes.dictionary[envelopeObject["envelope"]];
+            }
+        } else {
+            if (Config.envelopes.dictionary[envelopeObject["envelope"]].type == EnvelopeType.tremolo2) {
+                envelope = Config.newEnvelopes[EnvelopeType.lfo];
+                isTremolo2 = true;
+            } else if (Config.newEnvelopes[Math.max(Config.envelopes.dictionary[envelopeObject["envelope"]].type - 1, 0)].index > EnvelopeType.lfo) {
+                envelope = Config.newEnvelopes[Config.envelopes.dictionary[envelopeObject["envelope"]].type - 1];
+            } else {
+                envelope = Config.newEnvelopes[Config.envelopes.dictionary[envelopeObject["envelope"]].type];
+            }
+        }
+
+        if (envelope == undefined) {
+            if (Config.envelopes.dictionary[envelopeObject["envelope"]].type == EnvelopeType.tremolo2) {
+                envelope = Config.newEnvelopes[EnvelopeType.lfo];
+                isTremolo2 = true;
+            } else if (Config.newEnvelopes[Math.max(Config.envelopes.dictionary[envelopeObject["envelope"]].type - 1, 0)].index > EnvelopeType.lfo) {
+                envelope = Config.newEnvelopes[Config.envelopes.dictionary[envelopeObject["envelope"]].type - 1];
+            } else {
+                envelope = Config.newEnvelopes[Config.envelopes.dictionary[envelopeObject["envelope"]].type];
+            }
+        }
+        if (envelope == null) envelope = Config.envelopes.dictionary["none"];
+        this.envelope = envelope.index;
+
+        if (envelopeObject["index"] != undefined) {
+            this.index = clamp(0, Config.instrumentAutomationTargets[this.target].maxCount, envelopeObject["index"] | 0);
+        } else {
+            this.index = 0;
+        }
+
+        if (envelopeObject["pitchEnvelopeStart"] != undefined) {
+            this.pitchEnvelopeStart = clamp(0, this.isNoiseEnvelope ? Config.drumCount : Config.maxPitch + 1, envelopeObject["pitchEnvelopeStart"]);
+        } else {
+            this.pitchEnvelopeStart = 0;
+        }
+
+        if (envelopeObject["pitchEnvelopeEnd"] != undefined) {
+            this.pitchEnvelopeEnd = clamp(0, this.isNoiseEnvelope ? Config.drumCount : Config.maxPitch + 1, envelopeObject["pitchEnvelopeEnd"]);
+        } else {
+            this.pitchEnvelopeEnd = this.isNoiseEnvelope ? Config.drumCount : Config.maxPitch;
+        }
+
+        this.inverse = Boolean(envelopeObject["inverse"]);
+
+        if (envelopeObject["perEnvelopeSpeed"] != undefined) {
+            this.perEnvelopeSpeed = envelopeObject["perEnvelopeSpeed"];
+        } else {
+            this.perEnvelopeSpeed = Config.envelopes.dictionary[envelopeObject["envelope"]].speed;
+        }
+
+        if (envelopeObject["perEnvelopeLowerBound"] != undefined) {
+            this.perEnvelopeLowerBound = clamp(Config.perEnvelopeBoundMin, Config.perEnvelopeBoundMax + 1, envelopeObject["perEnvelopeLowerBound"]);
+        } else {
+            this.perEnvelopeLowerBound = 0;
+        }
+
+        if (envelopeObject["perEnvelopeUpperBound"] != undefined) {
+            this.perEnvelopeUpperBound = clamp(Config.perEnvelopeBoundMin, Config.perEnvelopeBoundMax + 1, envelopeObject["perEnvelopeUpperBound"]);
+        } else {
+            this.perEnvelopeUpperBound = 1;
+        }
+
+        //convert tremolo2 settings into lfo
+        if (isTremolo2) {
+            if (this.inverse) {
+                this.perEnvelopeUpperBound = Math.floor((this.perEnvelopeUpperBound / 2) * 10) / 10;
+                this.perEnvelopeLowerBound = Math.floor((this.perEnvelopeLowerBound / 2) * 10) / 10;
+            } else {
+                this.perEnvelopeUpperBound = Math.floor((0.5 + (this.perEnvelopeUpperBound - this.perEnvelopeLowerBound) / 2) * 10) / 10;
+                this.perEnvelopeLowerBound = 0.5;
+            }
+        }
+
+        if (envelopeObject["steps"] != undefined) {
+            this.steps = clamp(1, Config.randomEnvelopeStepsMax + 1, envelopeObject["steps"]);
+        } else {
+            this.steps = 2;
+        }
+
+        if (envelopeObject["seed"] != undefined) {
+            this.seed = clamp(1, Config.randomEnvelopeSeedMax + 1, envelopeObject["seed"]);
+        } else {
+            this.seed = 2;
+        }
+
+        if (envelopeObject["waveform"] != undefined) {
+            this.waveform = envelopeObject["waveform"];
+        } else {
+            this.waveform = LFOEnvelopeTypes.sine;
+        }
+
+        if (envelopeObject["discrete"] != undefined) {
+            this.discrete = envelopeObject["discrete"];
+        } else {
+            this.discrete = false;
+        }
+    }
+}
+
+
+
+// Settings that were available to old versions of BeepBox but are no longer available in the
+// current version that need to be reinterpreted as a group to determine the best way to
+// represent them in the current version.
+interface LegacySettings {
+    filterCutoff?: number;
+    filterResonance?: number;
+    filterEnvelope?: Envelope;
+    pulseEnvelope?: Envelope;
+    operatorEnvelopes?: Envelope[];
+    feedbackEnvelope?: Envelope;
+}
+
+interface HeldMod {
+    volume: number;
+    channelIndex: number;
+    instrumentIndex: number;
+    setting: number;
+    holdFor: number;
+}
+
+export class Instrument {
+    public type: InstrumentType = InstrumentType.chip;
+    public preset: number = 0;
+    public chipWave: number = 2;
+    // advloop addition
+    public isUsingAdvancedLoopControls: boolean = false;
+    public chipWaveLoopStart: number = 0;
+    public chipWaveLoopEnd = Config.rawRawChipWaves[this.chipWave].samples.length - 1;
+    public chipWaveLoopMode: number = 0; // 0: loop, 1: ping-pong, 2: once, 3: play loop once
+    public chipWavePlayBackwards: boolean = false;
+    public chipWaveStartOffset: number = 0;
+    // advloop addition
+    public chipNoise: number = 1;
+    public eqFilter: FilterSettings = new FilterSettings();
+    public eqFilterType: boolean = false;
+    public eqFilterSimpleCut: number = Config.filterSimpleCutRange - 1;
+    public eqFilterSimplePeak: number = 0;
+    public noteFilter: FilterSettings = new FilterSettings();
+    public noteFilterType: boolean = false;
+    public noteFilterSimpleCut: number = Config.filterSimpleCutRange - 1;
+    public noteFilterSimplePeak: number = 0;
+    public eqSubFilters: (FilterSettings | null)[] = [];
+    public noteSubFilters: (FilterSettings | null)[] = [];
+    public tmpEqFilterStart: FilterSettings | null;
+    public tmpEqFilterEnd: FilterSettings | null;
+    public tmpNoteFilterStart: FilterSettings | null;
+    public tmpNoteFilterEnd: FilterSettings | null;
+    public envelopes: EnvelopeSettings[] = [];
+    public fadeIn: number = 0;
+    public fadeOut: number = Config.fadeOutNeutral;
+    public envelopeCount: number = 0;
+    public transition: number = Config.transitions.dictionary["normal"].index;
+    public pitchShift: number = 0;
+    public detune: number = 0;
+    public vibrato: number = 0;
+    public interval: number = 0;
+    public vibratoDepth: number = 0;
+    public vibratoSpeed: number = 10;
+    public vibratoDelay: number = 0;
+    public vibratoType: number = 0;
+    public envelopeSpeed: number = 12;
+    public unison: number = 0;
+    public unisonVoices: number = 1;
+    public unisonSpread: number = 0.0;
+    public unisonOffset: number = 0.0;
+    public unisonExpression: number = 1.4;
+    public unisonSign: number = 1.0;
+    public effects: number = 0;
+    public chord: number = 1;
+    public volume: number = 0;
+    public pan: number = Config.panCenter;
+    public panDelay: number = 0;
+    public arpeggioSpeed: number = 12;
+    public discreteSlide: number = 0;
+    public monoChordTone: number = 0;
+    public fastTwoNoteArp: boolean = false;
+    public legacyTieOver: boolean = false;
+    public clicklessTransition: boolean = false;
+    public aliases: boolean = false;
+    public pulseWidth: number = Config.pulseWidthRange;
+    public decimalOffset: number = 0;
+    public supersawDynamism: number = Config.supersawDynamismMax;
+    public supersawSpread: number = Math.ceil(Config.supersawSpreadMax / 2.0);
+    public supersawShape: number = 0;
+    public stringSustain: number = 10;
+    public stringSustainType: SustainType = SustainType.acoustic;
+    public distortion: number = 0;
+    public bitcrusherFreq: number = 0;
+    public bitcrusherQuantization: number = 0;
+    public ringModulation: number = Config.ringModRange >> 1;
+    public ringModulationHz: number = Config.ringModHzRange >> 1;
+    public ringModWaveformIndex: number = 0;
+    public ringModPulseWidth: number = Config.pwmOperatorWaves.length >> 1;
+    public ringModHzOffset: number = 200;
+    public granular: number = 4;
+    public grainSize: number = (Config.grainSizeMax - Config.grainSizeMin) / Config.grainSizeStep;
+    public grainAmounts: number = Config.grainAmountsMax;
+    public grainRange: number = 40;
+    public chorus: number = 0;
+    public reverb: number = 0;
+    public echoSustain: number = 0;
+    public echoDelay: number = 0;
+    public algorithm: number = 0;
+    public feedbackType: number = 0;
+    public algorithm6Op: number = 1;
+    public feedbackType6Op: number = 1;//default to not custom
+    public customAlgorithm: CustomAlgorithm = new CustomAlgorithm(); //{ name: "1←4(2←5 3←6", carrierCount: 3, associatedCarrier: [1, 2, 3, 1, 2, 3], modulatedBy: [[2, 3, 4], [5], [6], [], [], []] };
+    public customFeedbackType: CustomFeedBack = new CustomFeedBack(); //{ name: "1↔4 2↔5 3↔6", indices: [[3], [5], [6], [1], [2], [3]] };
+    public feedbackAmplitude: number = 0;
+    public customChipWave: Float32Array = new Float32Array(64);
+    public customChipWaveIntegral: Float32Array = new Float32Array(65); // One extra element for wrap-around in chipSynth.
+    public readonly operators: Operator[] = [];
+    public readonly spectrumWave: SpectrumWave;
+    public readonly harmonicsWave: HarmonicsWave = new HarmonicsWave();
+    public readonly drumsetEnvelopes: number[] = [];
+    public readonly drumsetSpectrumWaves: SpectrumWave[] = [];
+    public modChannels: number[] = [];
+    public modInstruments: number[] = [];
+    public modulators: number[] = [];
+    public modFilterTypes: number[] = [];
+    public modEnvelopeNumbers: number[] = [];
+    public invalidModulators: boolean[] = [];
+
+    //Literally just for pitch envelopes. 
+    public isNoiseInstrument: boolean = false;
+    constructor(isNoiseChannel: boolean, isModChannel: boolean) {
+
+        // @jummbus - My screed on how modulator arrays for instruments work, for the benefit of myself in the future, or whoever else.
+        //
+        // modulators[mod] is the index in Config.modulators to use, with "none" being the first entry.
+        //
+        // modChannels[mod] gives the index of a channel set for this mod. Two special values:
+        //   -2 "none"
+        //   -1 "song"
+        //   0+ actual channel index
+        //
+        // modInstruments[mod] gives the index of an instrument within the channel set for this mod. Again, two special values:
+        //   [0 ~ channel.instruments.length-1]     channel's instrument index
+        //   channel.instruments.length             "all"
+        //   channel.instruments.length+1           "active"
+        //
+        // modFilterTypes[mod] gives some info about the filter type: 0 is morph, 1+ is index in the dot selection array (dot 1 x, dot 1 y, dot 2 x...)
+        //   0  filter morph
+        //   1+ filter dot target, starting from dot 1 x and then dot 1 y, then repeating x, y for all dots in order. Note: odd values are always "x" targets, even are "y".
+
+        if (isModChannel) {
+            for (let mod: number = 0; mod < Config.modCount; mod++) {
+                this.modChannels.push(-2);
+                this.modInstruments.push(0);
+                this.modulators.push(Config.modulators.dictionary["none"].index);
+            }
+        }
+
+        this.spectrumWave = new SpectrumWave(isNoiseChannel);
+        for (let i: number = 0; i < Config.operatorCount + 2; i++) {//hopefully won't break everything
+            this.operators[i] = new Operator(i);
+        }
+        for (let i: number = 0; i < Config.drumCount; i++) {
+            this.drumsetEnvelopes[i] = Config.envelopes.dictionary["twang 2"].index;
+            this.drumsetSpectrumWaves[i] = new SpectrumWave(true);
+        }
+
+        for (let i = 0; i < 64; i++) {
+            this.customChipWave[i] = 24 - Math.floor(i * (48 / 64));
+        }
+
+        let sum: number = 0.0;
+        for (let i: number = 0; i < this.customChipWave.length; i++) {
+            sum += this.customChipWave[i];
+        }
+        const average: number = sum / this.customChipWave.length;
+
+        // Perform the integral on the wave. The chipSynth will perform the derivative to get the original wave back but with antialiasing.
+        let cumulative: number = 0;
+        let wavePrev: number = 0;
+        for (let i: number = 0; i < this.customChipWave.length; i++) {
+            cumulative += wavePrev;
+            wavePrev = this.customChipWave[i] - average;
+            this.customChipWaveIntegral[i] = cumulative;
+        }
+
+        // 65th, last sample is for anti-aliasing
+        this.customChipWaveIntegral[64] = 0.0;
+
+        //properly sets the isNoiseInstrument value
+        this.isNoiseInstrument = isNoiseChannel;
+
+    }
+
+    public setTypeAndReset(type: InstrumentType, isNoiseChannel: boolean, isModChannel: boolean): void {
+        // Mod channels are forced to one type.
+        if (isModChannel) type = InstrumentType.mod;
+        this.type = type;
+        this.preset = type;
+        this.volume = 0;
+        this.effects = (1 << EffectType.panning); // Panning enabled by default in JB.
+        this.chorus = Config.chorusRange - 1;
+        this.reverb = 0;
+        this.echoSustain = Math.floor((Config.echoSustainRange - 1) * 0.5);
+        this.echoDelay = Math.floor((Config.echoDelayRange - 1) * 0.5);
+        this.eqFilter.reset();
+        this.eqFilterType = false;
+        this.eqFilterSimpleCut = Config.filterSimpleCutRange - 1;
+        this.eqFilterSimplePeak = 0;
+        for (let i: number = 0; i < Config.filterMorphCount; i++) {
+            this.eqSubFilters[i] = null;
+            this.noteSubFilters[i] = null;
+        }
+        this.noteFilter.reset();
+        this.noteFilterType = false;
+        this.noteFilterSimpleCut = Config.filterSimpleCutRange - 1;
+        this.noteFilterSimplePeak = 0;
+        this.distortion = Math.floor((Config.distortionRange - 1) * 0.75);
+        this.bitcrusherFreq = Math.floor((Config.bitcrusherFreqRange - 1) * 0.5)
+        this.bitcrusherQuantization = Math.floor((Config.bitcrusherQuantizationRange - 1) * 0.5);
+        this.ringModulation = Config.ringModRange >> 1;
+        this.ringModulationHz = Config.ringModHzRange >> 1;
+        this.ringModWaveformIndex = 0;
+        this.ringModPulseWidth = Config.pwmOperatorWaves.length >> 1;
+        this.ringModHzOffset = 200;
+        this.granular = 4;
+        this.grainSize = (Config.grainSizeMax - Config.grainSizeMin) / Config.grainSizeStep;
+        this.grainAmounts = Config.grainAmountsMax;
+        this.grainRange = 40;
+        this.pan = Config.panCenter;
+        this.panDelay = 0;
+        this.pitchShift = Config.pitchShiftCenter;
+        this.detune = Config.detuneCenter;
+        this.vibrato = 0;
+        this.unison = 0;
+        this.stringSustain = 10;
+        this.stringSustainType = Config.enableAcousticSustain ? SustainType.acoustic : SustainType.bright;
+        this.clicklessTransition = false;
+        this.arpeggioSpeed = 12;
+        this.monoChordTone = 1;
+        this.discreteSlide = 0;
+        this.envelopeSpeed = 12;
+        this.legacyTieOver = false;
+        this.aliases = false;
+        this.fadeIn = 0;
+        this.fadeOut = Config.fadeOutNeutral;
+        this.transition = Config.transitions.dictionary["normal"].index;
+        this.envelopeCount = 0;
+        this.isNoiseInstrument = isNoiseChannel;
+        switch (type) {
+            case InstrumentType.chip:
+                this.chipWave = 2;
+                // TODO: enable the chord effect? //slarmoo - My decision is no, others can if they would like though
+                this.chord = Config.chords.dictionary["arpeggio"].index;
+                // advloop addition
+                this.isUsingAdvancedLoopControls = false;
+                this.chipWaveLoopStart = 0;
+                this.chipWaveLoopEnd = Config.rawRawChipWaves[this.chipWave].samples.length - 1;
+                this.chipWaveLoopMode = 0;
+                this.chipWavePlayBackwards = false;
+                this.chipWaveStartOffset = 0;
+                // advloop addition
+                break;
+            case InstrumentType.customChipWave:
+                this.chipWave = 2;
+                this.chord = Config.chords.dictionary["arpeggio"].index;
+                for (let i: number = 0; i < 64; i++) {
+                    this.customChipWave[i] = 24 - (Math.floor(i * (48 / 64)));
+                }
+
+                let sum: number = 0.0;
+                for (let i: number = 0; i < this.customChipWave.length; i++) {
+                    sum += this.customChipWave[i];
+                }
+                const average: number = sum / this.customChipWave.length;
+
+                // Perform the integral on the wave. The chipSynth will perform the derivative to get the original wave back but with antialiasing.
+                let cumulative: number = 0;
+                let wavePrev: number = 0;
+                for (let i: number = 0; i < this.customChipWave.length; i++) {
+                    cumulative += wavePrev;
+                    wavePrev = this.customChipWave[i] - average;
+                    this.customChipWaveIntegral[i] = cumulative;
+                }
+
+                this.customChipWaveIntegral[64] = 0.0;
+                break;
+            case InstrumentType.fm:
+                this.chord = Config.chords.dictionary["custom interval"].index;
+                this.algorithm = 0;
+                this.feedbackType = 0;
+                this.feedbackAmplitude = 0;
+                for (let i: number = 0; i < this.operators.length; i++) {
+                    this.operators[i].reset(i);
+                }
+                break;
+            case InstrumentType.fm6op:
+                this.transition = 1;
+                this.vibrato = 0;
+                this.effects = 1;
+                this.chord = 3;
+                this.algorithm = 0;
+                this.feedbackType = 0;
+                this.algorithm6Op = 1;
+                this.feedbackType6Op = 1;
+                this.customAlgorithm.fromPreset(1);
+                this.feedbackAmplitude = 0;
+                for (let i: number = 0; i < this.operators.length; i++) {
+                    this.operators[i].reset(i);
+                }
+                break;
+            case InstrumentType.noise:
+                this.chipNoise = 1;
+                this.chord = Config.chords.dictionary["arpeggio"].index;
+                break;
+            case InstrumentType.spectrum:
+                this.chord = Config.chords.dictionary["simultaneous"].index;
+                this.spectrumWave.reset(isNoiseChannel);
+                break;
+            case InstrumentType.drumset:
+                this.chord = Config.chords.dictionary["simultaneous"].index;
+                for (let i: number = 0; i < Config.drumCount; i++) {
+                    this.drumsetEnvelopes[i] = Config.envelopes.dictionary["twang 2"].index;
+                    if (this.drumsetSpectrumWaves[i] == undefined) {
+                        this.drumsetSpectrumWaves[i] = new SpectrumWave(true);
+                    }
+                    this.drumsetSpectrumWaves[i].reset(isNoiseChannel);
+                }
+                break;
+            case InstrumentType.harmonics:
+                this.chord = Config.chords.dictionary["simultaneous"].index;
+                this.harmonicsWave.reset();
+                break;
+            case InstrumentType.pwm:
+                this.chord = Config.chords.dictionary["arpeggio"].index;
+                this.pulseWidth = Config.pulseWidthRange;
+                this.decimalOffset = 0;
+                break;
+            case InstrumentType.pickedString:
+                this.chord = Config.chords.dictionary["strum"].index;
+                this.harmonicsWave.reset();
+                break;
+            case InstrumentType.mod:
+                this.transition = 0;
+                this.vibrato = 0;
+                this.interval = 0;
+                this.effects = 0;
+                this.chord = 0;
+                this.modChannels = [];
+                this.modInstruments = [];
+                this.modulators = [];
+                for (let mod: number = 0; mod < Config.modCount; mod++) {
+                    this.modChannels.push(-2);
+                    this.modInstruments.push(0);
+                    this.modulators.push(Config.modulators.dictionary["none"].index);
+                    this.invalidModulators[mod] = false;
+                    this.modFilterTypes[mod] = 0;
+                    this.modEnvelopeNumbers[mod] = 0;
+                }
+                break;
+            case InstrumentType.supersaw:
+                this.chord = Config.chords.dictionary["arpeggio"].index;
+                this.supersawDynamism = Config.supersawDynamismMax;
+                this.supersawSpread = Math.ceil(Config.supersawSpreadMax / 2.0);
+                this.supersawShape = 0;
+                this.pulseWidth = Config.pulseWidthRange - 1;
+                this.decimalOffset = 0;
+                break;
+            default:
+                throw new Error("Unrecognized instrument type: " + type);
+        }
+        // Chip/noise instruments had arpeggio and FM had custom interval but neither
+        // explicitly saved the chorus setting beforeSeven so enable it here. The effects
+        // will otherwise get overridden when reading SongTagCode.startInstrument.
+        if (this.chord != Config.chords.dictionary["simultaneous"].index) {
+            // Enable chord if it was used.
+            this.effects = (this.effects | (1 << EffectType.chord));
+        }
+    }
+
+    // (only) difference for JummBox: Returns whether or not the note filter was chosen for filter conversion.
+    public convertLegacySettings(legacySettings: LegacySettings, forceSimpleFilter: boolean): void {
+        let legacyCutoffSetting: number | undefined = legacySettings.filterCutoff;
+        let legacyResonanceSetting: number | undefined = legacySettings.filterResonance;
+        let legacyFilterEnv: Envelope | undefined = legacySettings.filterEnvelope;
+        let legacyPulseEnv: Envelope | undefined = legacySettings.pulseEnvelope;
+        let legacyOperatorEnvelopes: Envelope[] | undefined = legacySettings.operatorEnvelopes;
+        let legacyFeedbackEnv: Envelope | undefined = legacySettings.feedbackEnvelope;
+
+        // legacy defaults:
+        if (legacyCutoffSetting == undefined) legacyCutoffSetting = (this.type == InstrumentType.chip) ? 6 : 10;
+        if (legacyResonanceSetting == undefined) legacyResonanceSetting = 0;
+        if (legacyFilterEnv == undefined) legacyFilterEnv = Config.envelopes.dictionary["none"];
+        if (legacyPulseEnv == undefined) legacyPulseEnv = Config.envelopes.dictionary[(this.type == InstrumentType.pwm) ? "twang 2" : "none"];
+        if (legacyOperatorEnvelopes == undefined) legacyOperatorEnvelopes = [Config.envelopes.dictionary[(this.type == InstrumentType.fm) ? "note size" : "none"], Config.envelopes.dictionary["none"], Config.envelopes.dictionary["none"], Config.envelopes.dictionary["none"]];
+        if (legacyFeedbackEnv == undefined) legacyFeedbackEnv = Config.envelopes.dictionary["none"];
+
+        // The "punch" envelope is special: it goes *above* the chosen cutoff. But if the cutoff was already at the max, it couldn't go any higher... except in the current version of BeepBox I raised the max cutoff so it *can* but then it sounds different, so to preserve the original sound let's just remove the punch envelope.
+        const legacyFilterCutoffRange: number = 11;
+        const cutoffAtMax: boolean = (legacyCutoffSetting == legacyFilterCutoffRange - 1);
+        if (cutoffAtMax && legacyFilterEnv.type == EnvelopeType.punch) legacyFilterEnv = Config.envelopes.dictionary["none"];
+
+        const carrierCount: number = Config.algorithms[this.algorithm].carrierCount;
+        let noCarriersControlledByNoteSize: boolean = true;
+        let allCarriersControlledByNoteSize: boolean = true;
+        let noteSizeControlsSomethingElse: boolean = (legacyFilterEnv.type == EnvelopeType.noteSize) || (legacyPulseEnv.type == EnvelopeType.noteSize);
+        if (this.type == InstrumentType.fm || this.type == InstrumentType.fm6op) {
+            noteSizeControlsSomethingElse = noteSizeControlsSomethingElse || (legacyFeedbackEnv.type == EnvelopeType.noteSize);
+            for (let i: number = 0; i < legacyOperatorEnvelopes.length; i++) {
+                if (i < carrierCount) {
+                    if (legacyOperatorEnvelopes[i].type != EnvelopeType.noteSize) {
+                        allCarriersControlledByNoteSize = false;
+                    } else {
+                        noCarriersControlledByNoteSize = false;
+                    }
+                } else {
+                    noteSizeControlsSomethingElse = noteSizeControlsSomethingElse || (legacyOperatorEnvelopes[i].type == EnvelopeType.noteSize);
+                }
+            }
+        }
+
+        this.envelopeCount = 0;
+
+        if (this.type == InstrumentType.fm || this.type == InstrumentType.fm6op) {
+            if (allCarriersControlledByNoteSize && noteSizeControlsSomethingElse) {
+                this.addEnvelope(Config.instrumentAutomationTargets.dictionary["noteVolume"].index, 0, Config.envelopes.dictionary["note size"].index, false);
+            } else if (noCarriersControlledByNoteSize && !noteSizeControlsSomethingElse) {
+                this.addEnvelope(Config.instrumentAutomationTargets.dictionary["none"].index, 0, Config.envelopes.dictionary["note size"].index, false);
+            }
+        }
+
+        if (legacyFilterEnv.type == EnvelopeType.none) {
+            this.noteFilter.reset();
+            this.noteFilterType = false;
+            this.eqFilter.convertLegacySettings(legacyCutoffSetting, legacyResonanceSetting, legacyFilterEnv);
+            this.effects &= ~(1 << EffectType.noteFilter);
+            if (forceSimpleFilter || this.eqFilterType) {
+                this.eqFilterType = true;
+                this.eqFilterSimpleCut = legacyCutoffSetting;
+                this.eqFilterSimplePeak = legacyResonanceSetting;
+            }
+        } else {
+            this.eqFilter.reset();
+
+            this.eqFilterType = false;
+            this.noteFilterType = false;
+            this.noteFilter.convertLegacySettings(legacyCutoffSetting, legacyResonanceSetting, legacyFilterEnv);
+            this.effects |= 1 << EffectType.noteFilter;
+            this.addEnvelope(Config.instrumentAutomationTargets.dictionary["noteFilterAllFreqs"].index, 0, legacyFilterEnv.index, false);
+            if (forceSimpleFilter || this.noteFilterType) {
+                this.noteFilterType = true;
+                this.noteFilterSimpleCut = legacyCutoffSetting;
+                this.noteFilterSimplePeak = legacyResonanceSetting;
+            }
+        }
+
+        if (legacyPulseEnv.type != EnvelopeType.none) {
+            this.addEnvelope(Config.instrumentAutomationTargets.dictionary["pulseWidth"].index, 0, legacyPulseEnv.index, false);
+        }
+
+        for (let i: number = 0; i < legacyOperatorEnvelopes.length; i++) {
+            if (i < carrierCount && allCarriersControlledByNoteSize) continue;
+            if (legacyOperatorEnvelopes[i].type != EnvelopeType.none) {
+                this.addEnvelope(Config.instrumentAutomationTargets.dictionary["operatorAmplitude"].index, i, legacyOperatorEnvelopes[i].index, false);
+            }
+        }
+
+        if (legacyFeedbackEnv.type != EnvelopeType.none) {
+            this.addEnvelope(Config.instrumentAutomationTargets.dictionary["feedbackAmplitude"].index, 0, legacyFeedbackEnv.index, false);
+        }
+    }
+
+    public toJsonObject(): Object {
+        const instrumentObject: any = {
+            "type": Config.instrumentTypeNames[this.type],
+            "volume": this.volume,
+            "eqFilter": this.eqFilter.toJsonObject(),
+            "eqFilterType": this.eqFilterType,
+            "eqSimpleCut": this.eqFilterSimpleCut,
+            "eqSimplePeak": this.eqFilterSimplePeak,
+            "envelopeSpeed": this.envelopeSpeed
+        };
+
+        if (this.preset != this.type) {
+            instrumentObject["preset"] = this.preset;
+        }
+
+        for (let i: number = 0; i < Config.filterMorphCount; i++) {
+            if (this.eqSubFilters[i] != null)
+                instrumentObject["eqSubFilters" + i] = this.eqSubFilters[i]!.toJsonObject();
+        }
+
+        const effects: string[] = [];
+        for (const effect of Config.effectOrder) {
+            if (this.effects & (1 << effect)) {
+                effects.push(Config.effectNames[effect]);
+            }
+        }
+        instrumentObject["effects"] = effects;
+
+
+        if (effectsIncludeTransition(this.effects)) {
+            instrumentObject["transition"] = Config.transitions[this.transition].name;
+            instrumentObject["clicklessTransition"] = this.clicklessTransition;
+        }
+        if (effectsIncludeDiscreteSlide(this.effects)) {
+            instrumentObject["discreteSlide"] = Config.discreteSlideTypes[this.discreteSlide].name;
+        }
+        if (effectsIncludeChord(this.effects)) {
+            instrumentObject["chord"] = this.getChord().name;
+            instrumentObject["fastTwoNoteArp"] = this.fastTwoNoteArp;
+            instrumentObject["arpeggioSpeed"] = this.arpeggioSpeed;
+            instrumentObject["monoChordTone"] = this.monoChordTone;
+        }
+        if (effectsIncludePitchShift(this.effects)) {
+            instrumentObject["pitchShiftSemitones"] = this.pitchShift;
+        }
+        if (effectsIncludeDetune(this.effects)) {
+            instrumentObject["detuneCents"] = Synth.detuneToCents(this.detune);
+        }
+        if (effectsIncludeVibrato(this.effects)) {
+            if (this.vibrato == -1) {
+                this.vibrato = 5;
+            }
+            if (this.vibrato != 5) {
+                instrumentObject["vibrato"] = Config.vibratos[this.vibrato].name;
+            } else {
+                instrumentObject["vibrato"] = "custom";
+            }
+            instrumentObject["vibratoDepth"] = this.vibratoDepth;
+            instrumentObject["vibratoDelay"] = this.vibratoDelay;
+            instrumentObject["vibratoSpeed"] = this.vibratoSpeed;
+            instrumentObject["vibratoType"] = this.vibratoType;
+        }
+        if (effectsIncludeNoteFilter(this.effects)) {
+            instrumentObject["noteFilterType"] = this.noteFilterType;
+            instrumentObject["noteSimpleCut"] = this.noteFilterSimpleCut;
+            instrumentObject["noteSimplePeak"] = this.noteFilterSimplePeak;
+            instrumentObject["noteFilter"] = this.noteFilter.toJsonObject();
+
+            for (let i: number = 0; i < Config.filterMorphCount; i++) {
+                if (this.noteSubFilters[i] != null)
+                    instrumentObject["noteSubFilters" + i] = this.noteSubFilters[i]!.toJsonObject();
+            }
+        }
+        if (effectsIncludeGranular(this.effects)) {
+            instrumentObject["granular"] = this.granular;
+            instrumentObject["grainSize"] = this.grainSize;
+            instrumentObject["grainAmounts"] = this.grainAmounts;
+            instrumentObject["grainRange"] = this.grainRange;
+        }
+        if (effectsIncludeRingModulation(this.effects)) {
+            instrumentObject["ringMod"] = Math.round(100 * this.ringModulation / (Config.ringModRange - 1));
+            instrumentObject["ringModHz"] = Math.round(100 * this.ringModulationHz / (Config.ringModHzRange - 1));
+            instrumentObject["ringModWaveformIndex"] = this.ringModWaveformIndex;
+            instrumentObject["ringModPulseWidth"] = Math.round(100 * this.ringModPulseWidth / (Config.pulseWidthRange - 1));
+            instrumentObject["ringModHzOffset"] = Math.round(100 * this.ringModHzOffset / (Config.rmHzOffsetMax));
+        }
+        if (effectsIncludeDistortion(this.effects)) {
+            instrumentObject["distortion"] = Math.round(100 * this.distortion / (Config.distortionRange - 1));
+            instrumentObject["aliases"] = this.aliases;
+        }
+        if (effectsIncludeBitcrusher(this.effects)) {
+            instrumentObject["bitcrusherOctave"] = (Config.bitcrusherFreqRange - 1 - this.bitcrusherFreq) * Config.bitcrusherOctaveStep;
+            instrumentObject["bitcrusherQuantization"] = Math.round(100 * this.bitcrusherQuantization / (Config.bitcrusherQuantizationRange - 1));
+        }
+        if (effectsIncludePanning(this.effects)) {
+            instrumentObject["pan"] = Math.round(100 * (this.pan - Config.panCenter) / Config.panCenter);
+            instrumentObject["panDelay"] = this.panDelay;
+        }
+        if (effectsIncludeChorus(this.effects)) {
+            instrumentObject["chorus"] = Math.round(100 * this.chorus / (Config.chorusRange - 1));
+        }
+        if (effectsIncludeEcho(this.effects)) {
+            instrumentObject["echoSustain"] = Math.round(100 * this.echoSustain / (Config.echoSustainRange - 1));
+            instrumentObject["echoDelayBeats"] = Math.round(1000 * (this.echoDelay + 1) * Config.echoDelayStepTicks / (Config.ticksPerPart * Config.partsPerBeat)) / 1000;
+        }
+        if (effectsIncludeReverb(this.effects)) {
+            instrumentObject["reverb"] = Math.round(100 * this.reverb / (Config.reverbRange - 1));
+        }
+
+        if (this.type != InstrumentType.drumset) {
+            instrumentObject["fadeInSeconds"] = Math.round(10000 * Synth.fadeInSettingToSeconds(this.fadeIn)) / 10000;
+            instrumentObject["fadeOutTicks"] = Synth.fadeOutSettingToTicks(this.fadeOut);
+        }
+
+        if (this.type == InstrumentType.harmonics || this.type == InstrumentType.pickedString) {
+            instrumentObject["harmonics"] = [];
+            for (let i: number = 0; i < Config.harmonicsControlPoints; i++) {
+                instrumentObject["harmonics"][i] = Math.round(100 * this.harmonicsWave.harmonics[i] / Config.harmonicsMax);
+            }
+        }
+
+        if (this.type == InstrumentType.noise) {
+            instrumentObject["wave"] = Config.chipNoises[this.chipNoise].name;
+            instrumentObject["unison"] = this.unison == Config.unisons.length ? "custom" : Config.unisons[this.unison].name;
+            if (this.unison == Config.unisons.length) {
+                instrumentObject["unisonVoices"] = this.unisonVoices;
+                instrumentObject["unisonSpread"] = this.unisonSpread;
+                instrumentObject["unisonOffset"] = this.unisonOffset;
+                instrumentObject["unisonExpression"] = this.unisonExpression;
+                instrumentObject["unisonSign"] = this.unisonSign;
+            }
+        } else if (this.type == InstrumentType.spectrum) {
+            instrumentObject["spectrum"] = [];
+            for (let i: number = 0; i < Config.spectrumControlPoints; i++) {
+                instrumentObject["spectrum"][i] = Math.round(100 * this.spectrumWave.spectrum[i] / Config.spectrumMax);
+            }
+            instrumentObject["unison"] = this.unison == Config.unisons.length ? "custom" : Config.unisons[this.unison].name;
+            if (this.unison == Config.unisons.length) {
+                instrumentObject["unisonVoices"] = this.unisonVoices;
+                instrumentObject["unisonSpread"] = this.unisonSpread;
+                instrumentObject["unisonOffset"] = this.unisonOffset;
+                instrumentObject["unisonExpression"] = this.unisonExpression;
+                instrumentObject["unisonSign"] = this.unisonSign;
+            }
+        } else if (this.type == InstrumentType.drumset) {
+            instrumentObject["drums"] = [];
+            instrumentObject["unison"] = this.unison == Config.unisons.length ? "custom" : Config.unisons[this.unison].name;
+            if (this.unison == Config.unisons.length) {
+                instrumentObject["unisonVoices"] = this.unisonVoices;
+                instrumentObject["unisonSpread"] = this.unisonSpread;
+                instrumentObject["unisonOffset"] = this.unisonOffset;
+                instrumentObject["unisonExpression"] = this.unisonExpression;
+                instrumentObject["unisonSign"] = this.unisonSign;
+            }
+            for (let j: number = 0; j < Config.drumCount; j++) {
+                const spectrum: number[] = [];
+                for (let i: number = 0; i < Config.spectrumControlPoints; i++) {
+                    spectrum[i] = Math.round(100 * this.drumsetSpectrumWaves[j].spectrum[i] / Config.spectrumMax);
+                }
+                instrumentObject["drums"][j] = {
+                    "filterEnvelope": this.getDrumsetEnvelope(j).name,
+                    "spectrum": spectrum,
+                };
+            }
+        } else if (this.type == InstrumentType.chip) {
+            instrumentObject["wave"] = Config.chipWaves[this.chipWave].name;
+            // should this unison pushing code be turned into a function..?
+            instrumentObject["unison"] = this.unison == Config.unisons.length ? "custom" : Config.unisons[this.unison].name;
+            // these don't need to be pushed if custom unisons aren't being used
+            if (this.unison == Config.unisons.length) {
+                instrumentObject["unisonVoices"] = this.unisonVoices;
+                instrumentObject["unisonSpread"] = this.unisonSpread;
+                instrumentObject["unisonOffset"] = this.unisonOffset;
+                instrumentObject["unisonExpression"] = this.unisonExpression;
+                instrumentObject["unisonSign"] = this.unisonSign;
+            }
+
+            // advloop addition
+            instrumentObject["isUsingAdvancedLoopControls"] = this.isUsingAdvancedLoopControls;
+            instrumentObject["chipWaveLoopStart"] = this.chipWaveLoopStart;
+            instrumentObject["chipWaveLoopEnd"] = this.chipWaveLoopEnd;
+            instrumentObject["chipWaveLoopMode"] = this.chipWaveLoopMode;
+            instrumentObject["chipWavePlayBackwards"] = this.chipWavePlayBackwards;
+            instrumentObject["chipWaveStartOffset"] = this.chipWaveStartOffset;
+            // advloop addition
+        } else if (this.type == InstrumentType.pwm) {
+            instrumentObject["pulseWidth"] = this.pulseWidth;
+            instrumentObject["decimalOffset"] = this.decimalOffset;
+            instrumentObject["unison"] = this.unison == Config.unisons.length ? "custom" : Config.unisons[this.unison].name;
+            if (this.unison == Config.unisons.length) {
+                instrumentObject["unisonVoices"] = this.unisonVoices;
+                instrumentObject["unisonSpread"] = this.unisonSpread;
+                instrumentObject["unisonOffset"] = this.unisonOffset;
+                instrumentObject["unisonExpression"] = this.unisonExpression;
+                instrumentObject["unisonSign"] = this.unisonSign;
+            }
+        } else if (this.type == InstrumentType.supersaw) {
+            instrumentObject["pulseWidth"] = this.pulseWidth;
+            instrumentObject["decimalOffset"] = this.decimalOffset;
+            instrumentObject["dynamism"] = Math.round(100 * this.supersawDynamism / Config.supersawDynamismMax);
+            instrumentObject["spread"] = Math.round(100 * this.supersawSpread / Config.supersawSpreadMax);
+            instrumentObject["shape"] = Math.round(100 * this.supersawShape / Config.supersawShapeMax);
+        } else if (this.type == InstrumentType.pickedString) {
+            instrumentObject["unison"] = this.unison == Config.unisons.length ? "custom" : Config.unisons[this.unison].name;
+            if (this.unison == Config.unisons.length) {
+                instrumentObject["unisonVoices"] = this.unisonVoices;
+                instrumentObject["unisonSpread"] = this.unisonSpread;
+                instrumentObject["unisonOffset"] = this.unisonOffset;
+                instrumentObject["unisonExpression"] = this.unisonExpression;
+                instrumentObject["unisonSign"] = this.unisonSign;
+            }
+            instrumentObject["stringSustain"] = Math.round(100 * this.stringSustain / (Config.stringSustainRange - 1));
+            if (Config.enableAcousticSustain) {
+                instrumentObject["stringSustainType"] = Config.sustainTypeNames[this.stringSustainType];
+            }
+        } else if (this.type == InstrumentType.harmonics) {
+            instrumentObject["unison"] = this.unison == Config.unisons.length ? "custom" : Config.unisons[this.unison].name;
+            if (this.unison == Config.unisons.length) {
+                instrumentObject["unisonVoices"] = this.unisonVoices;
+                instrumentObject["unisonSpread"] = this.unisonSpread;
+                instrumentObject["unisonOffset"] = this.unisonOffset;
+                instrumentObject["unisonExpression"] = this.unisonExpression;
+                instrumentObject["unisonSign"] = this.unisonSign;
+            }
+        } else if (this.type == InstrumentType.fm || this.type == InstrumentType.fm6op) {
+            const operatorArray: Object[] = [];
+            for (const operator of this.operators) {
+                operatorArray.push({
+                    "frequency": Config.operatorFrequencies[operator.frequency].name,
+                    "amplitude": operator.amplitude,
+                    "waveform": Config.operatorWaves[operator.waveform].name,
+                    "pulseWidth": operator.pulseWidth,
+                });
+            }
+            if (this.type == InstrumentType.fm) {
+                instrumentObject["algorithm"] = Config.algorithms[this.algorithm].name;
+                instrumentObject["feedbackType"] = Config.feedbacks[this.feedbackType].name;
+                instrumentObject["feedbackAmplitude"] = this.feedbackAmplitude;
+                instrumentObject["operators"] = operatorArray;
+            } else {
+                instrumentObject["algorithm"] = Config.algorithms6Op[this.algorithm6Op].name;
+                instrumentObject["feedbackType"] = Config.feedbacks6Op[this.feedbackType6Op].name;
+                instrumentObject["feedbackAmplitude"] = this.feedbackAmplitude;
+                if (this.algorithm6Op == 0) {
+                    const customAlgorithm: any = {};
+                    customAlgorithm["mods"] = this.customAlgorithm.modulatedBy;
+                    customAlgorithm["carrierCount"] = this.customAlgorithm.carrierCount;
+                    instrumentObject["customAlgorithm"] = customAlgorithm;
+                }
+                if (this.feedbackType6Op == 0) {
+                    const customFeedback: any = {};
+                    customFeedback["mods"] = this.customFeedbackType.indices;
+                    instrumentObject["customFeedback"] = customFeedback;
+                }
+
+                instrumentObject["operators"] = operatorArray;
+            }
+        } else if (this.type == InstrumentType.customChipWave) {
+            instrumentObject["wave"] = Config.chipWaves[this.chipWave].name;
+            instrumentObject["unison"] = this.unison == Config.unisons.length ? "custom" : Config.unisons[this.unison].name;
+            if (this.unison == Config.unisons.length) {
+                instrumentObject["unisonVoices"] = this.unisonVoices;
+                instrumentObject["unisonSpread"] = this.unisonSpread;
+                instrumentObject["unisonOffset"] = this.unisonOffset;
+                instrumentObject["unisonExpression"] = this.unisonExpression;
+                instrumentObject["unisonSign"] = this.unisonSign;
+            }
+            instrumentObject["customChipWave"] = new Float64Array(64);
+            instrumentObject["customChipWaveIntegral"] = new Float64Array(65);
+            for (let i: number = 0; i < this.customChipWave.length; i++) {
+                instrumentObject["customChipWave"][i] = this.customChipWave[i];
+                // Meh, waste of space and can be inaccurate. It will be recalc'ed when instrument loads.
+                //instrumentObject["customChipWaveIntegral"][i] = this.customChipWaveIntegral[i];
+            }
+        } else if (this.type == InstrumentType.mod) {
+            instrumentObject["modChannels"] = [];
+            instrumentObject["modInstruments"] = [];
+            instrumentObject["modSettings"] = [];
+            instrumentObject["modFilterTypes"] = [];
+            instrumentObject["modEnvelopeNumbers"] = [];
+            for (let mod: number = 0; mod < Config.modCount; mod++) {
+                instrumentObject["modChannels"][mod] = this.modChannels[mod];
+                instrumentObject["modInstruments"][mod] = this.modInstruments[mod];
+                instrumentObject["modSettings"][mod] = this.modulators[mod];
+                instrumentObject["modFilterTypes"][mod] = this.modFilterTypes[mod];
+                instrumentObject["modEnvelopeNumbers"][mod] = this.modEnvelopeNumbers[mod];
+            }
+        } else {
+            throw new Error("Unrecognized instrument type");
+        }
+
+        const envelopes: any[] = [];
+        for (let i = 0; i < this.envelopeCount; i++) {
+            envelopes.push(this.envelopes[i].toJsonObject());
+        }
+        instrumentObject["envelopes"] = envelopes;
+
+        return instrumentObject;
+    }
+
+
+    public fromJsonObject(instrumentObject: any, isNoiseChannel: boolean, isModChannel: boolean, useSlowerRhythm: boolean, useFastTwoNoteArp: boolean, legacyGlobalReverb: number = 0, jsonFormat: string = Config.jsonFormat): void {
+        if (instrumentObject == undefined) instrumentObject = {};
+
+        const format: string = jsonFormat.toLowerCase();
+
+        let type: InstrumentType = Config.instrumentTypeNames.indexOf(instrumentObject["type"]);
+        // SynthBox support
+        if ((format == "synthbox") && (instrumentObject["type"] == "FM")) type = Config.instrumentTypeNames.indexOf("FM6op");
+        if (<any>type == -1) type = isModChannel ? InstrumentType.mod : (isNoiseChannel ? InstrumentType.noise : InstrumentType.chip);
+        this.setTypeAndReset(type, isNoiseChannel, isModChannel);
+
+        this.effects &= ~(1 << EffectType.panning);
+
+        if (instrumentObject["preset"] != undefined) {
+            this.preset = instrumentObject["preset"] >>> 0;
+        }
+
+        if (instrumentObject["volume"] != undefined) {
+            if (format == "jummbox" || format == "midbox" || format == "synthbox" || format == "goldbox" || format == "paandorasbox" || format == "ultrabox" || format == "slarmoosbox") {
+                this.volume = clamp(-Config.volumeRange / 2, (Config.volumeRange / 2) + 1, instrumentObject["volume"] | 0);
+            } else {
+                this.volume = Math.round(-clamp(0, 8, Math.round(5 - (instrumentObject["volume"] | 0) / 20)) * 25.0 / 7.0);
+            }
+        } else {
+            this.volume = 0;
+        }
+
+        //These can probably be condensed with ternary operators
+        this.envelopeSpeed = instrumentObject["envelopeSpeed"] != undefined ? clamp(0, Config.modulators.dictionary["envelope speed"].maxRawVol + 1, instrumentObject["envelopeSpeed"] | 0) : 12;
+
+        if (Array.isArray(instrumentObject["effects"])) {
+            let effects: number = 0;
+            for (let i: number = 0; i < instrumentObject["effects"].length; i++) {
+                effects = effects | (1 << Config.effectNames.indexOf(instrumentObject["effects"][i]));
+            }
+            this.effects = (effects & ((1 << EffectType.length) - 1));
+        } else {
+            // The index of these names is reinterpreted as a bitfield, which relies on reverb and chorus being the first effects!
+            const legacyEffectsNames: string[] = ["none", "reverb", "chorus", "chorus & reverb"];
+            this.effects = legacyEffectsNames.indexOf(instrumentObject["effects"]);
+            if (this.effects == -1) this.effects = (this.type == InstrumentType.noise) ? 0 : 1;
+        }
+
+        this.transition = Config.transitions.dictionary["normal"].index; // default value.
+        const transitionProperty: any = instrumentObject["transition"] || instrumentObject["envelope"]; // the transition property used to be called envelope, so check that too.
+        if (transitionProperty != undefined) {
+            let transition: Transition | undefined = Config.transitions.dictionary[transitionProperty];
+            if (instrumentObject["fadeInSeconds"] == undefined || instrumentObject["fadeOutTicks"] == undefined) {
+                const legacySettings = (<any>{
+                    "binary": { transition: "interrupt", fadeInSeconds: 0.0, fadeOutTicks: -1 },
+                    "seamless": { transition: "interrupt", fadeInSeconds: 0.0, fadeOutTicks: -1 },
+                    "sudden": { transition: "normal", fadeInSeconds: 0.0, fadeOutTicks: -3 },
+                    "hard": { transition: "normal", fadeInSeconds: 0.0, fadeOutTicks: -3 },
+                    "smooth": { transition: "normal", fadeInSeconds: 0.025, fadeOutTicks: -3 },
+                    "soft": { transition: "normal", fadeInSeconds: 0.025, fadeOutTicks: -3 },
+                    // Note that the old slide transition has the same name as a new slide transition that is different.
+                    // Only apply legacy settings if the instrument JSON was created before, based on the presence
+                    // of the fade in/out fields.
+                    "slide": { transition: "slide in pattern", fadeInSeconds: 0.025, fadeOutTicks: -3 },
+                    "cross fade": { transition: "normal", fadeInSeconds: 0.04, fadeOutTicks: 6 },
+                    "hard fade": { transition: "normal", fadeInSeconds: 0.0, fadeOutTicks: 48 },
+                    "medium fade": { transition: "normal", fadeInSeconds: 0.0125, fadeOutTicks: 72 },
+                    "soft fade": { transition: "normal", fadeInSeconds: 0.06, fadeOutTicks: 96 },
+                })[transitionProperty];
+                if (legacySettings != undefined) {
+                    transition = Config.transitions.dictionary[legacySettings.transition];
+                    // These may be overridden below.
+                    this.fadeIn = Synth.secondsToFadeInSetting(legacySettings.fadeInSeconds);
+                    this.fadeOut = Synth.ticksToFadeOutSetting(legacySettings.fadeOutTicks);
+                }
+            }
+            if (transition != undefined) this.transition = transition.index;
+
+            if (this.transition != Config.transitions.dictionary["normal"].index) {
+                // Enable transition if it was used.
+                this.effects = (this.effects | (1 << EffectType.transition));
+            }
+        }
+        if (effectsIncludeDiscreteSlide(this.effects)) {
+            if (instrumentObject["discreteSlide"] != undefined) {
+                const discreteSlideName: any = instrumentObject["discreteSlide"];
+                const discreteSlideIndex = Config.discreteSlideTypes.findIndex((t: { name: any; }) => t.name == discreteSlideName);
+                if (discreteSlideIndex != -1) this.discreteSlide = discreteSlideIndex;
+            }
+        }
+        // Overrides legacy settings in transition above.
+        if (instrumentObject["fadeInSeconds"] != undefined) {
+            this.fadeIn = Synth.secondsToFadeInSetting(+instrumentObject["fadeInSeconds"]);
+        }
+        if (instrumentObject["fadeOutTicks"] != undefined) {
+            this.fadeOut = Synth.ticksToFadeOutSetting(+instrumentObject["fadeOutTicks"]);
