@@ -1,6 +1,6 @@
 // Copyright (c) 2012-2022 John Nesky and contributing authors, distributed under the MIT license, see accompanying the LICENSE.md file.
 
-import { startLoadingSample, sampleLoadingState, SampleLoadingState, sampleLoadEvents, SampleLoadedEvent, SampleLoadingStatus, loadBuiltInSamples, Dictionary, DictionaryArray, toNameMap, FilterType, SustainType, EnvelopeType, InstrumentType, EffectType, EnvelopeComputeIndex, Transition, Unison, Chord, Vibrato, Envelope, AutomationTarget, Config, getDrumWave, drawNoiseSpectrum, getArpeggioPitchIndex, performIntegralOld, getPulseWidthRatio, effectsIncludeTransition, effectsIncludeChord, effectsIncludePitchShift, effectsIncludeDetune, effectsIncludeVibrato, effectsIncludeNoteFilter, effectsIncludeDistortion, effectsIncludeBitcrusher, effectsIncludePanning, effectsIncludeChorus, effectsIncludeEcho, effectsIncludeReverb, /*effectsIncludeNoteRange,*/ effectsIncludeRingModulation, effectsIncludeGranular, OperatorWave, LFOEnvelopeTypes, RandomEnvelopeTypes, GranularEnvelopeType, calculateRingModHertz } from "./SynthConfig";
+import { startLoadingSample, sampleLoadingState, SampleLoadingState, sampleLoadEvents, SampleLoadedEvent, SampleLoadingStatus, loadBuiltInSamples, Dictionary, DictionaryArray, toNameMap, FilterType, SustainType, EnvelopeType, InstrumentType, EffectType, EnvelopeComputeIndex, Transition, Unison, Chord, Vibrato, Envelope, AutomationTarget, Config, getDrumWave, drawNoiseSpectrum, getArpeggioPitchIndex, performIntegralOld, getPulseWidthRatio, effectsIncludeTransition, effectsIncludeChord, effectsIncludePitchShift, effectsIncludeDetune, effectsIncludeVibrato, effectsIncludeNoteFilter, effectsIncludeDistortion, effectsIncludeBitcrusher, effectsIncludePanning, effectsIncludeChorus, effectsIncludeEcho, effectsIncludeReverb, /*effectsIncludeNoteRange,*/ effectsIncludeRingModulation, effectsIncludeGranular, effectsIncludeDiscreteSlide, OperatorWave, LFOEnvelopeTypes, RandomEnvelopeTypes, GranularEnvelopeType, calculateRingModHertz } from "./SynthConfig";
 import { Preset, EditorConfig } from "../editor/EditorConfig";
 import { scaleElementsByFactor, inverseRealFourierTransform } from "./FFT";
 import { Deque } from "./Deque";
@@ -1726,6 +1726,7 @@ export class Instrument {
     public pan: number = Config.panCenter;
     public panDelay: number = 0;
     public arpeggioSpeed: number = 12;
+    public discreteSlide: number = 0;
     public monoChordTone: number = 0;
     public fastTwoNoteArp: boolean = false;
     public legacyTieOver: boolean = false;
@@ -1887,6 +1888,7 @@ export class Instrument {
         this.clicklessTransition = false;
         this.arpeggioSpeed = 12;
         this.monoChordTone = 1;
+        this.discreteSlide = 0;
         this.envelopeSpeed = 12;
         this.legacyTieOver = false;
         this.aliases = false;
@@ -2150,6 +2152,9 @@ export class Instrument {
         if (effectsIncludeTransition(this.effects)) {
             instrumentObject["transition"] = Config.transitions[this.transition].name;
             instrumentObject["clicklessTransition"] = this.clicklessTransition;
+        }
+        if (effectsIncludeDiscreteSlide(this.effects)) {
+            instrumentObject["discreteSlide"] = Config.discreteSlideTypes[this.discreteSlide].name;
         }
         if (effectsIncludeChord(this.effects)) {
             instrumentObject["chord"] = this.getChord().name;
@@ -2494,7 +2499,13 @@ export class Instrument {
                 this.effects = (this.effects | (1 << EffectType.transition));
             }
         }
-
+        if (effectsIncludeDiscreteSlide(this.effects)) {
+            if (instrumentObject["discreteSlide"] != undefined) {
+                const discreteSlideName: any = instrumentObject["discreteSlide"];
+                const discreteSlideIndex = Config.discreteSlideTypes.findIndex((t: { name: any; }) => t.name == discreteSlideName);
+                if (discreteSlideIndex != -1) this.discreteSlide = discreteSlideIndex;
+            }
+        }
         // Overrides legacy settings in transition above.
         if (instrumentObject["fadeInSeconds"] != undefined) {
             this.fadeIn = Synth.secondsToFadeInSetting(+instrumentObject["fadeInSeconds"]);
@@ -3978,6 +3989,9 @@ export class Song {
                 }
                 if (effectsIncludeTransition(instrument.effects)) {
                     buffer.push(base64IntToCharCode[instrument.transition]);
+                }
+                if (effectsIncludeDiscreteSlide(instrument.effects)) {
+                    buffer.push(base64IntToCharCode[instrument.discreteSlide]);
                 }
                 if (effectsIncludeChord(instrument.effects)) {
                     buffer.push(base64IntToCharCode[instrument.chord]);
@@ -5836,6 +5850,9 @@ export class Song {
                     }
                     if (effectsIncludeTransition(instrument.effects)) {
                         instrument.transition = clamp(0, Config.transitions.length, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
+                    }
+                    if (effectsIncludeDiscreteSlide(instrument.effects)) {
+                        instrument.discreteSlide = clamp(0, Config.discreteSlideTypes.length, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
                     }
                     if (effectsIncludeChord(instrument.effects)) {
                         instrument.chord = clamp(0, Config.chords.length, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
@@ -12357,6 +12374,13 @@ export class Synth {
         let chordExpressionStart: number = chordExpression;
         let chordExpressionEnd: number = chordExpression;
 
+        let discreteSlideType = -1;
+        if (effectsIncludeDiscreteSlide(instrument.effects)) {
+            discreteSlideType = instrument.discreteSlide;
+        }
+        if (discreteSlideType) {};
+
+
         let expressionReferencePitch: number = 16; // A low "E" as a MIDI pitch.
         let basePitch: number = Config.keys[song.key].basePitch + (Config.pitchesPerOctave * song.octave);
         let baseExpression: number = 1.0;
@@ -12485,19 +12509,82 @@ export class Synth {
             const noteEndTick: number = noteEndPart * Config.ticksPerPart;
             const pinStart: number = (note.start + startPin.time) * Config.ticksPerPart;
             const pinEnd: number = (note.start + endPin.time) * Config.ticksPerPart;
-
+            if (pinStart && pinEnd) {} // shut the fuck up you stupid compiler
             tone.ticksSinceReleased = 0;
 
             const tickTimeStart: number = currentPart * Config.ticksPerPart + this.tick;
             const tickTimeEnd: number = tickTimeStart + 1.0;
             const noteTicksPassedTickStart: number = tickTimeStart - noteStartTick;
             const noteTicksPassedTickEnd: number = tickTimeEnd - noteStartTick;
-            const pinRatioStart: number = Math.min(1.0, (tickTimeStart - pinStart) / (pinEnd - pinStart));
-            const pinRatioEnd: number = Math.min(1.0, (tickTimeEnd - pinStart) / (pinEnd - pinStart));
+            // =================================================================================
+            // =================================================================================
+            
+
+            let discreteSlideType = -1;
+            if (effectsIncludeDiscreteSlide(instrument.effects)) {
+                discreteSlideType = instrument.discreteSlide;
+            }
+
+            const tickTimeStartReal: number = currentPart * Config.ticksPerPart + this.tick;
+            const tickTimeEndReal: number = tickTimeStartReal + (roundedSamplesPerTick / samplesPerTick);
+
+            if (discreteSlideType === -1) {
+                // Default smooth slide logic.
+                const pinRatioStart: number = Math.max(0.0, Math.min(1.0, (tickTimeStartReal - pinStart) / (pinEnd - pinStart)));
+                const pinRatioEnd: number = Math.max(0.0, Math.min(1.0, (tickTimeEndReal - pinStart) / (pinEnd - pinStart)));
+                intervalStart = startPin.interval + (endPin.interval - startPin.interval) * pinRatioStart;
+                intervalEnd = startPin.interval + (endPin.interval - startPin.interval) * pinRatioEnd;
+            } else {
+                // Discrete slide logic.
+                const snapToPitch = (discreteSlideType === 0 || discreteSlideType === 3 || discreteSlideType === 4);
+                const snapTime = (discreteSlideType === 1 || discreteSlideType === 3) ? 1 : (discreteSlideType === 2 || discreteSlideType === 4) ? 2 : 0; // parts per step
+
+                if (snapTime > 0) {
+                    // Logic for snapping to time steps.
+                    const ticksPerStep = snapTime * Config.ticksPerPart;
+                    
+                    const ticksIntoNote = tickTimeStartReal - noteStartTick;
+                    const currentStep = Math.floor(ticksIntoNote / ticksPerStep);
+                    const tickAtStepStart = noteStartTick + currentStep * ticksPerStep;
+
+                    let discretePinIndex = 0;
+                    while (discretePinIndex < note.pins.length - 1 && (note.start + note.pins[discretePinIndex].time) * Config.ticksPerPart <= tickAtStepStart) {
+                        discretePinIndex++;
+                    }
+                    const discreteStartPin = note.pins[discretePinIndex - 1];
+                    const discreteEndPin = note.pins[discretePinIndex];
+                    const discretePinStartTick = (note.start + discreteStartPin.time) * Config.ticksPerPart;
+                    const discretePinEndTick = (note.start + discreteEndPin.time) * Config.ticksPerPart;
+
+                    const discretePinRatio = Math.max(0.0, Math.min(1.0, (tickAtStepStart - discretePinStartTick) / (discretePinEndTick - discretePinStartTick)));
+                    let finalInterval = discreteStartPin.interval + (discreteEndPin.interval - discreteStartPin.interval) * discretePinRatio;
+
+                    if (snapToPitch) {
+                        finalInterval = Math.round(finalInterval);
+                    }
+
+                    intervalStart = finalInterval;
+                    intervalEnd = finalInterval;
+                } else {
+                    // Logic for snapping to pitch only (time is continuous).
+                    const pinRatioStart: number = Math.max(0.0, Math.min(1.0, (tickTimeStartReal - pinStart) / (pinEnd - pinStart)));
+                    const pinRatioEnd: number = Math.max(0.0, Math.min(1.0, (tickTimeEndReal - pinStart) / (pinEnd - pinStart)));
+                    intervalStart = startPin.interval + (endPin.interval - startPin.interval) * pinRatioStart;
+                    intervalEnd = startPin.interval + (endPin.interval - startPin.interval) * pinRatioEnd;
+
+                    if (snapToPitch) {
+                        intervalStart = Math.round(intervalStart);
+                        intervalEnd = Math.round(intervalEnd);
+                    }
+                }
+            }
+            
+            
+            // =================================================================================
+            // =================================================================================
+
             fadeExpressionStart = 1.0;
             fadeExpressionEnd = 1.0;
-            intervalStart = startPin.interval + (endPin.interval - startPin.interval) * pinRatioStart;
-            intervalEnd = startPin.interval + (endPin.interval - startPin.interval) * pinRatioEnd;
             tone.lastInterval = intervalEnd;
 
             if ((!transition.isSeamless && !tone.forceContinueAtEnd) || nextNote == null) {

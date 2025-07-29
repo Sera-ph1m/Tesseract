@@ -563,6 +563,7 @@ class ChangePins extends UndoableChange {
     }
 }
 
+
 export class ChangeCustomizeInstrument extends Change {
     constructor(doc: SongDocument) {
         super();
@@ -2631,6 +2632,39 @@ export class ChangeRingModPulseWidth extends ChangeInstrumentSlider {
         this._instrument.ringModPulseWidth = newValue;
         doc.notifier.changed();
         if (oldValue != newValue) this._didSomething();
+    }
+}
+
+export class ChangeDiscreteSlide extends UndoableChange {
+    private _oldValue: number;
+
+    constructor(private _doc: SongDocument, private _newValue: number) {
+        super(false);
+        const instrument: Instrument =
+            this._doc.song.channels[this._doc.channel].instruments[
+                this._doc.getCurrentInstrument()
+            ];
+        this._oldValue = instrument.discreteSlide;
+        this._doForwards();
+        this._didSomething();
+    }
+
+    protected _doForwards(): void {
+        const instrument: Instrument =
+            this._doc.song.channels[this._doc.channel].instruments[
+                this._doc.getCurrentInstrument()
+            ];
+        instrument.discreteSlide = this._newValue;
+        this._doc.notifier.changed();
+    }
+
+    protected _doBackwards(): void {
+        const instrument: Instrument =
+            this._doc.song.channels[this._doc.channel].instruments[
+                this._doc.getCurrentInstrument()
+            ];
+        instrument.discreteSlide = this._oldValue;
+        this._doc.notifier.changed();
     }
 }
 

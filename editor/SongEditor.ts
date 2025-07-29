@@ -21,6 +21,7 @@ import {
 	effectsIncludeReverb,
 	effectsIncludeRingModulation,
 	effectsIncludeGranular,
+    effectsIncludeDiscreteSlide,
 	DropdownID,
 	calculateRingModHertz
 } from "../synth/SynthConfig";
@@ -160,6 +161,7 @@ import {
 	ChangeGrainSize,
 	ChangeGrainAmounts,
 	ChangeGrainRange,
+    ChangeDiscreteSlide,
 	ChangeMonophonicTone,
 	ChangeChannelOrder,
     ChangeAddChannel,
@@ -1058,6 +1060,8 @@ export class SongEditor {
     private readonly _clicklessTransitionBox: HTMLInputElement = input({ type: "checkbox", style: "width: 1em; padding: 0; margin-right: 4em;" });
     private readonly _clicklessTransitionRow: HTMLElement = div({ class: "selectRow dropFader" }, span({ class: "tip", style: "margin-left:4px;", onclick: () => this._openPrompt("clicklessTransition") }, "‣ Clickless:"), this._clicklessTransitionBox);
     private readonly _transitionDropdownGroup: HTMLElement = div({ class: "editor-controls", style: "display: none;" }, this._clicklessTransitionRow);
+    private readonly _discreteSlideSelect: HTMLSelectElement = buildOptions(select(), Config.discreteSlideTypes.map(type => type.name));
+    private readonly _discreteSlideRow: HTMLDivElement = div({ class: "selectRow" }, span({ class: "tip", onclick: () => this._openPrompt("discreteSlide") }, "Discrete Slide:"), div({ class: "selectContainer" }, this._discreteSlideSelect));
 
     private readonly _effectsSelect: HTMLSelectElement = select(option({ selected: true, disabled: true, hidden: false })); // todo: "hidden" should be true but looks wrong on mac chrome, adds checkmark next to first visible option even though it's not selected. :(
     private readonly _eqFilterSimpleButton: HTMLButtonElement = button({ style: "font-size: x-small; width: 50%; height: 40%", class: "no-underline", onclick: () => this._switchEQFilterType(true) }, "simple");
@@ -1326,6 +1330,7 @@ export class SongEditor {
         ),
         this._transitionRow,
         this._transitionDropdownGroup,
+        this._discreteSlideRow,
         this._chordSelectRow,
         this._chordDropdownGroup,
         this._pitchShiftRow,
@@ -1782,6 +1787,7 @@ export class SongEditor {
         this._chipNoiseSelect.addEventListener("change", this._whenSetNoiseWave);
         this._transitionSelect.addEventListener("change", this._whenSetTransition);
         this._effectsSelect.addEventListener("change", this._whenSetEffects);
+        this._discreteSlideSelect.addEventListener("change", this._whenSetDiscreteSlide);
         this._unisonSelect.addEventListener("change", this._whenSetUnison);
         this._chordSelect.addEventListener("change", this._whenSetChord);
         this._monophonicNoteInputBox.addEventListener("input", this._whenSetMonophonicNote)
@@ -2914,6 +2920,13 @@ export class SongEditor {
                 this._transitionDropdownGroup.style.display = "none";
                 this._transitionRow.style.display = "none";
             }
+            if (effectsIncludeDiscreteSlide(instrument.effects)) {
+                    this._discreteSlideRow.style.display = "";
+                    setSelectedValue(this._discreteSlideSelect, instrument.discreteSlide);
+                }
+                else {
+                    this._discreteSlideRow.style.display = "none";
+                }
 
             if (effectsIncludeChord(instrument.effects)) {
                 this._chordSelectRow.style.display = "flex";
@@ -5461,6 +5474,9 @@ export class SongEditor {
     private _whenSetTransition = (): void => {
         this.doc.record(new ChangeTransition(this.doc, this._transitionSelect.selectedIndex));
     }
+        private _whenSetDiscreteSlide = (): void => {
+            this.doc.record(new ChangeDiscreteSlide(this.doc, this._discreteSlideSelect.selectedIndex));
+        }
 
     private _whenSetEffects = (): void => {
         const instrument: Instrument = this.doc.song.channels[this.doc.channel].instruments[this.doc.getCurrentInstrument()];

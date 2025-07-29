@@ -1,0 +1,1039 @@
+/*!
+Copyright (c) 2012-2022 John Nesky and contributing authors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of 
+this software and associated documentation files (the "Software"), to deal in 
+the Software without restriction, including without limitation the rights to 
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies 
+of the Software, and to permit persons to whom the Software is furnished to do 
+so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all 
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR 
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, 
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE 
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER 
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, 
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE 
+SOFTWARE.
+*/
+
+export interface Dictionary<T> {
+    [K: string]: T;
+}
+
+// @TODO: Not ideal to make this writable like this.
+// export interface DictionaryArray<T> extends ReadonlyArray<T> {
+export interface DictionaryArray<T> extends Array<T> {
+    dictionary: Dictionary<T>;
+}
+
+export const enum FilterType {
+    lowPass,
+    highPass,
+    peak,
+    length,
+}
+
+export const enum SustainType {
+	bright,
+	acoustic,
+    length,
+}
+
+export const enum GranularEnvelopeType {
+    parabolic,
+    raisedCosineBell,
+    // trapezoid,
+    length
+}
+
+export const enum EnvelopeType {
+    none,
+    noteSize,
+    pitch, //slarmoo's box 0.9
+    pseudorandom, //slarmoo's box 1.3
+	punch,
+	flare,
+	twang,
+	swell,
+	lfo, //renamed from tremolo in slarmoo's box 1.3
+    tremolo2, //deprecated as of slarmoo's box 1.3; Kept for updating integrity and drumsets
+    decay,
+    wibble,
+    linear,
+    rise,
+    blip,
+    fall, //slarmoo's box 1.2
+    //add new envelope types here
+}
+
+export const enum InstrumentType {
+    chip,
+    fm,
+    noise,
+    spectrum,
+    drumset,
+    harmonics,
+    pwm,
+    pickedString,
+    supersaw,
+    customChipWave,
+    mod,
+    fm6op,
+    length,
+}
+
+export const TypePresets: ReadonlyArray<string> = ["chip", "FM", "noise", "spectrum", "drumset", "harmonics", "pulse width", "picked string", "supersaw", "chip (custom)", "mod", "FM (6-op)"];
+
+export const enum DropdownID {
+    Vibrato = 0,
+    Pan = 1,
+    Chord = 2,
+    Transition = 3,
+    FM = 4,
+    PulseWidth = 5,
+    Unison = 6,
+    Envelope = 7,
+    EnvelopeSettings = 8,
+}
+
+export const enum EffectType {
+    reverb,
+    chorus,
+    panning,
+    distortion,
+    bitcrusher,
+    noteFilter,
+    echo,
+    pitchShift,
+    detune,
+    vibrato,
+    transition,
+    chord,
+    // If you add more, you'll also have to extend the bitfield used in Base64 which currently uses three six-bit characters.
+    noteRange, //placeholder for ultrabox 2.3 update
+    ringModulation,
+    granular,
+    length,
+    discreteSlide
+}
+
+export const enum EnvelopeComputeIndex {
+    noteVolume,
+    noteFilterAllFreqs,
+    pulseWidth,
+    stringSustain,
+    unison,
+    operatorFrequency0, operatorFrequency1, operatorFrequency2, operatorFrequency3, operatorFrequency4, operatorFrequency5,
+    operatorAmplitude0, operatorAmplitude1, operatorAmplitude2, operatorAmplitude3, operatorAmplitude4, operatorAmplitude5,
+    feedbackAmplitude,
+    pitchShift,
+    detune,
+    vibratoDepth,
+    //vibratoSpeed, doesn't follow normal envelope pattern; will figure out. //if you fix this you need to update the url
+    noteFilterFreq0, noteFilterFreq1, noteFilterFreq2, noteFilterFreq3, noteFilterFreq4, noteFilterFreq5, noteFilterFreq6, noteFilterFreq7,
+    noteFilterGain0, noteFilterGain1, noteFilterGain2, noteFilterGain3, noteFilterGain4, noteFilterGain5, noteFilterGain6, noteFilterGain7,
+    decimalOffset, 
+    supersawDynamism, 
+	supersawSpread, 
+    supersawShape, 
+    panning,
+    distortion,
+    bitcrusherQuantization,
+    bitcrusherFrequency,
+    chorus,
+    echoSustain,
+    reverb,
+    arpeggioSpeed,
+    ringModulation,
+    ringModulationHz,
+    granular,
+    grainAmount,
+    grainSize,
+    grainRange,
+    echoDelay,
+    //Add more here
+
+    length,
+}
+
+export const enum LFOEnvelopeTypes {
+    sine,
+    square,
+    triangle,
+    sawtooth,
+    trapezoid,
+    steppedSaw,
+    steppedTri,
+    length,
+}
+
+export const enum RandomEnvelopeTypes {
+    time,
+    pitch,
+    note,
+    timeSmooth,
+    length,
+}
+
+export interface BeepBoxOption {
+    readonly index: number;
+    readonly name: string;
+}
+
+export interface Scale extends BeepBoxOption {
+    readonly flags: ReadonlyArray<boolean>;
+    readonly realName: string;
+}
+
+export interface Key extends BeepBoxOption {
+    readonly isWhiteKey: boolean;
+    readonly basePitch: number;
+}
+
+export interface Rhythm extends BeepBoxOption {
+    readonly stepsPerBeat: number;
+    readonly roundUpThresholds: number[] | null;
+}
+
+export interface ChipWave extends BeepBoxOption {
+    readonly expression: number;
+    samples: Float32Array;
+    isPercussion?: boolean;
+    isCustomSampled?: boolean;
+    isSampled?: boolean;
+    extraSampleDetune?: number;
+    rootKey?: number;
+    sampleRate?: number;
+}
+
+export interface OperatorWave extends BeepBoxOption {
+    samples: Float32Array;
+}
+
+export interface ChipNoise extends BeepBoxOption {
+    readonly expression: number;
+    readonly basePitch: number;
+    readonly pitchFilterMult: number;
+    readonly isSoft: boolean;
+    samples: Float32Array | null;
+}
+
+export interface Transition extends BeepBoxOption {
+    readonly isSeamless: boolean;
+    readonly continues: boolean;
+    readonly slides: boolean;
+    readonly slideTicks: number;
+    readonly includeAdjacentPatterns: boolean;
+}
+
+export interface Vibrato extends BeepBoxOption {
+    readonly amplitude: number;
+    readonly type: number;
+    readonly delayTicks: number;
+}
+
+export interface VibratoType extends BeepBoxOption {
+    readonly periodsSeconds: number[];
+    readonly period: number;
+}
+
+export interface Unison extends BeepBoxOption {
+    readonly voices: number;
+    readonly spread: number;
+    readonly offset: number;
+    readonly expression: number;
+    readonly sign: number;
+}
+
+export interface Modulator extends BeepBoxOption {
+    readonly name: string; // name that shows up in song editor UI
+    readonly pianoName: string; // short name that shows up in mod piano UI
+    readonly maxRawVol: number; // raw
+    readonly newNoteVol: number; // raw
+    readonly forSong: boolean; // true - setting is song scope
+    convertRealFactor: number; // offset that needs to be applied to get a "real" number display of value, for UI purposes
+    readonly associatedEffect: EffectType; // effect that should be enabled for this modulator to work properly. If unused, set to EffectType.length.
+    readonly promptName: string; // long-as-needed name that shows up in tip prompt
+    readonly promptDesc: string[]; // paragraph(s) describing how to use this mod
+    invertSliderIndicator?: boolean; // for whether or not you want to invert the slider indicator
+    readonly maxIndex: number;
+}
+
+export interface Chord extends BeepBoxOption {
+    readonly customInterval: boolean;
+    readonly arpeggiates: boolean;
+    readonly strumParts: number;
+    readonly singleTone: boolean;
+}
+
+export interface Algorithm extends BeepBoxOption {
+    readonly carrierCount: number;
+    readonly associatedCarrier: ReadonlyArray<number>;
+    readonly modulatedBy: ReadonlyArray<ReadonlyArray<number>>;
+}
+
+export interface OperatorFrequency extends BeepBoxOption {
+    readonly mult: number;
+    readonly hzOffset: number;
+    readonly amplitudeSign: number;
+}
+
+export interface Feedback extends BeepBoxOption {
+    readonly indices: ReadonlyArray<ReadonlyArray<number>>;
+}
+
+export interface Envelope extends BeepBoxOption {
+    readonly type: EnvelopeType;
+    readonly speed: number;
+}
+
+export interface AutomationTarget extends BeepBoxOption {
+    readonly computeIndex: EnvelopeComputeIndex /*| InstrumentAutomationIndex*/ | null;
+    readonly displayName: string;
+    //readonly perNote: boolean; // Whether to compute envelopes on a per-note basis.
+    readonly interleave: boolean; // Whether to interleave this target with the next one in the menu (e.g. filter frequency and gain).
+	readonly isFilter: boolean; // Filters are special because the maxCount depends on other instrument settings.
+	//readonly range: number | null; // set if automation is allowed.
+    readonly maxCount: number;
+    readonly effect: EffectType | null;
+    readonly compatibleInstruments: InstrumentType[] | null;
+}
+
+export const enum SampleLoadingStatus {
+    loading,
+    loaded,
+    error,
+}
+
+export function getSampleLoadingStatusName(status: SampleLoadingStatus): string {
+    switch (status) {
+	case SampleLoadingStatus.loading: return "loading";
+	case SampleLoadingStatus.loaded: return "loaded";
+	case SampleLoadingStatus.error: return "error";
+    }
+}
+
+export class SampleLoadingState {
+    public statusTable: Dictionary<SampleLoadingStatus>;
+    public urlTable: Dictionary<string>;
+    public totalSamples: number;
+    public samplesLoaded: number;
+
+    constructor() {
+	this.statusTable = {};
+	this.urlTable = {};
+	this.totalSamples = 0;
+	this.samplesLoaded = 0;
+    }
+}
+
+export const sampleLoadingState: SampleLoadingState = new SampleLoadingState();
+
+export class SampleLoadedEvent extends Event {
+    public readonly totalSamples: number;
+    public readonly samplesLoaded: number;
+
+    constructor(totalSamples: number, samplesLoaded: number) {
+	super("sampleloaded");
+	this.totalSamples = totalSamples;
+	this.samplesLoaded = samplesLoaded;
+    }
+}
+
+export interface SampleLoadEventMap {
+    "sampleloaded": SampleLoadedEvent;
+}
+
+export class SampleLoadEvents extends EventTarget {
+    constructor() {
+	super();
+    }
+}
+
+export const sampleLoadEvents: SampleLoadEvents = new SampleLoadEvents();
+
+export async function startLoadingSample(url: string, chipWaveIndex: number, presetSettings: Dictionary<any>, rawLoopOptions: any, customSampleRate: number): Promise<void> {
+    // @TODO: Make parts of the code that expect everything to already be
+    // in memory work correctly.
+    // It would be easy to only instantiate `SongEditor` and company after
+    // everything is loaded, but if dynamic sample loading without a reload
+    // is deemed necessary, anything that involves chip waves has to be
+    // revisited so as to be able to work with a changing list of chip
+    // waves that may or may not be ready to be used.
+    const sampleLoaderAudioContext = new AudioContext({ sampleRate: customSampleRate });
+    let closedSampleLoaderAudioContext: boolean = false;
+    const chipWave = Config.chipWaves[chipWaveIndex];
+    const rawChipWave = Config.rawChipWaves[chipWaveIndex];
+    const rawRawChipWave = Config.rawRawChipWaves[chipWaveIndex];
+    if (OFFLINE) {
+        if (url.slice(0, 5) === "file:") {
+            const dirname = await getDirname();
+            const joined = await pathJoin(dirname, url.slice(5));
+            url = joined;
+        }
+    }
+    fetch(url).then((response) => {
+	if (!response.ok) {
+	    // @TODO: Be specific with the error handling.
+	    sampleLoadingState.statusTable[chipWaveIndex] = SampleLoadingStatus.error;
+	    return Promise.reject(new Error("Couldn't load sample"));
+	}
+	return response.arrayBuffer();
+    }).then((arrayBuffer) => {
+	return sampleLoaderAudioContext.decodeAudioData(arrayBuffer);
+    }).then((audioBuffer) => {
+	// @TODO: Downmix.
+	const samples = centerWave(Array.from(audioBuffer.getChannelData(0)));
+	const integratedSamples = performIntegral(samples);
+	chipWave.samples = integratedSamples;
+	rawChipWave.samples = samples;
+	rawRawChipWave.samples = samples;
+	if (rawLoopOptions["isUsingAdvancedLoopControls"]) {
+	    presetSettings["chipWaveLoopStart"] = rawLoopOptions["chipWaveLoopStart"] != null ? rawLoopOptions["chipWaveLoopStart"] : 0;
+	    presetSettings["chipWaveLoopEnd"] = rawLoopOptions["chipWaveLoopEnd"] != null ? rawLoopOptions["chipWaveLoopEnd"] : samples.length - 1;
+	    presetSettings["chipWaveLoopMode"] = rawLoopOptions["chipWaveLoopMode"] != null ? rawLoopOptions["chipWaveLoopMode"] : 0;
+	    presetSettings["chipWavePlayBackwards"] = rawLoopOptions["chipWavePlayBackwards"];
+	    presetSettings["chipWaveStartOffset"] = rawLoopOptions["chipWaveStartOffset"] != null ? rawLoopOptions["chipWaveStartOffset"] : 0;
+	}
+	sampleLoadingState.samplesLoaded++;
+	sampleLoadingState.statusTable[chipWaveIndex] = SampleLoadingStatus.loaded;
+	sampleLoadEvents.dispatchEvent(new SampleLoadedEvent(
+	    sampleLoadingState.totalSamples,
+	    sampleLoadingState.samplesLoaded
+	));
+	if (!closedSampleLoaderAudioContext) {
+	    closedSampleLoaderAudioContext = true;
+	    sampleLoaderAudioContext.close();
+	}
+    }).catch((error) => {
+	//console.error(error);
+	sampleLoadingState.statusTable[chipWaveIndex] = SampleLoadingStatus.error;
+	alert("Failed to load " + url + ":\n" + error);
+	if (!closedSampleLoaderAudioContext) {
+	    closedSampleLoaderAudioContext = true;
+	    sampleLoaderAudioContext.close();
+	}
+    });
+}
+
+export function getLocalStorageItem<T>(key: string, defaultValue: T): T | string {
+    let value: T | string | null = localStorage.getItem(key);
+    if (value == null || value === "null" || value === "undefined") {
+        value = defaultValue;
+    }
+    return value;
+}
+
+// @HACK: This just assumes these exist, regardless of whether they actually do
+// or not.
+declare global {
+    const OFFLINE: boolean; // for UB offline
+    const getDirname: () => Promise<string>; // for UB offline
+    const pathJoin: (...parts: string[]) => Promise<string>; // for UB offline
+    const kicksample: number[];
+    const snaresample: number[];
+    const pianosample: number[];
+    const WOWsample: number[];
+    const overdrivesample: number[];
+    const trumpetsample: number[];
+    const saxophonesample: number[];
+    const orchhitsample: number[];
+    const detatchedviolinsample: number[];
+    const synthsample: number[];
+    const sonic3snaresample: number[];
+    const comeonsample: number[];
+    const choirsample: number[];
+    const overdrivensample: number[];
+    const flutesample: number[];
+    const legatoviolinsample: number[];
+    const tremoloviolinsample: number[];
+    const amenbreaksample: number[];
+    const pizzicatoviolinsample: number[];
+    const timallengruntsample: number[];
+    const tubasample: number[];
+    const loopingcymbalsample: number[];
+    const kickdrumsample: number[];
+    const snaredrumsample: number[];
+    const closedhihatsample: number[];
+    const foothihatsample: number[];
+    const openhihatsample: number[];
+    const crashsample: number[];
+    const pianoC4sample: number[];
+    const liverpadsample: number[];
+    const marimbasample: number[];
+    const susdotwavsample: number[];
+    const wackyboxttssample: number[];
+    const peppersteak1: number[];
+    const peppersteak2: number[];
+    const vinyl: number[];
+    const slapbass: number[];
+    const hdeboverdrive: number[];
+    const sunsoftbass: number[];
+    const masculinechoir: number[];
+    const femininechoir: number[];
+    const southtololoche: number[];
+    const harp: number[];
+    const panflute: number[];
+    const krumhorn: number[];
+    const timpani: number[];
+    const crowdhey: number[];
+    const warioland4brass: number[];
+    const warioland4organ: number[];
+    const warioland4daow: number[];
+    const warioland4hourchime: number[];
+    const warioland4tick: number[];
+    const kirbykick: number[];
+    const kirbysnare: number[];
+    const kirbybongo: number[];
+    const kirbyclick: number[];
+    const funkkick: number[];
+    const funksnare: number[];
+    const funksnareleft: number[];
+    const funksnareright: number[];
+    const funktomhigh: number[];
+    const funktomlow: number[];
+    const funkhihatclosed: number[];
+    const funkhihathalfopen: number[];
+    const funkhihatopen: number[];
+    const funkhihatopentip: number[];
+    const funkhihatfoot: number[];
+    const funkcrash: number[];
+    const funkcrashtip: number[];
+    const funkride: number[];
+    const chronoperc1finalsample: number[];
+    const synthkickfmsample: number[];
+    const woodclicksample: number[];
+    const acousticsnaresample: number[];
+    const catpaintboxsample: number[];
+    const gameboypaintboxsample: number[];
+    const mariopaintboxsample: number[];
+    const drumpaintboxsample: number[];
+    const yoshipaintboxsample: number[];
+    const starpaintboxsample: number[];
+    const fireflowerpaintboxsample: number[];
+    const dogpaintbox: number[];
+    const oinkpaintbox: number[];
+    const swanpaintboxsample: number[];
+    const facepaintboxsample: number[];
+}
+
+function loadScript(url: string): Promise<void> {
+    const result: Promise<void> = new Promise((resolve, reject) => {
+	if (!Config.willReloadForCustomSamples) {
+	    const script = document.createElement("script");
+	    script.src = url;
+	    document.head.appendChild(script);
+	    script.addEventListener("load", (event) => {
+		resolve();
+	    });
+	} else {
+	    // There's not really any errors that show up if the loading for
+	    // this script is stopped early, but it won't really do anything
+	    // particularly useful either in that case.
+	}
+    });
+    return result;
+}
+
+export function loadBuiltInSamples(set: number): void {
+    const defaultIndex: number = 0;
+    const defaultIntegratedSamples: Float32Array = Config.chipWaves[defaultIndex].samples;
+    const defaultSamples: Float32Array = Config.rawRawChipWaves[defaultIndex].samples;
+
+    if (set == 0) {
+	// Create chip waves with the wrong sound.
+	const chipWaves = [
+	    { name: "paandorasbox kick", expression: 4.0, isSampled: true, isPercussion: true, extraSampleDetune: 0 },
+	    { name: "paandorasbox snare", expression: 3.0, isSampled: true, isPercussion: true, extraSampleDetune: 0 },
+	    { name: "paandorasbox piano1", expression: 3.0, isSampled: true, isPercussion: false, extraSampleDetune: 2 },
+	    { name: "paandorasbox WOW", expression: 1.0, isSampled: true, isPercussion: false, extraSampleDetune: 0 },
+	    { name: "paandorasbox overdrive", expression: 1.0, isSampled: true, isPercussion: false, extraSampleDetune: -2 },
+	    { name: "paandorasbox trumpet", expression: 3.0, isSampled: true, isPercussion: false, extraSampleDetune: 1.2 },
+	    { name: "paandorasbox saxophone", expression: 2.0, isSampled: true, isPercussion: false, extraSampleDetune: -5 },
+	    { name: "paandorasbox orchestrahit", expression: 2.0, isSampled: true, isPercussion: false, extraSampleDetune: 4.2 },
+	    { name: "paandorasbox detatched violin", expression: 2.0, isSampled: true, isPercussion: false, extraSampleDetune: 4.2 },
+	    { name: "paandorasbox synth", expression: 2.0, isSampled: true, isPercussion: false, extraSampleDetune: -0.8 },
+	    { name: "paandorasbox sonic3snare", expression: 2.0, isSampled: true, isPercussion: true, extraSampleDetune: 0 },
+	    { name: "paandorasbox come on", expression: 2.0, isSampled: true, isPercussion: false, extraSampleDetune: 0 },
+	    { name: "paandorasbox choir", expression: 2.0, isSampled: true, isPercussion: false, extraSampleDetune: -3 },
+	    { name: "paandorasbox overdriveguitar", expression: 2.0, isSampled: true, isPercussion: false, extraSampleDetune: -6.2 },
+	    { name: "paandorasbox flute", expression: 2.0, isSampled: true, isPercussion: false, extraSampleDetune: -6 },
+	    { name: "paandorasbox legato violin", expression: 2.0, isSampled: true, isPercussion: false, extraSampleDetune: -28 },
+	    { name: "paandorasbox tremolo violin", expression: 2.0, isSampled: true, isPercussion: false, extraSampleDetune: -33 },
+	    { name: "paandorasbox amen break", expression: 1.0, isSampled: true, isPercussion: true, extraSampleDetune: -55 },
+	    { name: "paandorasbox pizzicato violin", expression: 2.0, isSampled: true, isPercussion: false, extraSampleDetune: -11 },
+	    { name: "paandorasbox tim allen grunt", expression: 2.0, isSampled: true, isPercussion: false, extraSampleDetune: -20 },
+	    { name: "paandorasbox tuba", expression: 2.0, isSampled: true, isPercussion: false, extraSampleDetune: 44 },
+	    { name: "paandorasbox loopingcymbal", expression: 2.0, isSampled: true, isPercussion: false, extraSampleDetune: -17 },
+	    { name: "paandorasbox standardkick", expression: 2.0, isSampled: true, isPercussion: true, extraSampleDetune: -7 },
+	    { name: "paandorasbox standardsnare", expression: 2.0, isSampled: true, isPercussion: true, extraSampleDetune: 0 },
+	    { name: "paandorasbox closedhihat", expression: 2.0, isSampled: true, isPercussion: true, extraSampleDetune: 5 },
+	    { name: "paandorasbox foothihat", expression: 2.0, isSampled: true, isPercussion: true, extraSampleDetune: 4 },
+	    { name: "paandorasbox openhihat", expression: 2.0, isSampled: true, isPercussion: true, extraSampleDetune: -31 },
+	    { name: "paandorasbox crashcymbal", expression: 2.0, isSampled: true, isPercussion: true, extraSampleDetune: -43 },
+	    { name: "paandorasbox pianoC4", expression: 2.0, isSampled: true, isPercussion: false, extraSampleDetune: -42.5 },
+	    { name: "paandorasbox liver pad", expression: 2.0, isSampled: true, isPercussion: false, extraSampleDetune: -22.5 },
+	    { name: "paandorasbox marimba", expression: 2.0, isSampled: true, isPercussion: false, extraSampleDetune: -15.5 },
+	    { name: "paandorasbox susdotwav", expression: 2.0, isSampled: true, isPercussion: false, extraSampleDetune: -24.5 },
+	    { name: "paandorasbox wackyboxtts", expression: 2.0, isSampled: true, isPercussion: false, extraSampleDetune: -17.5 },
+	    { name: "paandorasbox peppersteak_1", expression: 2.0, isSampled: true, isPercussion: false, extraSampleDetune: -42.2 },
+	    { name: "paandorasbox peppersteak_2", expression: 2.0, isSampled: true, isPercussion: false, extraSampleDetune: -47 },
+	    { name: "paandorasbox vinyl_noise", expression: 2.0, isSampled: true, isPercussion: true, extraSampleDetune: -50 },
+	    { name: "paandorasbeta slap bass", expression: 1.0, isSampled: true, isPercussion: false, extraSampleDetune: -56 },
+	    { name: "paandorasbeta HD EB overdrive guitar", expression: 1.0, isSampled: true, isPercussion: false, extraSampleDetune: -60 },
+	    { name: "paandorasbeta sunsoft bass", expression: 1.0, isSampled: true, isPercussion: false, extraSampleDetune: -18.5 },
+	    { name: "paandorasbeta masculine choir", expression: 1.0, isSampled: true, isPercussion: false, extraSampleDetune: -50 },
+	    { name: "paandorasbeta feminine choir", expression: 1.0, isSampled: true, isPercussion: false, extraSampleDetune: -60.5 },
+	    { name: "paandorasbeta tololoche", expression: 1.0, isSampled: true, isPercussion: false, extraSampleDetune: -29.5 },
+	    { name: "paandorasbeta harp", expression: 1.0, isSampled: true, isPercussion: false, extraSampleDetune: -54 },
+	    { name: "paandorasbeta pan flute", expression: 1.0, isSampled: true, isPercussion: false, extraSampleDetune: -58 },
+	    { name: "paandorasbeta krumhorn", expression: 1.0, isSampled: true, isPercussion: false, extraSampleDetune: -46 },
+	    { name: "paandorasbeta timpani", expression: 1.0, isSampled: true, isPercussion: false, extraSampleDetune: -50 },
+	    { name: "paandorasbeta crowd hey", expression: 1.0, isSampled: true, isPercussion: true, extraSampleDetune: -29 },
+	    { name: "paandorasbeta wario land 4 brass", expression: 1.0, isSampled: true, isPercussion: false, extraSampleDetune: -68 },
+	    { name: "paandorasbeta wario land 4 rock organ", expression: 1.0, isSampled: true, isPercussion: false, extraSampleDetune: -63 },
+	    { name: "paandorasbeta wario land 4 DAOW", expression: 1.0, isSampled: true, isPercussion: false, extraSampleDetune: -35 },
+	    { name: "paandorasbeta wario land 4 hour chime", expression: 1.0, isSampled: true, isPercussion: false, extraSampleDetune: -47.5 },
+	    { name: "paandorasbeta wario land 4 tick", expression: 1.0, isSampled: true, isPercussion: true, extraSampleDetune: -12.5 },
+	    { name: "paandorasbeta kirby kick", expression: 1.0, isSampled: true, isPercussion: true, extraSampleDetune: -46.5 },
+	    { name: "paandorasbeta kirby snare", expression: 1.0, isSampled: true, isPercussion: true, extraSampleDetune: -46.5 },
+	    { name: "paandorasbeta kirby bongo", expression: 1.0, isSampled: true, isPercussion: true, extraSampleDetune: -46.5 },
+	    { name: "paandorasbeta kirby click", expression: 1.0, isSampled: true, isPercussion: true, extraSampleDetune: -46.5 },
+	    { name: "paandorasbeta sonor kick", expression: 1.0, isSampled: true, isPercussion: true, extraSampleDetune: -28.5 },
+	    { name: "paandorasbeta sonor snare", expression: 1.0, isSampled: true, isPercussion: true, extraSampleDetune: -28.5 },
+	    { name: "paandorasbeta sonor snare (left hand)", expression: 1.0, isSampled: true, isPercussion: true, extraSampleDetune: -22.5 },
+	    { name: "paandorasbeta sonor snare (right hand)", expression: 1.0, isSampled: true, isPercussion: true, extraSampleDetune: -22.5 },
+	    { name: "paandorasbeta sonor high tom", expression: 1.0, isSampled: true, isPercussion: true, extraSampleDetune: -41.5 },
+	    { name: "paandorasbeta sonor low tom", expression: 1.0, isSampled: true, isPercussion: true, extraSampleDetune: -41.5 },
+	    { name: "paandorasbeta sonor hihat (closed)", expression: 1.0, isSampled: true, isPercussion: true, extraSampleDetune: -17 },
+	    { name: "paandorasbeta sonor hihat (half opened)", expression: 1.0, isSampled: true, isPercussion: true, extraSampleDetune: -21 },
+	    { name: "paandorasbeta sonor hihat (open)", expression: 1.0, isSampled: true, isPercussion: true, extraSampleDetune: -54.5 },
+	    { name: "paandorasbeta sonor hihat (open tip)", expression: 1.0, isSampled: true, isPercussion: true, extraSampleDetune: -43.5 },
+	    { name: "paandorasbeta sonor hihat (pedal)", expression: 1.0, isSampled: true, isPercussion: true, extraSampleDetune: -28 },
+	    { name: "paandorasbeta sonor crash", expression: 1.0, isSampled: true, isPercussion: true, extraSampleDetune: -51 },
+	    { name: "paandorasbeta sonor crash (tip)", expression: 1.0, isSampled: true, isPercussion: true, extraSampleDetune: -50.5 },
+	    { name: "paandorasbeta sonor ride", expression: 1.0, isSampled: true, isPercussion: true, extraSampleDetune: -46 }
+	];
+
+	sampleLoadingState.totalSamples += chipWaves.length;
+
+	// This assumes that Config.rawRawChipWaves and Config.chipWaves have
+	// the same number of elements.
+	const startIndex: number = Config.rawRawChipWaves.length;
+	for (const chipWave of chipWaves) {
+	    const chipWaveIndex: number = Config.rawRawChipWaves.length;
+	    const rawChipWave = { index: chipWaveIndex, name: chipWave.name, expression: chipWave.expression, isSampled: chipWave.isSampled, isPercussion: chipWave.isPercussion, extraSampleDetune: chipWave.extraSampleDetune, samples: defaultSamples };
+	    const rawRawChipWave = { index: chipWaveIndex, name: chipWave.name, expression: chipWave.expression, isSampled: chipWave.isSampled, isPercussion: chipWave.isPercussion, extraSampleDetune: chipWave.extraSampleDetune, samples: defaultSamples };
+	    const integratedChipWave = { index: chipWaveIndex, name: chipWave.name, expression: chipWave.expression, isSampled: chipWave.isSampled, isPercussion: chipWave.isPercussion, extraSampleDetune: chipWave.extraSampleDetune, samples: defaultIntegratedSamples };
+	    Config.rawRawChipWaves[chipWaveIndex] = rawRawChipWave;
+	    Config.rawRawChipWaves.dictionary[chipWave.name] = rawRawChipWave;
+	    Config.rawChipWaves[chipWaveIndex] = rawChipWave;
+	    Config.rawChipWaves.dictionary[chipWave.name] = rawChipWave;
+	    Config.chipWaves[chipWaveIndex] = integratedChipWave;
+	    Config.chipWaves.dictionary[chipWave.name] = rawChipWave;
+	    sampleLoadingState.statusTable[chipWaveIndex] = SampleLoadingStatus.loading;
+	    sampleLoadingState.urlTable[chipWaveIndex] = "legacySamples";
+	}
+
+	loadScript("samples.js")
+	.then(() => loadScript("samples2.js"))
+	.then(() => loadScript("samples3.js"))
+	.then(() => loadScript("drumsamples.js"))
+	.then(() => loadScript("wario_samples.js"))
+	.then(() => loadScript("kirby_samples.js"))
+	.then(() => {
+	    // Now put the right sounds in there after everything
+	    // got loaded.
+	    const chipWaveSamples: Float32Array[] = [
+		centerWave(kicksample),
+		centerWave(snaresample),
+		centerWave(pianosample),
+		centerWave(WOWsample),
+		centerWave(overdrivesample),
+		centerWave(trumpetsample),
+		centerWave(saxophonesample),
+		centerWave(orchhitsample),
+		centerWave(detatchedviolinsample),
+		centerWave(synthsample),
+		centerWave(sonic3snaresample),
+		centerWave(comeonsample),
+		centerWave(choirsample),
+		centerWave(overdrivensample),
+		centerWave(flutesample),
+		centerWave(legatoviolinsample),
+		centerWave(tremoloviolinsample),
+		centerWave(amenbreaksample),
+		centerWave(pizzicatoviolinsample),
+		centerWave(timallengruntsample),
+		centerWave(tubasample),
+		centerWave(loopingcymbalsample),
+		centerWave(kickdrumsample),
+		centerWave(snaredrumsample),
+		centerWave(closedhihatsample),
+		centerWave(foothihatsample),
+		centerWave(openhihatsample),
+		centerWave(crashsample),
+		centerWave(pianoC4sample),
+		centerWave(liverpadsample),
+		centerWave(marimbasample),
+		centerWave(susdotwavsample),
+		centerWave(wackyboxttssample),
+		centerWave(peppersteak1),
+		centerWave(peppersteak2),
+		centerWave(vinyl),
+		centerWave(slapbass),
+		centerWave(hdeboverdrive),
+		centerWave(sunsoftbass),
+		centerWave(masculinechoir),
+		centerWave(femininechoir),
+		centerWave(southtololoche),
+		centerWave(harp),
+		centerWave(panflute),
+		centerWave(krumhorn),
+		centerWave(timpani),
+		centerWave(crowdhey),
+		centerWave(warioland4brass),
+		centerWave(warioland4organ),
+		centerWave(warioland4daow),
+		centerWave(warioland4hourchime),
+		centerWave(warioland4tick),
+		centerWave(kirbykick),
+		centerWave(kirbysnare),
+		centerWave(kirbybongo),
+		centerWave(kirbyclick),
+		centerWave(funkkick),
+		centerWave(funksnare),
+		centerWave(funksnareleft),
+		centerWave(funksnareright),
+		centerWave(funktomhigh),
+		centerWave(funktomlow),
+		centerWave(funkhihatclosed),
+		centerWave(funkhihathalfopen),
+		centerWave(funkhihatopen),
+		centerWave(funkhihatopentip),
+		centerWave(funkhihatfoot),
+		centerWave(funkcrash),
+		centerWave(funkcrashtip),
+		centerWave(funkride)
+	    ];
+	    let chipWaveIndexOffset: number = 0;
+	    for (const chipWaveSample of chipWaveSamples) {
+		const chipWaveIndex: number = startIndex + chipWaveIndexOffset;
+		Config.rawChipWaves[chipWaveIndex].samples = chipWaveSample;
+		Config.rawRawChipWaves[chipWaveIndex].samples = chipWaveSample;
+		Config.chipWaves[chipWaveIndex].samples = performIntegral(chipWaveSample);
+		sampleLoadingState.statusTable[chipWaveIndex] = SampleLoadingStatus.loaded;
+		sampleLoadingState.samplesLoaded++;
+		sampleLoadEvents.dispatchEvent(new SampleLoadedEvent(
+		    sampleLoadingState.totalSamples,
+		    sampleLoadingState.samplesLoaded
+		));
+		chipWaveIndexOffset++;
+	    }
+	});
+	//EditorConfig.presetCategories[EditorConfig.presetCategories.length] = {name: "Legacy Sample Presets", presets:  { name: "Earthbound O. Guitar", midiProgram: 80, settings: { "type": "chip", "eqFilter": [], "effects": [], "transition": "normal", "fadeInSeconds": 0, "fadeOutTicks": -1, "chord": "arpeggio", "wave": "paandorasbox overdrive", "unison": "none", "envelopes": [] } }, index: EditorConfig.presetCategories.length,};
+    }
+    else if (set == 1) {
+	// Create chip waves with the wrong sound.
+	const chipWaves = [
+	    { name: "chronoperc1final", expression: 4.0, isSampled: true, isPercussion: true, extraSampleDetune: 0 },
+	    { name: "synthkickfm", expression: 4.0, isSampled: true, isPercussion: true, extraSampleDetune: 0 },
+	    { name: "mcwoodclick1", expression: 4.0, isSampled: true, isPercussion: true, extraSampleDetune: 0 },
+	    { name: "acoustic snare", expression: 4.0, isSampled: true, isPercussion: true, extraSampleDetune: 0 }
+	];
+
+	sampleLoadingState.totalSamples += chipWaves.length;
+
+	// This assumes that Config.rawRawChipWaves and Config.chipWaves have
+	// the same number of elements.
+	const startIndex: number = Config.rawRawChipWaves.length;
+	for (const chipWave of chipWaves) {
+	    const chipWaveIndex: number = Config.rawRawChipWaves.length;
+	    const rawChipWave = { index: chipWaveIndex, name: chipWave.name, expression: chipWave.expression, isSampled: chipWave.isSampled, isPercussion: chipWave.isPercussion, extraSampleDetune: chipWave.extraSampleDetune, samples: defaultSamples };
+	    const rawRawChipWave = { index: chipWaveIndex, name: chipWave.name, expression: chipWave.expression, isSampled: chipWave.isSampled, isPercussion: chipWave.isPercussion, extraSampleDetune: chipWave.extraSampleDetune, samples: defaultSamples };
+	    const integratedChipWave = { index: chipWaveIndex, name: chipWave.name, expression: chipWave.expression, isSampled: chipWave.isSampled, isPercussion: chipWave.isPercussion, extraSampleDetune: chipWave.extraSampleDetune, samples: defaultIntegratedSamples };
+	    Config.rawRawChipWaves[chipWaveIndex] = rawRawChipWave;
+	    Config.rawRawChipWaves.dictionary[chipWave.name] = rawRawChipWave;
+	    Config.rawChipWaves[chipWaveIndex] = rawChipWave;
+	    Config.rawChipWaves.dictionary[chipWave.name] = rawChipWave;
+	    Config.chipWaves[chipWaveIndex] = integratedChipWave;
+	    Config.chipWaves.dictionary[chipWave.name] = rawChipWave;
+	    sampleLoadingState.statusTable[chipWaveIndex] = SampleLoadingStatus.loading;
+	    sampleLoadingState.urlTable[chipWaveIndex] = "nintariboxSamples";
+	}
+
+	loadScript("nintaribox_samples.js")
+	.then(() => {
+	    // Now put the right sounds in there after everything
+	    // got loaded.
+	    const chipWaveSamples: Float32Array[] = [
+		centerWave(chronoperc1finalsample),
+		centerWave(synthkickfmsample),
+		centerWave(woodclicksample),
+		centerWave(acousticsnaresample)
+	    ];
+	    let chipWaveIndexOffset: number = 0;
+	    for (const chipWaveSample of chipWaveSamples) {
+		const chipWaveIndex: number = startIndex + chipWaveIndexOffset;
+		Config.rawChipWaves[chipWaveIndex].samples = chipWaveSample;
+		Config.rawRawChipWaves[chipWaveIndex].samples = chipWaveSample;
+		Config.chipWaves[chipWaveIndex].samples = performIntegral(chipWaveSample);
+		sampleLoadingState.statusTable[chipWaveIndex] = SampleLoadingStatus.loaded;
+		sampleLoadingState.samplesLoaded++;
+		sampleLoadEvents.dispatchEvent(new SampleLoadedEvent(
+		    sampleLoadingState.totalSamples,
+		    sampleLoadingState.samplesLoaded
+		));
+		chipWaveIndexOffset++;
+	    }
+	});
+    }
+    else if (set == 2) {
+	// Create chip waves with the wrong sound.
+	const chipWaves = [
+	    { name: "cat", expression: 1, isSampled: true, isPercussion: false, extraSampleDetune: -3 },
+	    { name: "gameboy", expression: 1, isSampled: true, isPercussion: false, extraSampleDetune: 7 },
+	    { name: "mario", expression: 1, isSampled: true, isPercussion: false, extraSampleDetune: 0 },
+	    { name: "drum", expression: 1, isSampled: true, isPercussion: false, extraSampleDetune: 4 },
+	    { name: "yoshi", expression: 1, isSampled: true, isPercussion: false, extraSampleDetune: -16 },
+	    { name: "star", expression: 1, isSampled: true, isPercussion: false, extraSampleDetune: -16 },
+	    { name: "fire flower", expression: 1, isSampled: true, isPercussion: false, extraSampleDetune: -1 },
+	    { name: "dog", expression: 1, isSampled: true, isPercussion: false, extraSampleDetune: -1 },
+	    { name: "oink", expression: 1, isSampled: true, isPercussion: false, extraSampleDetune: 3 },
+	    { name: "swan", expression: 1, isSampled: true, isPercussion: false, extraSampleDetune: 1 },
+	    { name: "face", expression: 1, isSampled: true, isPercussion: false, extraSampleDetune: -12 }
+	];
+
+	sampleLoadingState.totalSamples += chipWaves.length;
+
+	// This assumes that Config.rawRawChipWaves and Config.chipWaves have
+	// the same number of elements.
+	const startIndex: number = Config.rawRawChipWaves.length;
+	for (const chipWave of chipWaves) {
+	    const chipWaveIndex: number = Config.rawRawChipWaves.length;
+	    const rawChipWave = { index: chipWaveIndex, name: chipWave.name, expression: chipWave.expression, isSampled: chipWave.isSampled, isPercussion: chipWave.isPercussion, extraSampleDetune: chipWave.extraSampleDetune, samples: defaultSamples };
+	    const rawRawChipWave = { index: chipWaveIndex, name: chipWave.name, expression: chipWave.expression, isSampled: chipWave.isSampled, isPercussion: chipWave.isPercussion, extraSampleDetune: chipWave.extraSampleDetune, samples: defaultSamples };
+	    const integratedChipWave = { index: chipWaveIndex, name: chipWave.name, expression: chipWave.expression, isSampled: chipWave.isSampled, isPercussion: chipWave.isPercussion, extraSampleDetune: chipWave.extraSampleDetune, samples: defaultIntegratedSamples };
+	    Config.rawRawChipWaves[chipWaveIndex] = rawRawChipWave;
+	    Config.rawRawChipWaves.dictionary[chipWave.name] = rawRawChipWave;
+	    Config.rawChipWaves[chipWaveIndex] = rawChipWave;
+	    Config.rawChipWaves.dictionary[chipWave.name] = rawChipWave;
+	    Config.chipWaves[chipWaveIndex] = integratedChipWave;
+	    Config.chipWaves.dictionary[chipWave.name] = rawChipWave;
+	    sampleLoadingState.statusTable[chipWaveIndex] = SampleLoadingStatus.loading;
+	    sampleLoadingState.urlTable[chipWaveIndex] = "marioPaintboxSamples";
+	}
+
+	loadScript("mario_paintbox_samples.js")
+	.then(() => {
+	    // Now put the right sounds in there after everything
+	    // got loaded.
+	    const chipWaveSamples: Float32Array[] = [
+		centerWave(catpaintboxsample),
+		centerWave(gameboypaintboxsample),
+		centerWave(mariopaintboxsample),
+		centerWave(drumpaintboxsample),
+		centerWave(yoshipaintboxsample),
+		centerWave(starpaintboxsample),
+		centerWave(fireflowerpaintboxsample),
+		centerWave(dogpaintbox),
+		centerWave(oinkpaintbox),
+		centerWave(swanpaintboxsample),
+		centerWave(facepaintboxsample)
+	    ];
+	    let chipWaveIndexOffset: number = 0;
+	    for (const chipWaveSample of chipWaveSamples) {
+		const chipWaveIndex: number = startIndex + chipWaveIndexOffset;
+		Config.rawChipWaves[chipWaveIndex].samples = chipWaveSample;
+		Config.rawRawChipWaves[chipWaveIndex].samples = chipWaveSample;
+		Config.chipWaves[chipWaveIndex].samples = performIntegral(chipWaveSample);
+		sampleLoadingState.statusTable[chipWaveIndex] = SampleLoadingStatus.loaded;
+		sampleLoadingState.samplesLoaded++;
+		sampleLoadEvents.dispatchEvent(new SampleLoadedEvent(
+		    sampleLoadingState.totalSamples,
+		    sampleLoadingState.samplesLoaded
+		));
+		chipWaveIndexOffset++;
+	    }
+	});
+    }
+    else {
+        console.log("invalid set of built-in samples");
+    }
+}
+
+export class Config {
+    // Params for post-processing compressor
+    public static thresholdVal: number = -10;
+    public static kneeVal: number = 40;
+    public static ratioVal: number = 12;
+    public static attackVal: number = 0;
+    public static releaseVal: number = 0.25;
+
+    public static willReloadForCustomSamples: boolean = false;
+
+    public static jsonFormat: string = "slarmoosbox";
+    // public static thurmboxImportUrl: string = "https://file.garden/ZMQ0Om5nmTe-x2hq/PandoraArchive%20Samples/";
+
+    public static readonly scales: DictionaryArray<Scale> = toNameMap([
+
+        //   C     Db      D     Eb      E      F     F#      G     Ab      A     Bb      B      C
+        { name: "Free", realName: "chromatic", flags: [true, true, true, true, true, true, true, true, true, true, true, true] }, // Free
+        { name: "Major", realName: "ionian", flags: [true, false, true, false, true, true, false, true, false, true, false, true] }, // Major
+        { name: "Minor", realName: "aeolian", flags: [true, false, true, true, false, true, false, true, true, false, true, false] }, // Minor
+        { name: "Mixolydian", realName: "mixolydian", flags: [true, false, true, false, true, true, false, true, false, true, true, false] }, // Mixolydian
+        { name: "Lydian", realName: "lydian", flags: [true, false, true, false, true, false, true, true, false, true, false, true] }, // Lydian
+        { name: "Dorian", realName: "dorian", flags: [true, false, true, true, false, true, false, true, false, true, true, false] }, // Dorian
+        { name: "Phrygian", realName: "phrygian", flags: [true, true, false, true, false, true, false, true, true, false, true, false] }, // Phrygian
+        { name: "Locrian", realName: "locrian", flags: [true, true, false, true, false, true, true, false, true, false, true, false] }, // Locrian
+        { name: "Lydian Dominant", realName: "lydian dominant", flags: [true, false, true, false, true, false, true, true, false, true, true, false] }, // Lydian Dominant
+        { name: "Phrygian Dominant", realName: "phrygian dominant", flags: [true, true, false, false, true, true, false, true, true, false, true, false] }, // Phrygian Dominant
+        { name: "Harmonic Major", realName: "harmonic major", flags: [true, false, true, false, true, true, false, true, true, false, false, true] }, // Harmonic Major
+        { name: "Harmonic Minor", realName: "harmonic minor", flags: [true, false, true, true, false, true, false, true, true, false, false, true] }, // Harmonic Minor
+        { name: "Melodic Minor", realName: "melodic minor", flags: [true, false, true, true, false, true, false, true, false, true, false, true] }, // Melodic Minor
+        { name: "Blues Major", realName: "blues major", flags: [true, false, true, true, true,false, false, true, false, true, false, false] }, // Blues Major
+        { name: "Blues", realName: "blues", flags: [true, false, false, true, false, true, true, true, false, false, true, false] }, // Blues
+        { name: "Altered", realName: "altered", flags: [true, true, false, true, true, false, true, false, true, false, true, false] }, // Altered
+        { name: "Major Pentatonic", realName: "major pentatonic", flags: [true, false, true, false, true, false, false, true, false, true, false, false] }, // Major Pentatonic
+        { name: "Minor Pentatonic", realName: "minor pentatonic", flags: [true, false, false, true, false, true, false, true, false, false, true, false] }, // Minor Pentatonic
+        { name: "Whole Tone", realName: "whole tone", flags: [true, false, true, false, true, false, true, false, true, false, true, false] }, // Whole Tone
+        { name: "Octatonic", realName: "octatonic", flags: [true, false, true, true, false, true, true, false, true, true, false, true] }, // Octatonic
+        { name: "Hexatonic", realName: "hexatonic", flags: [true, false, false, true, true, false, false, true, true, false, false, true] }, // Hexatonic
+        // TODO: remove these with 2.3
+        // modbox
+        { name: "No Dabbing (MB)", realName: "no dabbing", flags:[true, true, false, true, true, true, true, true, true, false, true, false] },
+        // todbox
+        { name: "Jacked Toad (TB)", realName: "jacked toad", flags: [true, false, true, true, false, true, true, true, true, false, true, true] },
+        { name: "Test Scale (TB)", realName: "**t", flags: [true, true, false, false, false, true, true, false, false, true, true, false] },
+        { name: "Custom", realName: "custom", flags: [true, false, true, true, false, false, false, true, true, false, true, true] }, // Custom? considering allowing this one to be be completely configurable
+    ]);
+    public static readonly keys: DictionaryArray<Key> = toNameMap([
+        { name: "C", isWhiteKey: true, basePitch: 12 }, // C0 has index 12 on the MIDI scale. C7 is 96, and C9 is 120. C10 is barely in the audible range.
+        { name: "C♯", isWhiteKey: false, basePitch: 13 },
+        { name: "D", isWhiteKey: true, basePitch: 14 },
+        { name: "D♯", isWhiteKey: false, basePitch: 15 },
+        { name: "E", isWhiteKey: true, basePitch: 16 },
+        { name: "F", isWhiteKey: true, basePitch: 17 },
+        { name: "F♯", isWhiteKey: false, basePitch: 18 },
+        { name: "G", isWhiteKey: true, basePitch: 19 },
+        { name: "G♯", isWhiteKey: false, basePitch: 20 },
+        { name: "A", isWhiteKey: true, basePitch: 21 },
+        { name: "A♯", isWhiteKey: false, basePitch: 22 },
+        { name: "B", isWhiteKey: true, basePitch: 23 },
+        // { name: "C+", isWhiteKey: false, basePitch: 24 },
+        //taken from todbox, called "B#" for some reason lol
+        // { name: "G- (actually F#-)", isWhiteKey: false, basePitch: 6 },
+        // { name: "C-", isWhiteKey: true, basePitch: 0 },
+        //brucebox
+        //g- isn't actually g-???
+        // { name: "oh no (F-)", isWhiteKey: true, basePitch: 5 },
+        //shitbox
+    ]);
+    public static readonly blackKeyNameParents: ReadonlyArray<number> = [-1, 1, -1, 1, -1, 1, -1, -1, 1, -1, 1, -1];
+    public static readonly tempoMin: number = 1;
+    public static readonly tempoMax: number = 500;
+    public static readonly octaveMin: number = -2;
+    public static readonly octaveMax: number = 2;
+    public static readonly echoDelayRange: number = 24;
+    public static readonly echoDelayStepTicks: number = 4;
+    public static readonly echoSustainRange: number = 8;
+    public static readonly echoShelfHz: number = 4000.0; // The cutoff freq of the shelf filter that is used to decay echoes.
+    public static readonly echoShelfGain: number = Math.pow(2.0, -0.5);
+    public static readonly reverbShelfHz: number = 8000.0; // The cutoff freq of the shelf filter that is used to decay reverb.
+    public static readonly reverbShelfGain: number = Math.pow(2.0, -1.5);
+    public static readonly reverbRange: number = 32;
+    public static readonly reverbDelayBufferSize: number = 16384; // TODO: Compute a buffer size based on sample rate.
+    public static readonly reverbDelayBufferMask: number = Config.reverbDelayBufferSize - 1; // TODO: Compute a buffer size based on sample rate.
+    public static readonly beatsPerBarMin: number = 1;
+    public static readonly beatsPerBarMax: number = 64;
+    public static readonly barCountMin: number = 1;
+    public static readonly barCountMax: number = 1024;
+    public static readonly instrumentCountMin: number = 1;
+    public static readonly layeredInstrumentCountMax: number = 10;
+    public static readonly patternInstrumentCountMax: number = 10;
+	public static readonly partsPerBeat: number = 24;
+	public static readonly ticksPerPart: number = 2;
+	public static readonly ticksPerArpeggio: number = 3;
+	public static readonly arpeggioPatterns: ReadonlyArray<ReadonlyArray<number>> = [[0], [0, 1], [0, 1, 2, 1], [0, 1, 2, 3], [0, 1, 2, 3, 4], [0, 1, 2, 3, 4, 5], [0, 1, 2, 3, 4, 5, 6], [0, 1, 2, 3, 4, 5, 6, 7] ];
+	public static readonly rhythms: DictionaryArray<Rhythm> = toNameMap([
+		{ name: "÷3 (triplets)", stepsPerBeat: 3, /*ticksPerArpeggio: 4, arpeggioPatterns: [[0], [0, 0, 1, 1], [0, 1, 2, 1], [0, 1, 2, 3]]*/ roundUpThresholds: [/*0*/ 5, /*8*/ 12, /*16*/ 18 /*24*/] },
+		{ name: "÷4 (standard)", stepsPerBeat: 4, /*ticksPerArpeggio: 3, arpeggioPatterns: [[0], [0, 0, 1, 1], [0, 1, 2, 1], [0, 1, 2, 3]]*/ roundUpThresholds: [/*0*/ 3, /*6*/ 9, /*12*/ 17, /*18*/ 21 /*24*/] },
+		{ name: "÷6", stepsPerBeat: 6, /*ticksPerArpeggio: 4, arpeggioPatterns: [[0], [0, 1], [0, 1, 2, 1], [0, 1, 2, 3]]*/ roundUpThresholds: null },
+		{ name: "÷8", stepsPerBeat: 8, /*ticksPerArpeggio: 3, arpeggioPatterns: [[0], [0, 1], [0, 1, 2, 1], [0, 1, 2, 3]]*/ roundUpThresholds: null },
+        { name: "÷12", stepsPerBeat: 12, /*ticksPerArpeggio: 3, arpeggioPatterns: [[0], [0, 1], [0, 1, 2, 1]]*/ roundUpThresholds: null },
+		{ name: "freehand", stepsPerBeat: 24, /*ticksPerArpeggio: 3, arpeggioPatterns: [[0], [0, 1], [0, 1, 2, 1], [0, 1, 2, 3]]*/ roundUpThresholds: null },
+	]);
+
+    public static readonly instrumentTypeNames: ReadonlyArray<string> = ["chip", "FM", "noise", "spectrum", "drumset", "harmonics", "PWM", "Picked String", "supersaw", "custom chip", "mod", "FM6op"];
+    public static readonly instrumentTypeHasSpecialInterval: ReadonlyArray<boolean> = [true, true, false, false, false, true, false, false, false, false, false];
+    public static readonly chipBaseExpression: number = 0.03375; // Doubled by unison feature, but affected by expression adjustments per unison setting and wave shape. Custom chip is multiplied by 0.05 in instrumentState.updateWaves
+    public static readonly fmBaseExpression: number = 0.03;
+    public static readonly noiseBaseExpression: number = 0.19;
+    public static readonly spectrumBaseExpression: number = 0.3; // Spectrum can be in pitch or noise channels, the expression is doubled for noise.
+    public static readonly drumsetBaseExpression: number = 0.45; // Drums tend to be loud but brief!
+    public static readonly harmonicsBaseExpression: number = 0.025;
+    public static readonly pwmBaseExpression: number = 0.04725; // It's actually closer to half of this, the synthesized pulse amplitude range is only .5 to -.5, but also note that the fundamental sine partial amplitude of a square wave is 4/π times the measured square wave amplitude.
+    public static readonly supersawBaseExpression: number = 0.061425; // It's actually closer to half of this, the synthesized sawtooth amplitude range is only .5 to -.5.
+    public static readonly pickedStringBaseExpression: number = 0.025; // Same as harmonics.
+    public static readonly distortionBaseVolume: number = 0.011; // Distortion is not affected by pitchDamping, which otherwise approximately halves expression for notes around the middle of the range.
+    public static readonly bitcrusherBaseVolume: number = 0.010; // Also not affected by pitchDamping, used when bit crushing is maxed out (aka "1-bit" output).
+    public static readonly granularOutputLoudnessCompensation: number = 0.5; //compensate for multiple grains playing at once
+    public static rawChipWaves: DictionaryArray<ChipWave> = toNameMap([
+        { name: "rounded", expression: 0.94, samples: centerWave([0.0, 0.2, 0.4, 0.5, 0.6, 0.7, 0.8, 0.85, 0.9, 0.95, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.95, 0.9, 0.85, 0.8, 0.7, 0.6, 0.5, 0.4, 0.2, 0.0, -0.2, -0.4, -0.5, -0.6, -0.7, -0.8, -0.85, -0.9, -0.95, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.95, -0.9, -0.85, -0.8, -0.7, -0.6, -0.5, -0.4, -0.2]) },
+        { name: "triangle", expression: 1.0, samples: centerWave([1.0 / 15.0, 3.0 / 15.0, 5.0 / 15.0, 7.0 / 15.0, 9.0 / 15.0, 11.0 / 15.0, 13.0 / 15.0, 15.0 / 15.0, 15.0 / 15.0, 13.0 / 15.0, 11.0 / 15.0, 9.0 / 15.0, 7.0 / 15.0, 5.0 / 15.0, 3.0 / 15.0, 1.0 / 15.0, -1.0 / 15.0, -3.0 / 15.0, -5.0 / 15.0, -7.0 / 15.0, -9.0 / 15.0, -11.0 / 15.0, -13.0 / 15.0, -15.0 / 15.0, -15.0 / 15.0, -13.0 / 15.0, -11.0 / 15.0, -9.0 / 15.0, -7.0 / 15.0, -5.0 / 15.0, -3.0 / 15.0, -1.0 / 15.0]) },
+        { name: "square", expression: 0.5, samples: centerWave([1.0, -1.0]) },
+        { name: "1/4 pulse", expression: 0.5, samples: centerWave([1.0, -1.0, -1.0, -1.0]) },
+        { name: "1/8 pulse", expression: 0.5, samples: centerWave([1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0]) },
+        { name: "sawtooth", expression: 0.65, samples: centerWave([1.0 / 31.0, 3.0 / 31.0, 5.0 / 31.0, 7.0 / 31.0, 9.0 / 31.0, 11.0 / 31.0, 13.0 / 31.0, 15.0 / 31.0, 17.0 / 31.0, 19.0 / 31.0, 21.0 / 31.0, 23.0 / 31.0, 25.0 / 31.0, 27.0 / 31.0, 29.0 / 31.0, 31.0 / 31.0, -31.0 / 31.0, -29.0 / 31.0, -27.0 / 31.0, -25.0 / 31.0, -23.0 / 31.0, -21.0 / 31.0, -19.0 / 31.0, -17.0 / 31.0, -15.0 / 31.0, -13.0 / 31.0, -11.0 / 31.0, -9.0 / 31.0, -7.0 / 31.0, -5.0 / 31.0, -3.0 / 31.0, -1.0 / 31.0]) },
+        { name: "double saw", expression: 0.5, samples: centerWave([0.0, -0.2, -0.4, -0.6, -0.8, -1.0, 1.0, -0.8, -0.6, -0.4, -0.2, 1.0, 0.8, 0.6, 0.4, 0.2]) },
+        { name: "double pulse", expression: 0.4, samples: centerWave([1.0, 1.0, 1.0, 1.0, 1.0, -1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0, -1.0, -1.0, -1.0, -1.0]) },
+        { name: "spiky", expression: 0.4, samples: centerWave([1.0, -1.0, 1.0, -1.0, 1.0, 0.0]) },
+        { name: "sine", expression: 0.88, samples: centerAndNormalizeWave([8.0, 9.0, 11.0, 12.0, 13.0, 14.0, 15.0, 15.0, 15.0, 15.0, 14.0, 14.0, 13.0, 11.0, 10.0, 9.0, 7.0, 6.0, 4.0, 3.0, 2.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 4.0, 5.0, 6.0]) },
+        { name: "flute", expression: 0.8, samples: centerAndNormalizeWave([3.0, 4.0, 6.0, 8.0, 10.0, 11.0, 13.0, 14.0, 15.0, 15.0, 14.0, 13.0, 11.0, 8.0, 5.0, 3.0]) },
+        { name: "harp", expression: 0.8, samples: centerAndNormalizeWave([0.0, 3.0, 3.0, 3.0, 4.0, 5.0, 5.0, 6.0, 7.0, 8.0, 9.0, 11.0, 11.0, 13.0, 13.0, 15.0, 15.0, 14.0, 12.0, 11.0, 10.0, 9.0, 8.0, 7.0, 7.0, 5.0, 4.0, 3.0, 2.0, 1.0, 0.0, 0.0]) },
+        { name: "sharp clarinet", expression: 0.38, samples: centerAndNormalizeWave([0.0, 0.0, 0.0, 1.0, 1.0, 8.0, 8.0, 9.0, 9.0, 9.0, 8.0, 8.0, 8.0, 8.0, 8.0, 9.0, 9.0, 7.0, 9.0, 9.0, 10.0, 4.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]) },
+        { name: "soft clarinet", expression: 0.45, samples: centerAndNormalizeWave([0.0, 1.0, 5.0, 8.0, 9.0, 9.0, 9.0, 9.0, 9.0, 9.0, 9.0, 11.0, 11.0, 12.0, 13.0, 12.0, 10.0, 9.0, 7.0, 6.0, 4.0, 3.0, 3.0, 3.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]) },
+        { name: "alto sax", expression: 0.3, samples: centerAndNormalizeWave([5.0, 5.0, 6.0, 4.0, 3.0, 6.0, 8.0, 7.0, 2.0, 1.0, 5.0, 6.0, 5.0, 4.0, 5.0, 7.0, 9.0, 11.0, 13.0, 14.0, 14.0, 14.0, 14.0, 13.0, 10.0, 8.0, 7.0, 7.0, 4.0, 3.0, 4.0, 2.0]) },
+        { name: "bassoon", expression: 0.35, samples: centerAndNormalizeWave([9.0, 9.0, 7.0, 6.0, 5.0, 4.0, 4.0, 4.0, 4.0, 5.0, 7.0, 8.0, 9.0, 10.0, 11.0, 13.0, 13.0, 11.0, 10.0, 9.0, 7.0, 6.0, 4.0, 2.0, 1.0, 1.0, 1.0, 2.0, 2.0, 5.0, 11.0, 14.0]) },
+        { name: "trumpet", expression: 0.22, samples: centerAndNormalizeWave([10.0, 11.0, 8.0, 6.0, 5.0, 5.0, 5.0, 6.0, 7.0, 7.0, 7.0, 7.0, 6.0, 6.0, 7.0, 7.0, 7.0, 7.0, 7.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 7.0, 8.0, 9.0, 11.0, 14.0]) },
+        { name: "electric guitar", expression: 0.2, samples: centerAndNormalizeWave([11.0, 12.0, 12.0, 10.0, 6.0, 6.0, 8.0, 0.0, 2.0, 4.0, 8.0, 10.0, 9.0, 10.0, 1.0, 7.0, 11.0, 3.0, 6.0, 6.0, 8.0, 13.0, 14.0, 2.0, 0.0, 12.0, 8.0, 4.0, 13.0, 11.0, 10.0, 13.0]) },
+        { name: "organ", expression: 0.2, samples: centerAndNormalizeWave([11.0, 10.0, 12.0, 11.0, 14.0, 7.0, 5.0, 5.0, 12.0, 10.0, 10.0, 9.0, 12.0, 6.0, 4.0, 5.0, 13.0, 12.0, 12.0, 10.0, 12.0, 5.0, 2.0, 2.0, 8.0, 6.0, 6.0, 5.0, 8.0, 3.0, 2.0, 1.0]) },
+        { name: "pan flute", expression: 0.35, samples: centerAndNormalizeWave([1.0, 4.0, 7.0, 6.0, 7.0, 9.0, 7.0, 7.0, 11.0, 12.0, 13.0, 15.0, 13.0, 11.0, 11.0, 12.0, 13.0, 10.0, 7.0, 5.0, 3.0, 6.0, 10.0, 7.0, 3.0, 3.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0]) },
+        { name: "glitch", expression: 0.5, samples: centerWave([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, -1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, -1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, -1.0, -1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, -1.0, -1.0, -1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, -1.0, -1.0, -1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, -1.0, -1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, -1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, -1.0, -1.0]) },
+        { name: "trapezoid", expression: 1.0, samples: centerWave([1.0 / 15.0, 6.0 / 15.0, 10.0 / 15.0, 14.0 / 15.0, 15.0 / 15.0, 15.0 / 15.0, 15.0 / 15.0, 15.0 / 15.0, 15.0 / 15.0, 15.0 / 15.0, 15.0 / 15.0, 15.0 / 15.0, 14.0 / 15.0, 10.0 / 15.0, 6.0 / 15.0, 1.0 / 15.0, -1.0 / 15.0, -6.0 / 15.0, -10.0 / 15.0, -14.0 / 15.0, -15.0 / 15.0, -15.0 / 15.0, -15.0 / 15.0, -15.0 / 15.0, -15.0 / 15.0, -15.0 / 15.0, -15.0 / 15.0, -15.0 / 15.0, -14.0 / 15.0, -10.0 / 15.0, -6.0 / 15.0, -1.0 / 15.0,]) },
+        // modbox
+        { name: "modbox 10% pulse", expression: 0.5, samples: centerAndNormalizeWave([1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0]) },
+        { name: "modbox sunsoft bass", expression: 1.0, samples: centerAndNormalizeWave([0.0, 0.1875, 0.3125, 0.5625, 0.5, 0.75, 0.875, 1.0, 1.0, 0.6875, 0.5, 0.625, 0.625, 0.5, 0.375, 0.5625, 0.4375, 0.5625, 0.4375, 0.4375, 0.3125, 0.1875, 0.1875, 0.375, 0.5625, 0.5625, 0.5625, 0.5625, 0.5625, 0.4375, 0.25, 0.0]) },
+        { name: "modbox loud pulse", expression: 0.5, samples: centerAndNormalizeWave([1.0, 0.7, 0.1, 0.1, 0, 0, 0, 0, 0, 0.1, 0.2, 0.15, 0.25, 0.125, 0.215, 0.345, 4.0]) },
+        { name: "modbox sax", expression: 0.5, samples: centerAndNormalizeWave([1.0 / 15.0, 3.0 / 15.0, 5.0 / 15.0, 9.0, 0.06]) },
+        { name: "modbox guitar", expression: 0.5, samples: centerAndNormalizeWave([-0.5, 3.5, 3.0, -0.5, -0.25, -1.0]) },
+        { name: "modbox sine", expression: 0.5, samples: centerAndNormalizeWave([0.0, 0.05, 0.125, 0.2, 0.25, 0.3, 0.425, 0.475, 0.525, 0.625, 0.675, 0.725, 0.775, 0.8, 0.825, 0.875, 0.9, 0.925, 0.95, 0.975, 0.98, 0.99, 0.995, 1, 0.995, 0.99, 0.98, 0.975, 0.95, 0.925, 0.9, 0.875, 0.825, 0.8, 0.775, 0.725, 0.675, 0.625, 0.525, 0.475, 0.425, 0.3, 0.25, 0.2, 0.125, 0.05, 0.0, -0.05, -0.125, -0.2, -0.25, -0.3, -0.425, -0.475, -0.525, -0.625, -0.675, -0.725, -0.775, -0.8, -0.825, -0.875, -0.9, -0.925, -0.95, -0.975, -0.98, -0.99, -0.995, -1, -0.995, -0.99, -0.98, -0.975, -0.95, -0.925, -0.9, -0.875, -0.825, -0.8, -0.775, -0.725, -0.675, -0.625, -0.525, -0.475, -0.425, -0.3, -0.25, -0.2, -0.125, -0.05]) },
+        { name: "modbox atari bass", expression: 0.5, samples: centerAndNormalizeWave([1.0, 1.0, 1.0, 1.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]) },
+        { name: "modbox atari pulse", expression: 0.5, samples: centerAndNormalizeWave([1.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]) },
+        { name: "modbox 1% pulse", expression: 0.5, samples: centerAndNormalizeWave([1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0]) },
+        { name: "modbox curved sawtooth", expression: 0.5, samples: centerAndNormalizeWave([1.0, 1.0 / 2.0, 1.0 / 3.0, 1.0 / 4.0]) },
+        { name: "modbox viola", expression: 0.45, samples: centerAndNormalizeWave([-0.9, -1.0, -0.85, -0.775, -0.7, -0.6, -0.5, -0.4, -0.325, -0.225, -0.2, -0.125, -0.1, -0.11, -0.125, -0.15, -0.175, -0.18, -0.2, -0.21, -0.22, -0.21, -0.2, -0.175, -0.15, -0.1, -0.5, 0.75, 0.11, 0.175, 0.2, 0.25, 0.26, 0.275, 0.26, 0.25, 0.225, 0.2, 0.19, 0.18, 0.19, 0.2, 0.21, 0.22, 0.23, 0.24, 0.25, 0.26, 0.275, 0.28, 0.29, 0.3, 0.29, 0.28, 0.27, 0.26, 0.25, 0.225, 0.2, 0.175, 0.15, 0.1, 0.075, 0.0, -0.01, -0.025, 0.025, 0.075, 0.2, 0.3, 0.475, 0.6, 0.75, 0.85, 0.85, 1.0, 0.99, 0.95, 0.8, 0.675, 0.475, 0.275, 0.01, -0.15, -0.3, -0.475, -0.5, -0.6, -0.71, -0.81, -0.9, -1.0, -0.9]) },
+        { name: "modbox brass", expression: 0.45, samples: centerAndNormalizeWave([-1.0, -0.95, -0.975, -0.9, -0.85, -0.8, -0.775, -0.65, -0.6, -0.5, -0.475, -0.35, -0.275, -0.2, -0.125, -0.05, 0.0, 0.075, 0.125, 0.15, 0.20, 0.21, 0.225, 0.25, 0.225, 0.21, 0.20, 0.19, 0.175, 0.125, 0.10, 0.075, 0.06, 0.05, 0.04, 0.025, 0.04, 0.05, 0.10, 0.15, 0.225, 0.325, 0.425, 0.575, 0.70, 0.85, 0.95, 1.0, 0.9, 0.675, 0.375, 0.2, 0.275, 0.4, 0.5, 0.55, 0.6, 0.625, 0.65, 0.65, 0.65, 0.65, 0.64, 0.6, 0.55, 0.5, 0.4, 0.325, 0.25, 0.15, 0.05, -0.05, -0.15, -0.275, -0.35, -0.45, -0.55, -0.65, -0.7, -0.78, -0.825, -0.9, -0.925, -0.95, -0.975]) },
+        { name: "modbox acoustic bass", expression: 0.5, samples: centerAndNormalizeWave([1.0, 0.0, 0.1, -0.1, -0.2, -0.4, -0.3, -1.0]) },
+        { name: "modbox lyre", expression: 0.45, samples: centerAndNormalizeWave([1.0, -1.0, 4.0, 2.15, 4.13, 5.15, 0.0, -0.05, 1.0]) },
+        { name: "modbox ramp pulse", expression: 0.5, samples: centerAndNormalizeWave([6.1, -2.9, 1.4, -2.9]) },
+        { name: "modbox piccolo", expression: 0.5, samples: centerAndNormalizeWave([1, 4, 2, 1, -0.1, -1, -0.12]) },
+        { name: "modbox squaretooth", expression: 0.5, samples: centerAndNormalizeWave([0.2, 1.0, 2.6, 1.0, 0.0, -2.4]) },
+        { name: "modbox flatline", expression: 1.0, samples: centerAndNormalizeWave([1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]) },
+        { name: "modbox pnryshk a (u5)", expression: 0.4, samples: centerAndNormalizeWave([1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0]) },
+        { name: "modbox pnryshk b (riff)", expression: 0.5, samples: centerAndNormalizeWave([1.0, -0.9, 0.8, -0.7, 0.6, -0.5, 0.4, -0.3, 0.2, -0.1, 0.0, -0.1, 0.2, -0.3, 0.4, -0.5, 0.6, -0.7, 0.8, -0.9, 1.0]) },
+        // sandbox
+        { name: "sandbox shrill lute", expression: 0.94, samples: centerAndNormalizeWave([1.0, 1.5, 1.25, 1.2, 1.3, 1.5]) },
+        { name: "sandbox bassoon", expression: 0.5, samples: centerAndNormalizeWave([1.0, -1.0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0]) },
+        { name: "sandbox shrill bass", expression: 0.5, samples: centerAndNormalizeWave([0, 1, 0, 0, 1, 0, 1, 0, 0, 0]) },
+        { name: "sandbox nes pulse", expression: 0.4, samples: centerAndNormalizeWave([2.1, -2.2, 1.2, 3]) },
+        { name: "sandbox saw bass", expression: 0.25, samples: centerAndNormalizeWave([1, 1, 1, 1, 0, 2, 1, 2, 3, 1, -2, 1, 4, 1, 4, 2, 1, 6, -3, 4, 2, 1, 5, 1, 4, 1, 5, 6, 7, 1, 6, 1, 4, 1, 9]) },
+        { name: "sandbox euphonium", expression: 0.3, samples: centerAndNormalizeWave([0, 1, 2, 1, 2, 1, 4, 2, 5, 0, -2, 1, 5, 1, 2, 1, 2, 4, 5, 1, 5, -2, 5, 10, 1]) },
+        { name: "sandbox shrill pulse", expression: 0.3, samples: centerAndNormalizeWave([4 - 2, 0, 4, 1, 4, 6, 7, 3]) },
+        { name: "sandbox r-sawtooth", expression: 0.2, samples: centerAndNormalizeWave([6.1, -2.9, 1.4, -2.9]) },
+        { name: "sandbox recorder", expression: 0.2, samples: centerAndNormalizeWave([5.0, -5.1, 4.0, -4.1, 3.0, -3.1, 2.0, -2.1, 1.0, -1.1, 6.0]) },
+        { name: "sandbox narrow saw", expression: 1.2, samples: centerAndNormalizeWave([0.1, 0.13 / -0.1, 0.13 / -0.3, 0.13 / -0.5, 0.13 / -0.7, 0.13 / -0.9, 0.13 / -0.11, 0.13 / -0.31, 0.13 / -0.51, 0.13 / -0.71, 0.13 / -0.91, 0.13 / -0.12, 0.13 / -0.32, 0.13 / -0.52, 0.13 / -0.72, 0.13 / -0.92, 0.13 / -0.13, 0.13 / 0.13, 0.13 / 0.92, 0.13 / 0.72, 0.13 / 0.52, 0.13 / 0.32, 0.13 / 0.12, 0.13 / 0.91, 0.13 / 0.71, 0.13 / 0.51, 0.13 / 0.31, 0.13 / 0.11, 0.13 / 0.9, 0.13 / 0.7, 0.13 / 0.5, 0.13 / 0.3, 0.13]) },
