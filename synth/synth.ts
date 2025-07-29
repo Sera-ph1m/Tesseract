@@ -12522,13 +12522,6 @@ export class Synth {
             
             // DISCRETE SLIDES STUFF
 
-            let arpeggioOffset: number = 0;
-            if (tone.pitchCount > 1 && chord.arpeggiates) {
-                const arpeggio: number = Math.floor(instrumentState.arpTime / Config.ticksPerArpeggio);
-                const arpeggiatedPitch = tone.pitches[getArpeggioPitchIndex(tone.pitchCount, instrument.fastTwoNoteArp, arpeggio)];
-                arpeggioOffset = arpeggiatedPitch - tone.pitches[0];
-            }
-
             let discreteSlideType = -1;
             if (effectsIncludeDiscreteSlide(instrument.effects)) {
                 discreteSlideType = instrument.discreteSlide;
@@ -12587,11 +12580,6 @@ export class Synth {
                     }
                 }
             }
-
-            // Add the arpeggio offset to the calculated slide interval.
-            intervalStart += arpeggioOffset;
-            intervalEnd += arpeggioOffset;
-            
             
             // END OF DISCRETE SLIDES STUFF
 
