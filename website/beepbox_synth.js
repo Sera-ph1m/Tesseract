@@ -9698,9 +9698,7 @@ var beepbox = (function (exports) {
             if (jsonObject["loopBars"] != undefined) {
                 this.loopLength = clamp(1, this.barCount - this.loopStart + 1, jsonObject["loopBars"] | 0);
             }
-            const newPitchChannels = [];
-            const newNoiseChannels = [];
-            const newModChannels = [];
+            const newChannels = [];
             if (jsonObject["channels"] != undefined) {
                 for (let channelIndex = 0; channelIndex < jsonObject["channels"].length; channelIndex++) {
                     let channelObject = jsonObject["channels"][channelIndex];
@@ -9715,14 +9713,20 @@ var beepbox = (function (exports) {
                         if (channelIndex >= 3)
                             channel.type = exports.ChannelType.Noise;
                     }
+                    const pitchChannelCount = newChannels.filter((c) => c.type === exports.ChannelType.Pitch).length;
+                    const noiseChannelCount = newChannels.filter((c) => c.type === exports.ChannelType.Noise).length;
+                    const modChannelCount = newChannels.filter((c) => c.type === exports.ChannelType.Mod).length;
                     if (channel.type === exports.ChannelType.Noise) {
-                        newNoiseChannels.push(channel);
+                        if (noiseChannelCount >= Config.noiseChannelCountMax)
+                            continue;
                     }
                     else if (channel.type === exports.ChannelType.Mod) {
-                        newModChannels.push(channel);
+                        if (modChannelCount >= Config.modChannelCountMax)
+                            continue;
                     }
                     else {
-                        newPitchChannels.push(channel);
+                        if (pitchChannelCount >= Config.pitchChannelCountMax)
+                            continue;
                     }
                     if (channelObject["octaveScrollBar"] != undefined) {
                         channel.octave = clamp(0, Config.pitchOctaves, (channelObject["octaveScrollBar"] | 0) + 1);
@@ -9757,28 +9761,17 @@ var beepbox = (function (exports) {
                     }
                     channel.patterns.length = this.patternsPerChannel;
                     for (let i = 0; i < this.barCount; i++) {
-                        channel.bars[i] = (channelObject["sequence"] != undefined) ? Math.min(this.patternsPerChannel, channelObject["sequence"][i] >>> 0) : 0;
+                        channel.bars[i] =
+                            channelObject["sequence"] != undefined
+                                ? Math.min(this.patternsPerChannel, channelObject["sequence"][i] >>> 0)
+                                : 0;
                     }
                     channel.bars.length = this.barCount;
+                    newChannels.push(channel);
                 }
             }
-            if (newPitchChannels.length > Config.pitchChannelCountMax)
-                newPitchChannels.length = Config.pitchChannelCountMax;
-            if (newNoiseChannels.length > Config.noiseChannelCountMax)
-                newNoiseChannels.length = Config.noiseChannelCountMax;
-            if (newModChannels.length > Config.modChannelCountMax)
-                newModChannels.length = Config.modChannelCountMax;
-            this.pitchChannelCount = newPitchChannels.length;
-            this.noiseChannelCount = newNoiseChannels.length;
-            this.modChannelCount = newModChannels.length;
             this.channels.length = 0;
-            Array.prototype.push.apply(this.channels, newPitchChannels);
-            Array.prototype.push.apply(this.channels, newNoiseChannels);
-            Array.prototype.push.apply(this.channels, newModChannels);
-            if (Config.willReloadForCustomSamples) {
-                window.location.hash = this.toBase64String();
-                setTimeout(() => { location.reload(); }, 50);
-            }
+            Array.prototype.push.apply(this.channels, newChannels);
         }
         getPattern(channelIndex, bar) {
             if (bar < 0 || bar >= this.barCount)

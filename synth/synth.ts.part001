@@ -2512,3 +2512,7 @@ export class Instrument {
         }
         if (instrumentObject["fadeOutTicks"] != undefined) {
             this.fadeOut = Synth.ticksToFadeOutSetting(+instrumentObject["fadeOutTicks"]);
+        }
+
+        {
+            // Note that the chord setting may be overridden by instrumentObject["chorus"] below.

@@ -1,3 +1,7 @@
+            synth.sanitizeFilters(filters);
+            tone.initialNoteFilterInput1 = initialFilterInput1;
+            tone.initialNoteFilterInput2 = initialFilterInput2;
+        }`
             chipFunction = new Function("Config", "Synth", "effectsIncludeDistortion", chipSource)(Config, Synth, effectsIncludeDistortion);
             Synth.loopableChipFunctionCache[instrumentState.unisonVoices] = chipFunction;
         }

@@ -3622,7 +3622,7 @@ export class Song {
             .filter(item => item.channel.type === type);
     }
     // Update all modulator channel targets after a structural change.
-            private _updateAllModTargetIndices(remap: (oldIndex: number) => number): void {
+            public _updateAllModTargetIndices(remap: (oldIndex: number) => number): void {
         for (const channel of this.channels) {
             if (channel.type === ChannelType.Mod) {
                 for (const instrument of channel.instruments) {
@@ -7890,89 +7890,116 @@ export class Song {
             this.loopLength = clamp(1, this.barCount - this.loopStart + 1, jsonObject["loopBars"] | 0);
         }
 
-        const newPitchChannels: Channel[] = [];
-        const newNoiseChannels: Channel[] = [];
-        const newModChannels: Channel[] = [];
+        const newChannels: Channel[] = [];
         if (jsonObject["channels"] != undefined) {
-            for (let channelIndex: number = 0; channelIndex < jsonObject["channels"].length; channelIndex++) {
+            for (
+                let channelIndex: number = 0;
+                channelIndex < jsonObject["channels"].length;
+                channelIndex++
+            ) {
                 let channelObject: any = jsonObject["channels"][channelIndex];
-
+        
                 const channel: Channel = new Channel();
-
+        
                 if (channelObject["type"] != undefined) {
                     if (channelObject["type"] == "drum") channel.type = ChannelType.Noise;
-                    else if (channelObject["type"] == "mod") channel.type = ChannelType.Mod;
+                    else if (channelObject["type"] == "mod")
+                        channel.type = ChannelType.Mod;
                 } else {
                     // for older files, assume drums are channel 3.
                     if (channelIndex >= 3) channel.type = ChannelType.Noise;
                 }
-
+        
+                const pitchChannelCount = newChannels.filter(
+                    (c) => c.type === ChannelType.Pitch,
+                ).length;
+                const noiseChannelCount = newChannels.filter(
+                    (c) => c.type === ChannelType.Noise,
+                ).length;
+                const modChannelCount = newChannels.filter(
+                    (c) => c.type === ChannelType.Mod,
+                ).length;
+        
                 if (channel.type === ChannelType.Noise) {
-                    newNoiseChannels.push(channel);
+                    if (noiseChannelCount >= Config.noiseChannelCountMax) continue;
                 } else if (channel.type === ChannelType.Mod) {
-                    newModChannels.push(channel);
+                    if (modChannelCount >= Config.modChannelCountMax) continue;
                 } else {
-                    newPitchChannels.push(channel);
+                    if (pitchChannelCount >= Config.pitchChannelCountMax) continue;
                 }
-
+        
                 if (channelObject["octaveScrollBar"] != undefined) {
-                    channel.octave = clamp(0, Config.pitchOctaves, (channelObject["octaveScrollBar"] | 0) + 1);
+                    channel.octave = clamp(
+                        0,
+                        Config.pitchOctaves,
+                        (channelObject["octaveScrollBar"] | 0) + 1,
+                    );
                     if (channel.type === ChannelType.Noise) channel.octave = 0;
                 }
-
+        
                 if (channelObject["name"] != undefined) {
                     channel.name = channelObject["name"];
-                }
-                else {
+                } else {
                     channel.name = "";
                 }
-
+        
                 if (Array.isArray(channelObject["instruments"])) {
                     const instrumentObjects: any[] = channelObject["instruments"];
                     for (let i: number = 0; i < instrumentObjects.length; i++) {
                         if (i >= this.getMaxInstrumentsPerChannel()) break;
-                        const instrument: Instrument = new Instrument(channel.type === ChannelType.Noise, channel.type === ChannelType.Mod);
+                        const instrument: Instrument = new Instrument(
+                            channel.type === ChannelType.Noise,
+                            channel.type === ChannelType.Mod,
+                        );
                         channel.instruments[i] = instrument;
-                        instrument.fromJsonObject(instrumentObjects[i], channel.type === ChannelType.Noise, channel.type === ChannelType.Mod, false, false, legacyGlobalReverb, format);
+                        instrument.fromJsonObject(
+                            instrumentObjects[i],
+                            channel.type === ChannelType.Noise,
+                            channel.type === ChannelType.Mod,
+                            false,
+                            false,
+                            legacyGlobalReverb,
+                            format,
+                        );
                     }
-
                 }
-
+        
                 for (let i: number = 0; i < this.patternsPerChannel; i++) {
                     const pattern: Pattern = new Pattern();
                     channel.patterns[i] = pattern;
-
+        
                     let patternObject: any = undefined;
                     if (channelObject["patterns"]) patternObject = channelObject["patterns"][i];
                     if (patternObject == undefined) continue;
-
-                    pattern.fromJsonObject(patternObject, this, channel, importedPartsPerBeat, channel.type === ChannelType.Noise, channel.type === ChannelType.Mod, format);
+        
+                    pattern.fromJsonObject(
+                        patternObject,
+                        this,
+                        channel,
+                        importedPartsPerBeat,
+                        channel.type === ChannelType.Noise,
+                        channel.type === ChannelType.Mod,
+                        format,
+                    );
                 }
                 channel.patterns.length = this.patternsPerChannel;
-
+        
                 for (let i: number = 0; i < this.barCount; i++) {
-                    channel.bars[i] = (channelObject["sequence"] != undefined) ? Math.min(this.patternsPerChannel, channelObject["sequence"][i] >>> 0) : 0;
+                    channel.bars[i] =
+                        channelObject["sequence"] != undefined
+                            ? Math.min(
+                                    this.patternsPerChannel,
+                                    channelObject["sequence"][i] >>> 0,
+                                )
+                            : 0;
                 }
                 channel.bars.length = this.barCount;
+                newChannels.push(channel);
             }
         }
-
-        if (newPitchChannels.length > Config.pitchChannelCountMax) newPitchChannels.length = Config.pitchChannelCountMax;
-        if (newNoiseChannels.length > Config.noiseChannelCountMax) newNoiseChannels.length = Config.noiseChannelCountMax;
-        if (newModChannels.length > Config.modChannelCountMax) newModChannels.length = Config.modChannelCountMax;
-        this.pitchChannelCount = newPitchChannels.length;
-        this.noiseChannelCount = newNoiseChannels.length;
-        this.modChannelCount = newModChannels.length;
+        
         this.channels.length = 0;
-        Array.prototype.push.apply(this.channels, newPitchChannels);
-        Array.prototype.push.apply(this.channels, newNoiseChannels);
-        Array.prototype.push.apply(this.channels, newModChannels);
-
-        if (Config.willReloadForCustomSamples) {
-            window.location.hash = this.toBase64String();
-            // The prompt seems to get stuck if reloading is done too quickly.
-            setTimeout(() => { location.reload(); }, 50);
-        }
+        Array.prototype.push.apply(this.channels, newChannels);
     }
 
     public getPattern(channelIndex: number, bar: number): Pattern | null {

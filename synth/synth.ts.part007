@@ -1,3 +1,10 @@
+                    modToneCount++;
+
+                    for (let i: number = 0; i < notes[mod]!.pitches.length; i++) {
+                        tone.pitches[i] = notes[mod]!.pitches[i];
+                    }
+                    tone.pitchCount = notes[mod]!.pitches.length;
+                    tone.chordSize = 1;
                     tone.instrumentIndex = newInstrumentIndex;
                     tone.note = notes[mod];
                     tone.noteStartPart = notes[mod]!.start;
@@ -1876,7 +1883,3 @@
 
             chipSource += `
             tone.expression = expression;
-            synth.sanitizeFilters(filters);
-            tone.initialNoteFilterInput1 = initialFilterInput1;
-            tone.initialNoteFilterInput2 = initialFilterInput2;
-        }`

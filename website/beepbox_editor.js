@@ -18538,9 +18538,7 @@ li.select2-results__option[role=group] > strong:hover {
             if (jsonObject["loopBars"] != undefined) {
                 this.loopLength = clamp(1, this.barCount - this.loopStart + 1, jsonObject["loopBars"] | 0);
             }
-            const newPitchChannels = [];
-            const newNoiseChannels = [];
-            const newModChannels = [];
+            const newChannels = [];
             if (jsonObject["channels"] != undefined) {
                 for (let channelIndex = 0; channelIndex < jsonObject["channels"].length; channelIndex++) {
                     let channelObject = jsonObject["channels"][channelIndex];
@@ -18555,14 +18553,20 @@ li.select2-results__option[role=group] > strong:hover {
                         if (channelIndex >= 3)
                             channel.type = ChannelType.Noise;
                     }
+                    const pitchChannelCount = newChannels.filter((c) => c.type === ChannelType.Pitch).length;
+                    const noiseChannelCount = newChannels.filter((c) => c.type === ChannelType.Noise).length;
+                    const modChannelCount = newChannels.filter((c) => c.type === ChannelType.Mod).length;
                     if (channel.type === ChannelType.Noise) {
-                        newNoiseChannels.push(channel);
+                        if (noiseChannelCount >= Config.noiseChannelCountMax)
+                            continue;
                     }
                     else if (channel.type === ChannelType.Mod) {
-                        newModChannels.push(channel);
+                        if (modChannelCount >= Config.modChannelCountMax)
+                            continue;
                     }
                     else {
-                        newPitchChannels.push(channel);
+                        if (pitchChannelCount >= Config.pitchChannelCountMax)
+                            continue;
                     }
                     if (channelObject["octaveScrollBar"] != undefined) {
                         channel.octave = clamp(0, Config.pitchOctaves, (channelObject["octaveScrollBar"] | 0) + 1);
@@ -18597,28 +18601,17 @@ li.select2-results__option[role=group] > strong:hover {
                     }
                     channel.patterns.length = this.patternsPerChannel;
                     for (let i = 0; i < this.barCount; i++) {
-                        channel.bars[i] = (channelObject["sequence"] != undefined) ? Math.min(this.patternsPerChannel, channelObject["sequence"][i] >>> 0) : 0;
+                        channel.bars[i] =
+                            channelObject["sequence"] != undefined
+                                ? Math.min(this.patternsPerChannel, channelObject["sequence"][i] >>> 0)
+                                : 0;
                     }
                     channel.bars.length = this.barCount;
+                    newChannels.push(channel);
                 }
             }
-            if (newPitchChannels.length > Config.pitchChannelCountMax)
-                newPitchChannels.length = Config.pitchChannelCountMax;
-            if (newNoiseChannels.length > Config.noiseChannelCountMax)
-                newNoiseChannels.length = Config.noiseChannelCountMax;
-            if (newModChannels.length > Config.modChannelCountMax)
-                newModChannels.length = Config.modChannelCountMax;
-            this.pitchChannelCount = newPitchChannels.length;
-            this.noiseChannelCount = newNoiseChannels.length;
-            this.modChannelCount = newModChannels.length;
             this.channels.length = 0;
-            Array.prototype.push.apply(this.channels, newPitchChannels);
-            Array.prototype.push.apply(this.channels, newNoiseChannels);
-            Array.prototype.push.apply(this.channels, newModChannels);
-            if (Config.willReloadForCustomSamples) {
-                window.location.hash = this.toBase64String();
-                setTimeout(() => { location.reload(); }, 50);
-            }
+            Array.prototype.push.apply(this.channels, newChannels);
         }
         getPattern(channelIndex, bar) {
             if (bar < 0 || bar >= this.barCount)
@@ -28352,21 +28345,26 @@ li.select2-results__option[role=group] > strong:hover {
     class ChangeChannelOrder extends Change {
         constructor(doc, selectionMin, selectionMax, offset) {
             super();
-            doc.song.channels.splice(selectionMin + offset, 0, ...doc.song.channels.splice(selectionMin, selectionMax - selectionMin + 1));
-            selectionMax = Math.max(selectionMax, selectionMin);
-            for (let channelIndex = doc.song.pitchChannelCount + doc.song.noiseChannelCount; channelIndex < doc.song.getChannelCount(); channelIndex++) {
-                for (let instrumentIdx = 0; instrumentIdx < doc.song.channels[channelIndex].instruments.length; instrumentIdx++) {
-                    let instrument = doc.song.channels[channelIndex].instruments[instrumentIdx];
-                    for (let i = 0; i < Config.modCount; i++) {
-                        if (instrument.modChannels[i] >= selectionMin && instrument.modChannels[i] <= selectionMax) {
-                            instrument.modChannels[i] += offset;
-                        }
-                        else if (instrument.modChannels[i] >= selectionMin + offset && instrument.modChannels[i] <= selectionMax + offset) {
-                            instrument.modChannels[i] -= offset * (selectionMax - selectionMin + 1);
-                        }
+            const count = selectionMax - selectionMin + 1;
+            const newStart = selectionMin + offset;
+            const remap = (oldIndex) => {
+                if (oldIndex >= selectionMin && oldIndex <= selectionMax) {
+                    return newStart + (oldIndex - selectionMin);
+                }
+                if (offset > 0) {
+                    if (oldIndex > selectionMax && oldIndex < newStart + count) {
+                        return oldIndex - count;
                     }
                 }
-            }
+                else {
+                    if (oldIndex >= newStart && oldIndex < selectionMin) {
+                        return oldIndex + count;
+                    }
+                }
+                return oldIndex;
+            };
+            doc.song._updateAllModTargetIndices(remap);
+            doc.song.channels.splice(newStart, 0, ...doc.song.channels.splice(selectionMin, count));
             doc.notifier.changed();
             this._didSomething();
         }

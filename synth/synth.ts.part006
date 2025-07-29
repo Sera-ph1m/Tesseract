@@ -1,11 +1,3 @@
-            for (let channelIndex: number = 0; channelIndex < song.getChannelCount(); channelIndex++) {
-                for (let instrumentIndex: number = 0; instrumentIndex < song.channels[channelIndex].instruments.length; instrumentIndex++) {
-                    const instrument: Instrument = song.channels[channelIndex].instruments[instrumentIndex];
-                    const instrumentState: InstrumentState = this.channels[channelIndex].instruments[instrumentIndex];
-                    Synth.getInstrumentSynthFunction(instrument);
-                    instrumentState.vibratoTime = 0;
-                    instrumentState.nextVibratoTime = 0;
-                    for (let envelopeIndex: number = 0; envelopeIndex < Config.maxEnvelopeCount + 1; envelopeIndex++) instrumentState.envelopeTime[envelopeIndex] = 0;
                     instrumentState.arpTime = 0;
                     instrumentState.updateWaves(instrument, this.samplesPerSecond);
                     instrumentState.allocateNecessaryBuffers(this, instrument, samplesPerTick);
@@ -50,8 +42,9 @@
             let currentPart: number = this.beat * Config.partsPerBeat + this.part;
 
             // For mod channels, calculate last set value for each mod
-            for (let channelIndex: number = this.song.pitchChannelCount + this.song.noiseChannelCount; channelIndex < this.song.getChannelCount(); channelIndex++) {
-                if (!(this.song.channels[channelIndex].muted)) {
+			for (let channelIndex: number = 0; channelIndex < this.song.getChannelCount(); channelIndex++) {
+				const channel = this.song.channels[channelIndex];
+				if (channel.type === ChannelType.Mod && !channel.muted) {
 
                     let pattern: Pattern | null;
 
@@ -413,14 +406,26 @@
     private findPartsInBar(bar: number): number {
         if (this.song == null) return 0;
         let partsInBar: number = Config.partsPerBeat * this.song.beatsPerBar;
-        for (let channel: number = this.song.pitchChannelCount + this.song.noiseChannelCount; channel < this.song.getChannelCount(); channel++) {
-            let pattern: Pattern | null = this.song.getPattern(channel, bar);
+    
+        for (
+            let channelIndex: number = 0;
+            channelIndex < this.song.getChannelCount();
+            channelIndex++
+        ) {
+            const channel = this.song.channels[channelIndex];
+            if (channel.type !== ChannelType.Mod) continue;
+    
+            let pattern: Pattern | null = this.song.getPattern(channelIndex, bar);
             if (pattern != null) {
-                let instrument: Instrument = this.song.channels[channel].instruments[pattern.instruments[0]];
+                let instrument: Instrument =
+                    channel.instruments[pattern.instruments[0]];
                 for (let mod: number = 0; mod < Config.modCount; mod++) {
-                    if (instrument.modulators[mod] == Config.modulators.dictionary["next bar"].index) {
+                    if (
+                        instrument.modulators[mod] ==
+                        Config.modulators.dictionary["next bar"].index
+                    ) {
                         for (const note of pattern.notes) {
-                            if (note.pitches[0] == (Config.modCount - 1 - mod)) {
+                            if (note.pitches[0] == Config.modCount - 1 - mod) {
                                 // Find the earliest next bar note.
                                 if (partsInBar > note.start)
                                     partsInBar = note.start;
@@ -445,19 +450,16 @@
         let hasNextBarMods: boolean = false;
         let prevTempo: number = this.song.tempo;
 
-        // Determine if any tempo or next bar mods happen anywhere in the window
-        for (let channel: number = this.song.getChannelCount() - 1; channel >= this.song.pitchChannelCount + this.song.noiseChannelCount; channel--) {
+		for (let channelIndex: number = 0; channelIndex < this.song.getChannelCount(); channelIndex++) {
+			const channel = this.song.channels[channelIndex];
+			if (channel.type !== ChannelType.Mod) continue;
             for (let bar: number = startBar; bar < endBar; bar++) {
-                let pattern: Pattern | null = this.song.getPattern(channel, bar);
+                let pattern: Pattern | null = this.song.getPattern(channelIndex, bar);
                 if (pattern != null) {
-                    let instrument: Instrument = this.song.channels[channel].instruments[pattern.instruments[0]];
+                    let instrument: Instrument = channel.instruments[pattern.instruments[0]];
                     for (let mod: number = 0; mod < Config.modCount; mod++) {
-                        if (instrument.modulators[mod] == Config.modulators.dictionary["tempo"].index) {
-                            hasTempoMods = true;
-                        }
-                        if (instrument.modulators[mod] == Config.modulators.dictionary["next bar"].index) {
-                            hasNextBarMods = true;
-                        }
+						if (instrument.modulators[mod] == Config.modulators.dictionary["tempo"].index) hasTempoMods = true;
+						if (instrument.modulators[mod] == Config.modulators.dictionary["next bar"].index) hasNextBarMods = true;
                     }
                 }
             }
@@ -467,34 +469,65 @@
         if (startBar > 0) {
             let latestTempoPin: number | null = null;
             let latestTempoValue: number = 0;
-
+        
             for (let bar: number = startBar - 1; bar >= 0; bar--) {
-                for (let channel: number = this.song.getChannelCount() - 1; channel >= this.song.pitchChannelCount + this.song.noiseChannelCount; channel--) {
-                    let pattern = this.song.getPattern(channel, bar);
-
+                for (
+                    let channelIndex: number = 0;
+                    channelIndex < this.song.getChannelCount();
+                    channelIndex++
+                ) {
+                    const channel = this.song.channels[channelIndex];
+                    if (channel.type !== ChannelType.Mod) continue;
+        
+                    let pattern = this.song.getPattern(channelIndex, bar);
                     if (pattern != null) {
                         let instrumentIdx: number = pattern.instruments[0];
-                        let instrument: Instrument = this.song.channels[channel].instruments[instrumentIdx];
-
+                        let instrument: Instrument =
+                            this.song.channels[channelIndex].instruments[instrumentIdx];
                         let partsInBar: number = this.findPartsInBar(bar);
-
+        
                         for (const note of pattern.notes) {
-                            if (instrument.modulators[Config.modCount - 1 - note.pitches[0]] == Config.modulators.dictionary["tempo"].index) {
-                                if (note.start < partsInBar && (latestTempoPin == null || note.end > latestTempoPin)) {
+                            if (
+                                instrument.modulators[
+                                    Config.modCount - 1 - note.pitches[0]
+                                ] == Config.modulators.dictionary["tempo"].index
+                            ) {
+                                if (
+                                    note.start < partsInBar &&
+                                    (latestTempoPin == null || note.end > latestTempoPin)
+                                ) {
                                     if (note.end <= partsInBar) {
                                         latestTempoPin = note.end;
-                                        latestTempoValue = note.pins[note.pins.length - 1].size;
-                                    }
-                                    else {
+                                        latestTempoValue =
+                                            note.pins[note.pins.length - 1].size;
+                                    } else {
                                         latestTempoPin = partsInBar;
                                         // Find the pin where bar change happens, and compute where pin volume would be at that time
-                                        for (let pinIdx = 0; pinIdx < note.pins.length; pinIdx++) {
-                                            if (note.pins[pinIdx].time + note.start > partsInBar) {
-                                                const transitionLength: number = note.pins[pinIdx].time - note.pins[pinIdx - 1].time;
-                                                const toNextBarLength: number = partsInBar - note.start - note.pins[pinIdx - 1].time;
-                                                const deltaVolume: number = note.pins[pinIdx].size - note.pins[pinIdx - 1].size;
-
-                                                latestTempoValue = Math.round(note.pins[pinIdx - 1].size + deltaVolume * toNextBarLength / transitionLength);
+                                        for (
+                                            let pinIdx = 0;
+                                            pinIdx < note.pins.length;
+                                            pinIdx++
+                                        ) {
+                                            if (
+                                                note.pins[pinIdx].time + note.start >
+                                                partsInBar
+                                            ) {
+                                                const transitionLength: number =
+                                                    note.pins[pinIdx].time -
+                                                    note.pins[pinIdx - 1].time;
+                                                const toNextBarLength: number =
+                                                    partsInBar -
+                                                    note.start -
+                                                    note.pins[pinIdx - 1].time;
+                                                const deltaVolume: number =
+                                                    note.pins[pinIdx].size -
+                                                    note.pins[pinIdx - 1].size;
+        
+                                                latestTempoValue = Math.round(
+                                                    note.pins[pinIdx - 1].size +
+                                                        (deltaVolume * toNextBarLength) /
+                                                            transitionLength,
+                                                );
                                                 pinIdx = note.pins.length;
                                             }
                                         }
@@ -504,11 +537,14 @@
                         }
                     }
                 }
-
-                // Done once you process a pattern where tempo mods happened, since the search happens backward
+        
+                // Done once you process a pattern where tempo mods happened, since the search happens backward.
+                // This check is now correctly placed *after* all channels for a given bar have been checked.
                 if (latestTempoPin != null) {
-                    prevTempo = latestTempoValue + Config.modulators.dictionary["tempo"].convertRealFactor;
-                    bar = -1;
+                    prevTempo =
+                        latestTempoValue +
+                        Config.modulators.dictionary["tempo"].convertRealFactor;
+                    break; // Exit the bar loop.
                 }
             }
         }
@@ -531,11 +567,13 @@
                 // Compute average tempo in this tick window, or use last tempo if nothing happened
                 if (hasTempoMods) {
                     let foundMod: boolean = false;
-                    for (let channel: number = this.song.getChannelCount() - 1; channel >= this.song.pitchChannelCount + this.song.noiseChannelCount; channel--) {
+					for (let channelIndex: number = 0; channelIndex < this.song.getChannelCount(); channelIndex++) {
+						const channel = this.song.channels[channelIndex];
+						if (channel.type !== ChannelType.Mod) continue;
                         if (foundMod == false) {
-                            let pattern: Pattern | null = this.song.getPattern(channel, bar);
+                            let pattern: Pattern | null = this.song.getPattern(channelIndex, bar);
                             if (pattern != null) {
-                                let instrument: Instrument = this.song.channels[channel].instruments[pattern.instruments[0]];
+                                let instrument: Instrument = channel.instruments[pattern.instruments[0]];
                                 for (let mod: number = 0; mod < Config.modCount; mod++) {
                                     if (foundMod == false && instrument.modulators[mod] == Config.modulators.dictionary["tempo"].index
                                         && pattern.notes.find(n => n.pitches[0] == (Config.modCount - 1 - mod))) {
@@ -1281,22 +1319,24 @@
                     const partTimeTickEnd: number = (ticksIntoBar + 1) / Config.ticksPerPart;
                     const partTimeStart: number = partTimeTickStart + (partTimeTickEnd - partTimeTickStart) * startRatio;
                     const partTimeEnd: number = partTimeTickStart + (partTimeTickEnd - partTimeTickStart) * endRatio;
-                    let useVibratoSpeed: number = instrument.vibratoSpeed;
+			    	if (this.song.channels[channelIndex].type !== ChannelType.Mod) {
+						let useVibratoSpeed: number = instrument.vibratoSpeed;
 
-                    instrumentState.vibratoTime = instrumentState.nextVibratoTime;
+						instrumentState.vibratoTime = instrumentState.nextVibratoTime;
 
-                    //envelopeable vibrato speed?
+						//envelopeable vibrato speed?
 
-                    if (this.isModActive(Config.modulators.dictionary["vibrato speed"].index, channelIndex, instrumentIndex)) {
-                        useVibratoSpeed = this.getModValue(Config.modulators.dictionary["vibrato speed"].index, channelIndex, instrumentIndex);
-                    }
+						if (this.isModActive(Config.modulators.dictionary["vibrato speed"].index, channelIndex, instrumentIndex)) {
+							useVibratoSpeed = this.getModValue(Config.modulators.dictionary["vibrato speed"].index, channelIndex, instrumentIndex);
+						}
 
-                    if (useVibratoSpeed == 0) {
-                        instrumentState.vibratoTime = 0;
-                        instrumentState.nextVibratoTime = 0;
-                    }
-                    else {
-                        instrumentState.nextVibratoTime += useVibratoSpeed * 0.1 * (partTimeEnd - partTimeStart);
+						if (useVibratoSpeed == 0) {
+							instrumentState.vibratoTime = 0;
+							instrumentState.nextVibratoTime = 0;
+						}
+						else {
+							instrumentState.nextVibratoTime += useVibratoSpeed * 0.1 * (partTimeEnd - partTimeStart);
+						}
                     }
                 }
             }
@@ -1506,18 +1546,15 @@
                 }
 
                 // Update next-used filters after each run
-                for (let channel: number = 0; channel < this.song.pitchChannelCount + this.song.noiseChannelCount; channel++) {
-                    for (let instrumentIdx: number = 0; instrumentIdx < this.song.channels[channel].instruments.length; instrumentIdx++) {
-                        let instrument: Instrument = this.song.channels[channel].instruments[instrumentIdx];
-                        if (instrument.tmpEqFilterEnd != null) {
-                            instrument.tmpEqFilterStart = instrument.tmpEqFilterEnd;
-                        } else {
-                            instrument.tmpEqFilterStart = instrument.eqFilter;
-                        }
-                        if (instrument.tmpNoteFilterEnd != null) {
-                            instrument.tmpNoteFilterStart = instrument.tmpNoteFilterEnd;
-                        } else {
-                            instrument.tmpNoteFilterStart = instrument.noteFilter;
+	    	for (let channelIndex: number = 0; channelIndex < this.song.getChannelCount(); channelIndex++) {
+				if (this.song.channels[channelIndex].type !== ChannelType.Mod) {
+					for (let instrumentIdx: number = 0; instrumentIdx < this.song.channels[channelIndex].instruments.length; instrumentIdx++) {
+						let instrument: Instrument = this.song.channels[channelIndex].instruments[instrumentIdx];
+						if (instrument.tmpEqFilterEnd != null) instrument.tmpEqFilterStart = instrument.tmpEqFilterEnd;
+						else instrument.tmpEqFilterStart = instrument.eqFilter;
+						
+						if (instrument.tmpNoteFilterEnd != null) instrument.tmpNoteFilterStart = instrument.tmpNoteFilterEnd;
+						else instrument.tmpNoteFilterStart = instrument.noteFilter;
                         }
                     }
                 }
@@ -1601,10 +1638,12 @@
 
             const maxInstrumentsPerChannel = this.song.getMaxInstrumentsPerChannel();
             for (let setting: number = 0; setting < Config.modulators.length; setting++) {
-                for (let channel: number = 0; channel < this.song.pitchChannelCount + this.song.noiseChannelCount; channel++) {
-                    for (let instrument: number = 0; instrument < maxInstrumentsPerChannel; instrument++) {
-                        if (this.nextModInsValues != null && this.nextModInsValues[channel] != null && this.nextModInsValues[channel][instrument] != null && this.nextModInsValues[channel][instrument][setting] != null) {
-                            this.modInsValues[channel][instrument][setting] = this.nextModInsValues[channel][instrument][setting];
+				for (let channelIndex: number = 0; channelIndex < this.song.getChannelCount(); channelIndex++) {
+					const channel = this.song.channels[channelIndex];
+					if (channel.type === ChannelType.Mod) continue;
+					for (let instrument: number = 0; instrument < maxInstrumentsPerChannel; instrument++) {
+						if (this.nextModInsValues != null && this.nextModInsValues[channelIndex] != null && this.nextModInsValues[channelIndex][instrument] != null && this.nextModInsValues[channelIndex][instrument][setting] != null) {
+							this.modInsValues[channelIndex][instrument][setting] = this.nextModInsValues[channelIndex][instrument][setting];
                         }
                     }
                 }
@@ -1982,10 +2021,3 @@
                     } else {
                         tone = toneList.get(modToneCount);
                     }
-                    modToneCount++;
-
-                    for (let i: number = 0; i < notes[mod]!.pitches.length; i++) {
-                        tone.pitches[i] = notes[mod]!.pitches[i];
-                    }
-                    tone.pitchCount = notes[mod]!.pitches.length;
-                    tone.chordSize = 1;

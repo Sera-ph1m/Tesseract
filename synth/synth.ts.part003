@@ -1,8 +1,3 @@
-                                let pitchIter: number = lastPitch;
-                                if (pitchIter < pitch) {
-                                    while (pitchIter != pitch) {
-                                        pitchIter++;
-                                        if (recentPitches.indexOf(pitchIter) == -1) interval++;
                                     }
                                 } else {
                                     while (pitchIter != pitch) {
@@ -1642,3 +1637,8 @@
                     }
                 }
                 if ((beforeNine && fromBeepBox) || (beforeFive && fromJummBox) || (beforeFour && fromGoldBox)) {
+                    // The algorithm determines the carrier count, which affects how legacy settings are imported.
+                    const legacySettings: LegacySettings = legacySettingsCache![instrumentChannelIterator][instrumentIndexIterator];
+                    instrument.convertLegacySettings(legacySettings, forceSimpleFilter);
+                }
+                URLDebugger.log("A", "algorithm", startIndex, charIndex, "Complex logic, skipped value logging.");
