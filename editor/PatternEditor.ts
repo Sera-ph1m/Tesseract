@@ -3,6 +3,7 @@
 import { getLocalStorageItem, Chord, Transition, Config } from "../synth/SynthConfig";
 import { NotePin, Note, makeNotePin, FilterSettings, Channel, Pattern, Instrument, FilterControlPoint, ChannelType } from "../synth/synth";
 import { ColorConfig } from "./ColorConfig";
+import { getPrimaryNoteColor, getSecondaryNoteColor } from "./ChannelRow";
 import { SongDocument } from "./SongDocument";
 import { Slider } from "./HTMLWrapper";
 import { SongEditor } from "./SongEditor";
@@ -2665,8 +2666,8 @@ export class PatternEditor {
                 for (let i: number = 0; i < note.pitches.length; i++) {
                     const pitch: number = note.pitches[i];
                     let notePath: SVGPathElement = SVG.path();
-                    let colorPrimary: string = (disabled ? ColorConfig.disabledNotePrimary : ColorConfig.getChannelColor(this._doc.song, this._doc.channel).primaryNote);
-                    let colorSecondary: string = (disabled ? ColorConfig.disabledNoteSecondary : ColorConfig.getChannelColor(this._doc.song, this._doc.channel).secondaryNote);
+                    let colorPrimary: string = (disabled ? ColorConfig.disabledNotePrimary : getPrimaryNoteColor(this._doc, this._doc.channel));
+                    let colorSecondary: string = (disabled ? ColorConfig.disabledNoteSecondary : getSecondaryNoteColor(this._doc, this._doc.channel));
                     notePath.setAttribute("fill", colorSecondary);
                     notePath.setAttribute("pointer-events", "none");
                     this._drawNote(notePath, pitch, note.start, note.pins, (this._pitchHeight - this._pitchBorder) / 2 + 1, false, this._octaveOffset);

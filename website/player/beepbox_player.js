@@ -20687,6 +20687,12 @@ var beepbox = (function (exports) {
                 const tickTimeEnd = tickTimeStart + 1.0;
                 const noteTicksPassedTickStart = tickTimeStart - noteStartTick;
                 const noteTicksPassedTickEnd = tickTimeEnd - noteStartTick;
+                let arpeggioOffset = 0;
+                if (tone.pitchCount > 1 && chord.arpeggiates) {
+                    const arpeggio = Math.floor(instrumentState.arpTime / Config.ticksPerArpeggio);
+                    const arpeggiatedPitch = tone.pitches[getArpeggioPitchIndex(tone.pitchCount, instrument.fastTwoNoteArp, arpeggio)];
+                    arpeggioOffset = arpeggiatedPitch - tone.pitches[0];
+                }
                 let discreteSlideType = -1;
                 if (effectsIncludeDiscreteSlide(instrument.effects)) {
                     discreteSlideType = instrument.discreteSlide;
@@ -20734,6 +20740,8 @@ var beepbox = (function (exports) {
                         }
                     }
                 }
+                intervalStart += arpeggioOffset;
+                intervalEnd += arpeggioOffset;
                 fadeExpressionStart = 1.0;
                 fadeExpressionEnd = 1.0;
                 tone.lastInterval = intervalEnd;

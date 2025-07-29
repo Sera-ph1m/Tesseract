@@ -22580,6 +22580,12 @@ li.select2-results__option[role=group] > strong:hover {
                 const tickTimeEnd = tickTimeStart + 1.0;
                 const noteTicksPassedTickStart = tickTimeStart - noteStartTick;
                 const noteTicksPassedTickEnd = tickTimeEnd - noteStartTick;
+                let arpeggioOffset = 0;
+                if (tone.pitchCount > 1 && chord.arpeggiates) {
+                    const arpeggio = Math.floor(instrumentState.arpTime / Config.ticksPerArpeggio);
+                    const arpeggiatedPitch = tone.pitches[getArpeggioPitchIndex(tone.pitchCount, instrument.fastTwoNoteArp, arpeggio)];
+                    arpeggioOffset = arpeggiatedPitch - tone.pitches[0];
+                }
                 let discreteSlideType = -1;
                 if (effectsIncludeDiscreteSlide(instrument.effects)) {
                     discreteSlideType = instrument.discreteSlide;
@@ -22627,6 +22633,8 @@ li.select2-results__option[role=group] > strong:hover {
                         }
                     }
                 }
+                intervalStart += arpeggioOffset;
+                intervalEnd += arpeggioOffset;
                 fadeExpressionStart = 1.0;
                 fadeExpressionEnd = 1.0;
                 tone.lastInterval = intervalEnd;
@@ -32990,13 +32998,15 @@ li.select2-results__option[role=group] > strong:hover {
         }
         soloChannels(invert) {
             let alreadySoloed = true;
-            if (this.boxSelectionChannel >= this._doc.song.pitchChannelCount + this._doc.song.noiseChannelCount) {
+            if (this._doc.song.getChannelIsMod(this.boxSelectionChannel)) {
                 const currentChannel = this._doc.song.channels[this.boxSelectionChannel];
                 const bar = currentChannel.bars[this._doc.bar] - 1;
                 const modInstrument = (bar >= 0) ? currentChannel.instruments[currentChannel.patterns[bar].instruments[0]] : currentChannel.instruments[this._doc.viewedInstrument[this.boxSelectionChannel]];
                 const soloPattern = [];
                 let matchesSoloPattern = !invert;
-                for (let channelIndex = 0; channelIndex < this._doc.song.pitchChannelCount + this._doc.song.noiseChannelCount; channelIndex++) {
+                for (let channelIndex = 0; channelIndex < this._doc.song.getChannelCount(); channelIndex++) {
+                    if (this._doc.song.getChannelIsMod(channelIndex))
+                        continue;
                     soloPattern[channelIndex] = false;
                     for (let mod = 0; mod < Config.modCount; mod++) {
                         if (modInstrument.modChannels[mod] == channelIndex) {
@@ -33004,23 +33014,34 @@ li.select2-results__option[role=group] > strong:hover {
                         }
                     }
                 }
-                for (let channelIndex = 0; channelIndex < this._doc.song.pitchChannelCount + this._doc.song.noiseChannelCount; channelIndex++) {
+                for (let channelIndex = 0; channelIndex < this._doc.song.getChannelCount(); channelIndex++) {
+                    if (this._doc.song.getChannelIsMod(channelIndex))
+                        continue;
                     if (this._doc.song.channels[channelIndex].muted == soloPattern[channelIndex]) {
                         matchesSoloPattern = invert;
                         break;
                     }
                 }
-                for (let channelIndex = 0; channelIndex < this._doc.song.pitchChannelCount + this._doc.song.noiseChannelCount; channelIndex++) {
-                    if (matchesSoloPattern) {
+                if (matchesSoloPattern) {
+                    for (let channelIndex = 0; channelIndex < this._doc.song.getChannelCount(); channelIndex++) {
+                        if (this._doc.song.getChannelIsMod(channelIndex))
+                            continue;
                         this._doc.song.channels[channelIndex].muted = false;
                     }
-                    else {
+                }
+                else {
+                    for (let channelIndex = 0; channelIndex < this._doc.song.getChannelCount(); channelIndex++) {
+                        if (this._doc.song.getChannelIsMod(channelIndex))
+                            continue;
                         this._doc.song.channels[channelIndex].muted = !soloPattern[channelIndex];
                     }
+                    this._doc.song.channels[this.boxSelectionChannel].muted = false;
                 }
             }
             else {
-                for (let channelIndex = 0; channelIndex < this._doc.song.pitchChannelCount + this._doc.song.noiseChannelCount; channelIndex++) {
+                for (let channelIndex = 0; channelIndex < this._doc.song.getChannelCount(); channelIndex++) {
+                    if (this._doc.song.getChannelIsMod(channelIndex))
+                        continue;
                     const shouldBeMuted = (channelIndex < this.boxSelectionChannel || channelIndex >= this.boxSelectionChannel + this.boxSelectionHeight) ? !invert : invert;
                     if (this._doc.song.channels[channelIndex].muted != shouldBeMuted) {
                         alreadySoloed = false;
@@ -33029,11 +33050,15 @@ li.select2-results__option[role=group] > strong:hover {
                 }
                 if (alreadySoloed) {
                     for (let channelIndex = 0; channelIndex < this._doc.song.channels.length; channelIndex++) {
+                        if (this._doc.song.getChannelIsMod(channelIndex))
+                            continue;
                         this._doc.song.channels[channelIndex].muted = false;
                     }
                 }
                 else {
-                    for (let channelIndex = 0; channelIndex < this._doc.song.pitchChannelCount + this._doc.song.noiseChannelCount; channelIndex++) {
+                    for (let channelIndex = 0; channelIndex < this._doc.song.getChannelCount(); channelIndex++) {
+                        if (this._doc.song.getChannelIsMod(channelIndex))
+                            continue;
                         this._doc.song.channels[channelIndex].muted = (channelIndex < this.boxSelectionChannel || channelIndex >= this.boxSelectionChannel + this.boxSelectionHeight) ? !invert : invert;
                     }
                 }
@@ -33088,7 +33113,7 @@ li.select2-results__option[role=group] > strong:hover {
                 this._changeTranspose.append(new ChangeDuplicateSelectedReusedPatterns(this._doc, this.boxSelectionBar, this.boxSelectionWidth, this.boxSelectionChannel, this.boxSelectionHeight, false));
             }
             for (const channelIndex of this._eachSelectedChannel()) {
-                if (channelIndex >= this._doc.song.pitchChannelCount + this._doc.song.noiseChannelCount)
+                if (this._doc.song.getChannelIsMod(channelIndex))
                     continue;
                 for (const pattern of this._eachSelectedPattern(channelIndex)) {
                     this._changeTranspose.append(new ChangeTranspose(this._doc, channelIndex, pattern, upward, this._doc.prefs.notesOutsideScale, octave));
@@ -38563,6 +38588,32 @@ You should be redirected to the song at:<br /><br />
         }
         return typeIndex;
     }
+    function _getNoteColor(doc, channelIndex, type) {
+        const song = doc.song;
+        const isNoise = song.getChannelIsNoise(channelIndex);
+        const isMod = song.getChannelIsMod(channelIndex);
+        const typeIndex = getChannelTypeIndex(doc, channelIndex);
+        let colorVarName;
+        if (isMod) {
+            const colorIndex = (typeIndex % 4) + 1;
+            colorVarName = `--mod${colorIndex}-${type}-note`;
+        }
+        else if (isNoise) {
+            const colorIndex = (typeIndex % 5) + 1;
+            colorVarName = `--noise${colorIndex}-${type}-note`;
+        }
+        else {
+            const colorIndex = (typeIndex % 10) + 1;
+            colorVarName = `--pitch${colorIndex}-${type}-note`;
+        }
+        return `var(${colorVarName})`;
+    }
+    function getPrimaryNoteColor(doc, channelIndex) {
+        return _getNoteColor(doc, channelIndex, "primary");
+    }
+    function getSecondaryNoteColor(doc, channelIndex) {
+        return _getNoteColor(doc, channelIndex, "secondary");
+    }
     class Box {
         constructor(channel, color) {
             this._text = document.createTextNode("");
@@ -40338,29 +40389,27 @@ You should be redirected to the song at:<br /><br />
                         break;
                     case "chnSolo": {
                         let shouldSolo = false;
-                        for (let channel = 0; channel <
-                            this._doc.song.pitchChannelCount +
-                                this._doc.song.noiseChannelCount; channel++) {
+                        for (let channel = 0; channel < this._doc.song.getChannelCount(); channel++) {
+                            if (this._doc.song.channels[channel].type === ChannelType.Mod)
+                                continue;
                             if (this._doc.song.channels[channel].muted ==
                                 (channel == this._channelDropDownChannel)) {
                                 shouldSolo = true;
-                                channel =
-                                    this._doc.song.pitchChannelCount +
-                                        this._doc.song.noiseChannelCount;
+                                break;
                             }
                         }
                         if (shouldSolo) {
-                            for (let channel = 0; channel <
-                                this._doc.song.pitchChannelCount +
-                                    this._doc.song.noiseChannelCount; channel++) {
+                            for (let channel = 0; channel < this._doc.song.getChannelCount(); channel++) {
+                                if (this._doc.song.channels[channel].type === ChannelType.Mod)
+                                    continue;
                                 this._doc.song.channels[channel].muted =
                                     channel != this._channelDropDownChannel;
                             }
                         }
                         else {
-                            for (let channel = 0; channel <
-                                this._doc.song.pitchChannelCount +
-                                    this._doc.song.noiseChannelCount; channel++) {
+                            for (let channel = 0; channel < this._doc.song.getChannelCount(); channel++) {
+                                if (this._doc.song.channels[channel].type === ChannelType.Mod)
+                                    continue;
                                 this._doc.song.channels[channel].muted = false;
                             }
                         }
@@ -43469,8 +43518,8 @@ You should be redirected to the song at:<br /><br />
                     for (let i = 0; i < note.pitches.length; i++) {
                         const pitch = note.pitches[i];
                         let notePath = SVG.path();
-                        let colorPrimary = (disabled ? ColorConfig.disabledNotePrimary : ColorConfig.getChannelColor(this._doc.song, this._doc.channel).primaryNote);
-                        let colorSecondary = (disabled ? ColorConfig.disabledNoteSecondary : ColorConfig.getChannelColor(this._doc.song, this._doc.channel).secondaryNote);
+                        let colorPrimary = (disabled ? ColorConfig.disabledNotePrimary : getPrimaryNoteColor(this._doc, this._doc.channel));
+                        let colorSecondary = (disabled ? ColorConfig.disabledNoteSecondary : getSecondaryNoteColor(this._doc, this._doc.channel));
                         notePath.setAttribute("fill", colorSecondary);
                         notePath.setAttribute("pointer-events", "none");
                         this._drawNote(notePath, pitch, note.start, note.pins, (this._pitchHeight - this._pitchBorder) / 2 + 1, false, this._octaveOffset);

@@ -232,41 +232,33 @@ export class MuteEditor {
 				// Check for any channel not matching solo pattern
 				let shouldSolo: boolean = false;
 				for (
-					let channel: number = 0;
-					channel <
-					this._doc.song.pitchChannelCount +
-						this._doc.song.noiseChannelCount;
+					let channel: number = 0; channel < this._doc.song.getChannelCount(); 
 					channel++
 				) {
+					if (this._doc.song.channels[channel].type === ChannelType.Mod) continue;
 					if (
 						this._doc.song.channels[channel].muted ==
 						(channel == this._channelDropDownChannel)
 					) {
 						shouldSolo = true;
-						channel =
-							this._doc.song.pitchChannelCount +
-							this._doc.song.noiseChannelCount;
+						break;
 					}
 				}
 				if (shouldSolo) {
 					for (
-						let channel: number = 0;
-						channel <
-						this._doc.song.pitchChannelCount +
-							this._doc.song.noiseChannelCount;
+						let channel: number = 0; channel < this._doc.song.getChannelCount();
 						channel++
 					) {
+						if (this._doc.song.channels[channel].type === ChannelType.Mod) continue;
 						this._doc.song.channels[channel].muted =
 							channel != this._channelDropDownChannel;
 					}
 				} else {
 					for (
-						let channel: number = 0;
-						channel <
-						this._doc.song.pitchChannelCount +
-							this._doc.song.noiseChannelCount;
+						let channel: number = 0; channel < this._doc.song.getChannelCount();
 						channel++
 					) {
+						if (this._doc.song.channels[channel].type === ChannelType.Mod) continue;
 						this._doc.song.channels[channel].muted = false;
 					}
 				}

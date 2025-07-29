@@ -704,7 +704,7 @@ export class Selection {
         let alreadySoloed: boolean = true;
 
         // Soloing mod channels - solo all channels affected by the mod, instead
-        if (this.boxSelectionChannel >= this._doc.song.pitchChannelCount + this._doc.song.noiseChannelCount) {
+        if (this._doc.song.getChannelIsMod(this.boxSelectionChannel)) {
 
             const currentChannel = this._doc.song.channels[this.boxSelectionChannel];
             const bar: number = currentChannel.bars[this._doc.bar] - 1;
@@ -712,8 +712,9 @@ export class Selection {
             const soloPattern: boolean[] = [];
             let matchesSoloPattern: boolean = !invert;
 
-            // First pass: determine solo pattern
-            for (let channelIndex: number = 0; channelIndex < this._doc.song.pitchChannelCount + this._doc.song.noiseChannelCount; channelIndex++) {
+            // First pass: determine solo pattern by checking non-mod channels.
+            for (let channelIndex: number = 0; channelIndex < this._doc.song.getChannelCount(); channelIndex++) {
+				if (this._doc.song.getChannelIsMod(channelIndex)) continue;
                 soloPattern[channelIndex] = false;
                 for (let mod: number = 0; mod < Config.modCount; mod++) {
                     if (modInstrument.modChannels[mod] == channelIndex) {
@@ -722,8 +723,9 @@ export class Selection {
                 }
             }
 
-            // Second pass: determine if channels match solo pattern, overall
-            for (let channelIndex: number = 0; channelIndex < this._doc.song.pitchChannelCount + this._doc.song.noiseChannelCount; channelIndex++) {
+            // Second pass: determine if channels match solo pattern, overall.
+            for (let channelIndex: number = 0; channelIndex < this._doc.song.getChannelCount(); channelIndex++) {
+				if (this._doc.song.getChannelIsMod(channelIndex)) continue;
                 if (this._doc.song.channels[channelIndex].muted == soloPattern[channelIndex]) {
                     matchesSoloPattern = invert;
                     break;
@@ -731,19 +733,26 @@ export class Selection {
             }
 
             // Third pass: Actually apply solo pattern or unmute all
-            for (let channelIndex: number = 0; channelIndex < this._doc.song.pitchChannelCount + this._doc.song.noiseChannelCount; channelIndex++) {
-                if (matchesSoloPattern) {
+            if (matchesSoloPattern) {
+                // Unsolo: unmute all channels.
+                for (let channelIndex: number = 0; channelIndex < this._doc.song.getChannelCount(); channelIndex++) {
+                    if (this._doc.song.getChannelIsMod(channelIndex)) continue;
                     this._doc.song.channels[channelIndex].muted = false;
                 }
-                else {
+            } else {
+                // Solo: mute channels based on pattern, but ensure the selected mod channel is unmuted.
+                for (let channelIndex: number = 0; channelIndex < this._doc.song.getChannelCount(); channelIndex++) {
+                    if (this._doc.song.getChannelIsMod(channelIndex)) continue;
                     this._doc.song.channels[channelIndex].muted = !soloPattern[channelIndex];
                 }
+                this._doc.song.channels[this.boxSelectionChannel].muted = false;
             }
 
         }
         else {
 
-            for (let channelIndex: number = 0; channelIndex < this._doc.song.pitchChannelCount + this._doc.song.noiseChannelCount; channelIndex++) {
+			for (let channelIndex: number = 0; channelIndex < this._doc.song.getChannelCount(); channelIndex++) {
+				if (this._doc.song.getChannelIsMod(channelIndex)) continue;
                 const shouldBeMuted: boolean = (channelIndex < this.boxSelectionChannel || channelIndex >= this.boxSelectionChannel + this.boxSelectionHeight) ? !invert : invert;
                 if (this._doc.song.channels[channelIndex].muted != shouldBeMuted) {
                     alreadySoloed = false;
@@ -753,10 +762,12 @@ export class Selection {
 
             if (alreadySoloed) {
                 for (let channelIndex: number = 0; channelIndex < this._doc.song.channels.length; channelIndex++) {
+                    if (this._doc.song.getChannelIsMod(channelIndex)) continue;
                     this._doc.song.channels[channelIndex].muted = false;
                 }
             } else {
-                for (let channelIndex: number = 0; channelIndex < this._doc.song.pitchChannelCount + this._doc.song.noiseChannelCount; channelIndex++) {
+				for (let channelIndex: number = 0; channelIndex < this._doc.song.getChannelCount(); channelIndex++) {
+					if (this._doc.song.getChannelIsMod(channelIndex)) continue;
                     this._doc.song.channels[channelIndex].muted = (channelIndex < this.boxSelectionChannel || channelIndex >= this.boxSelectionChannel + this.boxSelectionHeight) ? !invert : invert;
                 }
             }
@@ -826,8 +837,7 @@ export class Selection {
 
         for (const channelIndex of this._eachSelectedChannel()) {
             // Can't transpose mod channels.
-            if (channelIndex >= this._doc.song.pitchChannelCount + this._doc.song.noiseChannelCount)
-                continue;
+            if (this._doc.song.getChannelIsMod(channelIndex)) continue;
             for (const pattern of this._eachSelectedPattern(channelIndex)) {
                 this._changeTranspose.append(new ChangeTranspose(this._doc, channelIndex, pattern, upward, this._doc.prefs.notesOutsideScale, octave));
             }
