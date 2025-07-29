@@ -15776,9 +15776,11 @@ li.select2-results__option[role=group] > strong:hover {
                                         }
                                     }
                                     else {
-                                        for (let channelIndex = 0; channelIndex < this.pitchChannelCount; channelIndex++) {
-                                            this.channels[channelIndex].octave = clamp(0, Config.pitchOctaves, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
-                                        }
+                                        this.channels.forEach(channel => {
+                                            if (channel.type === ChannelType.Pitch) {
+                                                channel.octave = clamp(0, Config.pitchOctaves, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
+                                            }
+                                        });
                                     }
                                 }
                                 URLDebugger.log("o", "channelOctave", startIndex, charIndex, this.channels.map(c => c.octave));
@@ -41251,19 +41253,19 @@ You should be redirected to the song at:<br /><br />
             this.resetCopiedPins = () => {
                 const maxDivision = this._getMaxDivision();
                 let cap = this._doc.song.getVolumeCap(false);
-                this._copiedPinChannels.length = this._doc.song.getChannelCount();
-                this._stashCursorPinVols.length = this._doc.song.getChannelCount();
-                for (let i = 0; i < this._doc.song.pitchChannelCount; i++) {
-                    this._copiedPinChannels[i] = [makeNotePin(0, 0, cap), makeNotePin(0, maxDivision, cap)];
-                    this._stashCursorPinVols[i] = [cap, cap];
-                }
-                for (let i = this._doc.song.pitchChannelCount; i < this._doc.song.pitchChannelCount + this._doc.song.noiseChannelCount; i++) {
-                    this._copiedPinChannels[i] = [makeNotePin(0, 0, cap), makeNotePin(0, maxDivision, 0)];
-                    this._stashCursorPinVols[i] = [cap, 0];
-                }
-                for (let i = this._doc.song.pitchChannelCount + this._doc.song.noiseChannelCount; i < this._doc.song.getChannelCount(); i++) {
-                    this._copiedPinChannels[i] = [makeNotePin(0, 0, cap), makeNotePin(0, maxDivision, 0)];
-                    this._stashCursorPinVols[i] = [cap, 0];
+                const channelCount = this._doc.song.getChannelCount();
+                this._copiedPinChannels.length = channelCount;
+                this._stashCursorPinVols.length = channelCount;
+                for (let i = 0; i < channelCount; i++) {
+                    const channel = this._doc.song.channels[i];
+                    if (channel.type === ChannelType.Pitch) {
+                        this._copiedPinChannels[i] = [makeNotePin(0, 0, cap), makeNotePin(0, maxDivision, cap)];
+                        this._stashCursorPinVols[i] = [cap, cap];
+                    }
+                    else {
+                        this._copiedPinChannels[i] = [makeNotePin(0, 0, cap), makeNotePin(0, maxDivision, 0)];
+                        this._stashCursorPinVols[i] = [cap, 0];
+                    }
                 }
             };
             this._animatePlayhead = (timestamp) => {
@@ -42462,7 +42464,9 @@ You should be redirected to the song at:<br /><br />
                 let usedInstruments = [];
                 let usedInstrumentIndices = [];
                 let usedModIndices = [];
-                for (let channelIndex = this._doc.song.pitchChannelCount + this._doc.song.noiseChannelCount; channelIndex < this._doc.song.getChannelCount(); channelIndex++) {
+                for (let channelIndex = 0; channelIndex < this._doc.song.getChannelCount(); channelIndex++) {
+                    if (!this._doc.song.getChannelIsMod(channelIndex))
+                        continue;
                     const channel = this._doc.song.channels[channelIndex];
                     let pattern = this._doc.song.getPattern(channelIndex, currentBar);
                     let useInstrumentIndex = 0;
@@ -42995,7 +42999,7 @@ You should be redirected to the song at:<br /><br />
                             start = this._cursor.start;
                             end = start + defaultLength;
                         }
-                        const continuesLastPattern = (start < 0 && this._doc.channel < this._doc.song.pitchChannelCount + this._doc.song.noiseChannelCount);
+                        const continuesLastPattern = (start < 0 && !this._doc.song.getChannelIsMod(this._doc.channel));
                         if (start < 0)
                             start = 0;
                         if (end > this._doc.song.beatsPerBar * Config.partsPerBeat)
@@ -43031,7 +43035,7 @@ You should be redirected to the song at:<br /><br />
                         const shift = (this._mouseX - this._mouseXStart) / this._partWidth;
                         const shiftedPin = this._cursor.curNote.pins[this._cursor.nearPinIndex];
                         let shiftedTime = Math.round((this._cursor.curNote.start + shiftedPin.time + shift) / minDivision) * minDivision;
-                        const continuesLastPattern = (shiftedTime < 0.0 && this._doc.channel < this._doc.song.pitchChannelCount + this._doc.song.noiseChannelCount);
+                        const continuesLastPattern = (shiftedTime < 0.0 && !this._doc.song.getChannelIsMod(this._doc.channel));
                         if (shiftedTime < 0)
                             shiftedTime = 0;
                         if (shiftedTime > this._doc.song.beatsPerBar * Config.partsPerBeat)
@@ -43293,7 +43297,7 @@ You should be redirected to the song at:<br /><br />
             this._editorWidth = this.container.clientWidth;
             this._editorHeight = this.container.clientHeight;
             this._partWidth = this._editorWidth / (this._doc.song.beatsPerBar * Config.partsPerBeat);
-            this._octaveOffset = (this._doc.channel >= this._doc.song.pitchChannelCount) ? 0 : this._doc.song.channels[this._doc.channel].octave * Config.pitchesPerOctave;
+            this._octaveOffset = (this._doc.song.getChannelIsNoise(this._doc.channel) || this._doc.song.getChannelIsMod(this._doc.channel)) ? 0 : this._doc.song.channels[this._doc.channel].octave * Config.pitchesPerOctave;
             if (this._doc.song.getChannelIsNoise(this._doc.channel)) {
                 this._pitchBorder = 0;
                 this._pitchCount = Config.drumCount;
@@ -43324,7 +43328,7 @@ You should be redirected to the song at:<br /><br />
                 this._pitchCount = this._doc.getVisiblePitchCount();
             }
             this._pitchHeight = this._editorHeight / this._pitchCount;
-            this._octaveOffset = (this._doc.channel >= this._doc.song.pitchChannelCount) ? 0 : this._doc.getBaseVisibleOctave(this._doc.channel) * Config.pitchesPerOctave;
+            this._octaveOffset = (this._doc.song.getChannelIsNoise(this._doc.channel) || this._doc.song.getChannelIsMod(this._doc.channel)) ? 0 : this._doc.getBaseVisibleOctave(this._doc.channel) * Config.pitchesPerOctave;
             if (this._renderedRhythm != this._doc.song.rhythm ||
                 this._renderedPitchChannelCount != this._doc.song.pitchChannelCount ||
                 this._renderedNoiseChannelCount != this._doc.song.noiseChannelCount ||
@@ -43414,10 +43418,10 @@ You should be redirected to the song at:<br /><br />
                     let noteFlashColor = "#ffffff77";
                     if (this._doc.prefs.notesFlashWhenPlayed)
                         noteFlashColor = ColorConfig.getComputed("--note-flash-secondary");
-                    for (let channel = this._doc.song.pitchChannelCount + this._doc.song.noiseChannelCount - 1; channel >= 0; channel--) {
+                    for (let channel = this._doc.song.getChannelCount() - 1; channel >= 0; channel--) {
                         if (channel == this._doc.channel)
                             continue;
-                        if (this._doc.song.getChannelIsNoise(channel) != this._doc.song.getChannelIsNoise(this._doc.channel))
+                        if (this._doc.song.channels[channel].type != this._doc.song.channels[this._doc.channel].type)
                             continue;
                         const pattern2 = this._doc.song.getPattern(channel, this._doc.bar + this._barOffset);
                         if (pattern2 == null)
@@ -47952,8 +47956,8 @@ You should be redirected to the song at:<br /><br />
                     this._patternEditorNext.container.style.display = "";
                     this._patternEditorPrev.render();
                     this._patternEditorNext.render();
-                    this._zoomInButton.style.display = (this.doc.channel < this.doc.song.pitchChannelCount) ? "" : "none";
-                    this._zoomOutButton.style.display = (this.doc.channel < this.doc.song.pitchChannelCount) ? "" : "none";
+                    this._zoomInButton.style.display = (this.doc.song.channels[this.doc.channel].type === ChannelType.Pitch) ? "" : "none";
+                    this._zoomOutButton.style.display = (this.doc.song.channels[this.doc.channel].type === ChannelType.Pitch) ? "" : "none";
                     this._zoomInButton.style.right = prefs.showScrollBar ? "24px" : "4px";
                     this._zoomOutButton.style.right = prefs.showScrollBar ? "24px" : "4px";
                 }

@@ -2500,8 +2500,8 @@ export class SongEditor {
             this._patternEditorNext.container.style.display = "";
             this._patternEditorPrev.render();
             this._patternEditorNext.render();
-            this._zoomInButton.style.display = (this.doc.channel < this.doc.song.pitchChannelCount) ? "" : "none";
-            this._zoomOutButton.style.display = (this.doc.channel < this.doc.song.pitchChannelCount) ? "" : "none";
+            this._zoomInButton.style.display = (this.doc.song.channels[this.doc.channel].type === ChannelType.Pitch) ? "" : "none";
+            this._zoomOutButton.style.display = (this.doc.song.channels[this.doc.channel].type === ChannelType.Pitch) ? "" : "none";
             this._zoomInButton.style.right = prefs.showScrollBar ? "24px" : "4px";
             this._zoomOutButton.style.right = prefs.showScrollBar ? "24px" : "4px";
         } else {

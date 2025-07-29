@@ -6936,9 +6936,11 @@ var beepbox = (function (exports) {
                                         }
                                     }
                                     else {
-                                        for (let channelIndex = 0; channelIndex < this.pitchChannelCount; channelIndex++) {
-                                            this.channels[channelIndex].octave = clamp(0, Config.pitchOctaves, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
-                                        }
+                                        this.channels.forEach(channel => {
+                                            if (channel.type === exports.ChannelType.Pitch) {
+                                                channel.octave = clamp(0, Config.pitchOctaves, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
+                                            }
+                                        });
                                     }
                                 }
                                 URLDebugger.log("o", "channelOctave", startIndex, charIndex, this.channels.map(c => c.octave));

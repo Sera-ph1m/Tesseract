@@ -1,7 +1,7 @@
 // Copyright (c) 2012-2022 John Nesky and contributing authors, distributed under the MIT license, see accompanying the LICENSE.md file.
 
 import { getLocalStorageItem, Chord, Transition, Config } from "../synth/SynthConfig";
-import { NotePin, Note, makeNotePin, FilterSettings, Channel, Pattern, Instrument, FilterControlPoint } from "../synth/synth";
+import { NotePin, Note, makeNotePin, FilterSettings, Channel, Pattern, Instrument, FilterControlPoint, ChannelType } from "../synth/synth";
 import { ColorConfig } from "./ColorConfig";
 import { SongDocument } from "./SongDocument";
 import { Slider } from "./HTMLWrapper";
@@ -604,21 +604,20 @@ export class PatternEditor {
     public resetCopiedPins = (): void => {
         const maxDivision: number = this._getMaxDivision();
         let cap: number = this._doc.song.getVolumeCap(false);
-        this._copiedPinChannels.length = this._doc.song.getChannelCount();
-        this._stashCursorPinVols.length = this._doc.song.getChannelCount();
-        for (let i: number = 0; i < this._doc.song.pitchChannelCount; i++) {
-            this._copiedPinChannels[i] = [makeNotePin(0, 0, cap), makeNotePin(0, maxDivision, cap)];
-            this._stashCursorPinVols[i] = [cap, cap];
-        }
-        for (let i: number = this._doc.song.pitchChannelCount; i < this._doc.song.pitchChannelCount + this._doc.song.noiseChannelCount; i++) {
-            this._copiedPinChannels[i] = [makeNotePin(0, 0, cap), makeNotePin(0, maxDivision, 0)];
-            this._stashCursorPinVols[i] = [cap, 0];
-        }
-        for (let i: number = this._doc.song.pitchChannelCount + this._doc.song.noiseChannelCount; i < this._doc.song.getChannelCount(); i++) {
-            this._copiedPinChannels[i] = [makeNotePin(0, 0, cap), makeNotePin(0, maxDivision, 0)];
-            this._stashCursorPinVols[i] = [cap, 0];
-        }
-    }
+		const channelCount = this._doc.song.getChannelCount();
+		this._copiedPinChannels.length = channelCount;
+		this._stashCursorPinVols.length = channelCount;
+		for (let i: number = 0; i < channelCount; i++) {
+			const channel = this._doc.song.channels[i];
+			if (channel.type === ChannelType.Pitch) {
+				this._copiedPinChannels[i] = [makeNotePin(0, 0, cap), makeNotePin(0, maxDivision, cap)];
+				this._stashCursorPinVols[i] = [cap, cap];
+			} else { // Noise and Mod channels
+				this._copiedPinChannels[i] = [makeNotePin(0, 0, cap), makeNotePin(0, maxDivision, 0)];
+				this._stashCursorPinVols[i] = [cap, 0];
+			}
+		}
+	}
 
     private _animatePlayhead = (timestamp: number): void => {
 
@@ -1415,7 +1414,8 @@ export class PatternEditor {
             let usedInstrumentIndices: number[] = [];
             let usedModIndices: number[] = [];
 
-            for (let channelIndex: number = this._doc.song.pitchChannelCount + this._doc.song.noiseChannelCount; channelIndex < this._doc.song.getChannelCount(); channelIndex++) {
+		for (let channelIndex: number = 0; channelIndex < this._doc.song.getChannelCount(); channelIndex++) {
+			if (!this._doc.song.getChannelIsMod(channelIndex)) continue;
                 const channel: Channel = this._doc.song.channels[channelIndex];
                 let pattern: Pattern | null = this._doc.song.getPattern(channelIndex, currentBar);
                 let useInstrumentIndex: number = 0;
@@ -2077,7 +2077,7 @@ export class PatternEditor {
                         start = this._cursor.start;
                         end = start + defaultLength;
                     }
-                    const continuesLastPattern: boolean = (start < 0 && this._doc.channel < this._doc.song.pitchChannelCount + this._doc.song.noiseChannelCount);
+                    const continuesLastPattern: boolean = (start < 0 && !this._doc.song.getChannelIsMod(this._doc.channel));
                     if (start < 0) start = 0;
                     if (end > this._doc.song.beatsPerBar * Config.partsPerBeat) end = this._doc.song.beatsPerBar * Config.partsPerBeat;
 
@@ -2121,7 +2121,7 @@ export class PatternEditor {
 
                     const shiftedPin: NotePin = this._cursor.curNote.pins[this._cursor.nearPinIndex];
                     let shiftedTime: number = Math.round((this._cursor.curNote.start + shiftedPin.time + shift) / minDivision) * minDivision;
-                    const continuesLastPattern: boolean = (shiftedTime < 0.0 && this._doc.channel < this._doc.song.pitchChannelCount + this._doc.song.noiseChannelCount);
+                    const continuesLastPattern: boolean = (shiftedTime < 0.0 && !this._doc.song.getChannelIsMod(this._doc.channel));
                     if (shiftedTime < 0) shiftedTime = 0;
                     if (shiftedTime > this._doc.song.beatsPerBar * Config.partsPerBeat) shiftedTime = this._doc.song.beatsPerBar * Config.partsPerBeat;
 
@@ -2474,7 +2474,7 @@ export class PatternEditor {
         this._editorWidth = this.container.clientWidth;
         this._editorHeight = this.container.clientHeight;
         this._partWidth = this._editorWidth / (this._doc.song.beatsPerBar * Config.partsPerBeat);
-        this._octaveOffset = (this._doc.channel >= this._doc.song.pitchChannelCount) ? 0 : this._doc.song.channels[this._doc.channel].octave * Config.pitchesPerOctave;
+        this._octaveOffset = (this._doc.song.getChannelIsNoise(this._doc.channel) || this._doc.song.getChannelIsMod(this._doc.channel)) ? 0 : this._doc.song.channels[this._doc.channel].octave * Config.pitchesPerOctave;
 
         if (this._doc.song.getChannelIsNoise(this._doc.channel)) {
             this._pitchBorder = 0;
@@ -2510,7 +2510,7 @@ export class PatternEditor {
         }
 
         this._pitchHeight = this._editorHeight / this._pitchCount;
-        this._octaveOffset = (this._doc.channel >= this._doc.song.pitchChannelCount) ? 0 : this._doc.getBaseVisibleOctave(this._doc.channel) * Config.pitchesPerOctave;
+        this._octaveOffset = (this._doc.song.getChannelIsNoise(this._doc.channel) || this._doc.song.getChannelIsMod(this._doc.channel)) ? 0 : this._doc.getBaseVisibleOctave(this._doc.channel) * Config.pitchesPerOctave;
 
         if (this._renderedRhythm != this._doc.song.rhythm ||
             this._renderedPitchChannelCount != this._doc.song.pitchChannelCount ||
@@ -2610,10 +2610,10 @@ export class PatternEditor {
         if (this._doc.prefs.showChannels) {
             if (!this._doc.song.getChannelIsMod(this._doc.channel)) {
                 let noteFlashColor: string = "#ffffff77";
-                if (this._doc.prefs.notesFlashWhenPlayed) noteFlashColor = ColorConfig.getComputed("--note-flash-secondary");
-                for (let channel: number = this._doc.song.pitchChannelCount + this._doc.song.noiseChannelCount - 1; channel >= 0; channel--) {
+				if (this._doc.prefs.notesFlashWhenPlayed) noteFlashColor = ColorConfig.getComputed("--note-flash-secondary");
+				for (let channel: number = this._doc.song.getChannelCount() - 1; channel >= 0; channel--) {
                     if (channel == this._doc.channel) continue;
-                    if (this._doc.song.getChannelIsNoise(channel) != this._doc.song.getChannelIsNoise(this._doc.channel)) continue;
+                    if (this._doc.song.channels[channel].type != this._doc.song.channels[this._doc.channel].type) continue;
 
                     const pattern2: Pattern | null = this._doc.song.getPattern(channel, this._doc.bar + this._barOffset);
                     if (pattern2 == null) continue;

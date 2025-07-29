@@ -5002,7 +5002,7 @@ export class Song {
                            channel.octave = 0;
                        }
                    });
-               } else { // All legacy formats
+               } else { 
                    if (beforeThree && fromBeepBox) {
                        const channelIndex: number = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
                        this.channels[channelIndex].octave = clamp(0, Config.pitchOctaves, base64CharCodeToInt[compressed.charCodeAt(charIndex++)] + 1);
@@ -5012,10 +5012,12 @@ export class Song {
                            this.channels[channelIndex].octave = clamp(0, Config.pitchOctaves, base64CharCodeToInt[compressed.charCodeAt(charIndex++)] + 1);
                            if (this.getChannelIsNoise(channelIndex) || this.getChannelIsMod(channelIndex)) this.channels[channelIndex].octave = 0;
                        }
-                   } else { // Modern non-somethingbox formats
-                       for (let channelIndex: number = 0; channelIndex < this.pitchChannelCount; channelIndex++) { // Assumes fixed layout
-                           this.channels[channelIndex].octave = clamp(0, Config.pitchOctaves, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
-                       }
+                   } else { 
+						this.channels.forEach(channel => {
+							if (channel.type === ChannelType.Pitch) {
+								channel.octave = clamp(0, Config.pitchOctaves, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
+							}
+						});
                    }
                 }
                 URLDebugger.log("o", "channelOctave", startIndex, charIndex, this.channels.map(c => c.octave));
