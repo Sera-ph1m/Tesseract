@@ -14541,6 +14541,30 @@ li.select2-results__option[role=group] > strong:hover {
             }
             return false;
         }
+        renameChannelTagById(id, newName) {
+            if (this.channelTags.some(tag => tag.name === newName && tag.id !== id)) {
+                console.error("A tag with this name already exists.");
+                return false;
+            }
+            const tag = this.channelTags.find(tag => tag.id === id);
+            if (tag) {
+                tag.name = newName;
+                return true;
+            }
+            return false;
+        }
+        renameChannelTagByName(oldName, newName) {
+            if (this.channelTags.some(tag => tag.name === newName && tag.name !== oldName)) {
+                console.error("A tag with this name already exists.");
+                return false;
+            }
+            const tag = this.channelTags.find(tag => tag.name === oldName);
+            if (tag) {
+                tag.name = newName;
+                return true;
+            }
+            return false;
+        }
         getChannelCount() {
             return this.channels.length;
         }
@@ -28469,6 +28493,39 @@ li.select2-results__option[role=group] > strong:hover {
             this._didSomething();
         }
     }
+    class ChangeCreateChannelTag extends UndoableChange {
+        constructor(doc, name, startChannel, endChannel, id) {
+            super(false);
+            this._doc = doc;
+            const newId = id || this._generateUniqueTagId();
+            this._tag = {
+                id: newId,
+                name: name,
+                startChannel: Math.min(startChannel, endChannel),
+                endChannel: Math.max(startChannel, endChannel),
+            };
+            this._didSomething();
+            this.redo();
+        }
+        _generateUniqueTagId() {
+            let id;
+            do {
+                id = Math.random().toString(36).substring(2, 9);
+            } while (this._doc.song.channelTags.some(tag => tag.id === id));
+            return id;
+        }
+        _doForwards() {
+            this._doc.song.channelTags.push(this._tag);
+            this._doc.notifier.changed();
+        }
+        _doBackwards() {
+            const index = this._doc.song.channelTags.findIndex(tag => tag.id === this._tag.id);
+            if (index > -1) {
+                this._doc.song.channelTags.splice(index, 1);
+            }
+            this._doc.notifier.changed();
+        }
+    }
     class ChangeChannelOrder extends Change {
         constructor(doc, selectionMin, selectionMax, offset) {
             super();
@@ -32556,6 +32613,16 @@ li.select2-results__option[role=group] > strong:hover {
             this._changeTrack = null;
             this._changeInstrument = null;
             this._changeReorder = null;
+            this.createChannelTag = () => {
+                if (!this.boxSelectionActive)
+                    return;
+                const startChannel = Math.min(this.boxSelectionY0, this.boxSelectionY1);
+                const endChannel = Math.max(this.boxSelectionY0, this.boxSelectionY1);
+                const name = window.prompt("Name this channel tag:", "");
+                if (name == null)
+                    return;
+                this._doc.record(new ChangeCreateChannelTag(this._doc, name, startChannel, endChannel));
+            };
         }
         toJSON() {
             return {
@@ -49764,6 +49831,12 @@ You should be redirected to the song at:<br /><br />
                         }
                         this._barScrollBar.animatePlayhead();
                         event.preventDefault();
+                        break;
+                    case 84:
+                        if (!event.ctrlKey && !event.metaKey && this.doc.selection.boxSelectionActive) {
+                            this.doc.selection.createChannelTag();
+                            event.preventDefault();
+                        }
                         break;
                     case 65:
                         if (canPlayNotes)

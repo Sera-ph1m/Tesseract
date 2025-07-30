@@ -4481,6 +4481,13 @@ export class SongEditor {
                 this._barScrollBar.animatePlayhead();
                 event.preventDefault();
                 break;
+            case 84: // t
+                // Plain T: tag selected channels
+                if (!event.ctrlKey && !event.metaKey && this.doc.selection.boxSelectionActive) {
+                    this.doc.selection.createChannelTag();
+                    event.preventDefault();
+                }
+                break;
             case 65: // a
                 if (canPlayNotes) break;
                 if (event.shiftKey) {

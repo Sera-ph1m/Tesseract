@@ -5,7 +5,7 @@ import { Note, NotePin, Pattern, ChannelType } from "../synth/synth";
 import { SongDocument } from "./SongDocument";
 import { ChangeGroup } from "./Change";
 import { ColorConfig } from "./ColorConfig";
-import { ChangeTrackSelection, ChangeChannelBar, ChangeAddChannel, ChangeRemoveChannel, ChangeChannelOrder, ChangeDuplicateSelectedReusedPatterns, ChangeNoteAdded, ChangeNoteTruncate, ChangePatternNumbers, ChangePatternSelection, ChangeInsertBars, ChangeDeleteBars, ChangeEnsurePatternExists, ChangeNoteLength, ChangePaste, ChangeSetPatternInstruments, ChangeViewInstrument, ChangeModChannel, ChangeModInstrument, ChangeModSetting, ChangeModFilter, ChangePatternsPerChannel, ChangePatternRhythm, ChangePatternScale, ChangeTranspose, ChangeRhythm, comparePatternNotes, unionOfUsedNotes, generateScaleMap, discardInvalidPatternInstruments, patternsContainSameInstruments, ChangeModEnvelope } from "./changes";
+import { ChangeTrackSelection, ChangeChannelBar, ChangeAddChannel, ChangeRemoveChannel, ChangeChannelOrder, ChangeDuplicateSelectedReusedPatterns, ChangeNoteAdded, ChangeNoteTruncate, ChangePatternNumbers, ChangePatternSelection, ChangeInsertBars, ChangeDeleteBars, ChangeEnsurePatternExists, ChangeNoteLength, ChangePaste, ChangeSetPatternInstruments, ChangeViewInstrument, ChangeModChannel, ChangeModInstrument, ChangeModSetting, ChangeModFilter, ChangePatternsPerChannel, ChangePatternRhythm, ChangePatternScale, ChangeTranspose, ChangeRhythm, comparePatternNotes, unionOfUsedNotes, generateScaleMap, discardInvalidPatternInstruments, patternsContainSameInstruments, ChangeModEnvelope, ChangeCreateChannelTag } from "./changes";
 
 interface PatternCopy {
     instruments: number[];
@@ -930,6 +930,17 @@ export class Selection {
                 this._doc.record(this._changeInstrument, canReplaceLastChange);
             }
         }
+    }
+
+    public createChannelTag = (): void => {
+        if (!this.boxSelectionActive) return;
+        const startChannel = Math.min(this.boxSelectionY0, this.boxSelectionY1);
+        const endChannel   = Math.max(this.boxSelectionY0, this.boxSelectionY1);
+        const name         = window.prompt("Name this channel tag:", "");
+        if (name == null) return;  // cancelled
+        this._doc.record(
+            new ChangeCreateChannelTag(this._doc, name, startChannel, endChannel)
+        );
     }
 
     public resetBoxSelection(): void {

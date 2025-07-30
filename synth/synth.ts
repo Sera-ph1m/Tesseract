@@ -3445,6 +3445,35 @@ export class Song {
     public getChannelTagIdByName = (name: string): string | undefined => this.channelTags.find(tag => tag.name === name)?.id;
     public getChannelTagNameById = (id: string): string | undefined => this.channelTags.find(tag => tag.id === id)?.name;
     // Returns the ideal new note volume when dragging (max volume for a normal note, a "neutral" value for mod notes based on how they work)
+    public renameChannelTagById(id: string, newName: string): boolean {
+        // Check for name collision, excluding the tag we are renaming.
+        if (this.channelTags.some(tag => tag.name === newName && tag.id !== id)) {
+            console.error("A tag with this name already exists.");
+            return false;
+        }
+
+        const tag = this.channelTags.find(tag => tag.id === id);
+        if (tag) {
+            tag.name = newName;
+            return true;
+        }
+        return false;
+    }
+
+    public renameChannelTagByName(oldName: string, newName: string): boolean {
+        // Check for name collision, excluding the tag we are renaming.
+        if (this.channelTags.some(tag => tag.name === newName && tag.name !== oldName)) {
+            console.error("A tag with this name already exists.");
+            return false;
+        }
+
+        const tag = this.channelTags.find(tag => tag.name === oldName);
+        if (tag) {
+            tag.name = newName;
+            return true;
+        }
+        return false;
+    }
     public getNewNoteVolume = (isMod: boolean, modChannel?: number, modInstrument?: number, modCount?: number): number => {
         if (!isMod || modChannel == undefined || modInstrument == undefined || modCount == undefined)
             return Config.noteSizeMax;

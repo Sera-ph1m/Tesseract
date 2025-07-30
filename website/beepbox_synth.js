@@ -5702,6 +5702,30 @@ var beepbox = (function (exports) {
             }
             return false;
         }
+        renameChannelTagById(id, newName) {
+            if (this.channelTags.some(tag => tag.name === newName && tag.id !== id)) {
+                console.error("A tag with this name already exists.");
+                return false;
+            }
+            const tag = this.channelTags.find(tag => tag.id === id);
+            if (tag) {
+                tag.name = newName;
+                return true;
+            }
+            return false;
+        }
+        renameChannelTagByName(oldName, newName) {
+            if (this.channelTags.some(tag => tag.name === newName && tag.name !== oldName)) {
+                console.error("A tag with this name already exists.");
+                return false;
+            }
+            const tag = this.channelTags.find(tag => tag.name === oldName);
+            if (tag) {
+                tag.name = newName;
+                return true;
+            }
+            return false;
+        }
         getChannelCount() {
             return this.channels.length;
         }

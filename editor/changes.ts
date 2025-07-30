@@ -7,7 +7,7 @@ import { Change, ChangeGroup, ChangeSequence, UndoableChange } from "./Change";
 import { SongDocument } from "./SongDocument";
 import { ColorConfig } from "./ColorConfig";
 import { Slider } from "./HTMLWrapper";
-import { ChannelType } from "../synth/synth";
+import { ChannelType, ChannelTag } from "../synth/synth";
 
 export function patternsContainSameInstruments(pattern1Instruments: number[], pattern2Instruments: number[]): boolean {
     const pattern2Has1Instruments: boolean = pattern1Instruments.every(instrument => pattern2Instruments.indexOf(instrument) != -1);
@@ -1977,6 +1977,167 @@ export class ChangeLimiterSettings extends Change {
         doc.notifier.changed();
         this._didSomething();
         //}
+    }
+}
+
+export class ChangeCreateChannelTag extends UndoableChange {
+    private _doc: SongDocument;
+    private _tag: ChannelTag;
+
+    constructor(doc: SongDocument, name: string, startChannel: number, endChannel: number, id?: string) {
+        super(false);
+        this._doc = doc;
+        const newId = id || this._generateUniqueTagId();
+
+        this._tag = {
+            id: newId,
+            name: name,
+            startChannel: Math.min(startChannel, endChannel),
+            endChannel: Math.max(startChannel, endChannel),
+        };
+
+        this._didSomething();
+        this.redo();
+    }
+
+    private _generateUniqueTagId(): string {
+        let id: string;
+        do {
+            id = Math.random().toString(36).substring(2, 9);
+        } while (this._doc.song.channelTags.some(tag => tag.id === id));
+        return id;
+    }
+
+    protected _doForwards(): void {
+        this._doc.song.channelTags.push(this._tag);
+        this._doc.notifier.changed();
+    }
+
+    protected _doBackwards(): void {
+        const index = this._doc.song.channelTags.findIndex(tag => tag.id === this._tag.id);
+        if (index > -1) {
+            this._doc.song.channelTags.splice(index, 1);
+        }
+        this._doc.notifier.changed();
+    }
+}
+
+export class ChangeRemoveChannelTag extends UndoableChange {
+    private _doc: SongDocument;
+    private _tag: ChannelTag;
+    private _index: number;
+
+    constructor(doc: SongDocument, id: string) {
+        super(true);
+        this._doc = doc;
+        this._index = this._doc.song.channelTags.findIndex(tag => tag.id === id);
+        if (this._index === -1) {
+            this._tag = { id: '', name: '', startChannel: 0, endChannel: 0 };
+            return;
+        }
+        this._tag = this._doc.song.channelTags[this._index];
+
+        this._didSomething();
+        this.redo();
+    }
+
+    protected _doForwards(): void {
+        if (this._index > -1) {
+            this._doc.song.channelTags.splice(this._index, 1);
+        }
+        this._doc.notifier.changed();
+    }
+
+    protected _doBackwards(): void {
+        if (this._index > -1) {
+            this._doc.song.channelTags.splice(this._index, 0, this._tag);
+        }
+        this._doc.notifier.changed();
+    }
+}
+
+export class ChangeChannelTagRange extends UndoableChange {
+    private _doc: SongDocument;
+    private _tagId: string;
+    private _oldStart: number;
+    private _oldEnd: number;
+    private _newStart: number;
+    private _newEnd: number;
+
+    constructor(doc: SongDocument, id: string, newStart: number, newEnd: number) {
+        super(false);
+        this._doc = doc;
+        this._tagId = id;
+        const tag = this._doc.song.channelTags.find(tag => tag.id === id);
+        if (!tag) {
+            this._oldStart = 0;
+            this._oldEnd = 0;
+            this._newStart = 0;
+            this._newEnd = 0;
+            return;
+        }
+        this._oldStart = tag.startChannel;
+        this._oldEnd = tag.endChannel;
+        this._newStart = Math.min(newStart, newEnd);
+        this._newEnd = Math.max(newStart, newEnd);
+
+        if (this._oldStart !== this._newStart || this._oldEnd !== this._newEnd) {
+            this._didSomething();
+        }
+        this.redo();
+    }
+
+    protected _doForwards(): void {
+        const tag = this._doc.song.channelTags.find(tag => tag.id === this._tagId);
+        if (tag) {
+            tag.startChannel = this._newStart;
+            tag.endChannel = this._newEnd;
+        }
+        this._doc.notifier.changed();
+    }
+
+    protected _doBackwards(): void {
+        const tag = this._doc.song.channelTags.find(tag => tag.id === this._tagId);
+        if (tag) {
+            tag.startChannel = this._oldStart;
+            tag.endChannel = this._oldEnd;
+        }
+        this._doc.notifier.changed();
+    }
+}
+
+export class ChangeRenameChannelTag extends UndoableChange {
+    private _doc: SongDocument;
+    private _tagId: string;
+    private _oldName: string;
+    private _newName: string;
+
+    constructor(doc: SongDocument, id: string, newName: string) {
+        super(false);
+        this._doc = doc;
+        this._tagId = id;
+        this._newName = newName;
+        const tag = this._doc.song.channelTags.find(tag => tag.id === id);
+        if (!tag) {
+            this._oldName = "";
+            return;
+        }
+        this._oldName = tag.name;
+
+        if (this._oldName !== this._newName) {
+            this._didSomething();
+        }
+        this.redo();
+    }
+
+    protected _doForwards(): void {
+        this._doc.song.renameChannelTagById(this._tagId, this._newName);
+        this._doc.notifier.changed();
+    }
+
+    protected _doBackwards(): void {
+        this._doc.song.renameChannelTagById(this._tagId, this._oldName);
+        this._doc.notifier.changed();
     }
 }
 
