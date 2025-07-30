@@ -1981,54 +1981,45 @@ export class ChangeLimiterSettings extends Change {
 }
 
 export class ChangeChannelOrder extends Change {
-    constructor(
-        doc: SongDocument,
-        selectionMin: number,
-        selectionMax: number,
-        offset: number,
-    ) {
-        super();
+	constructor(
+		doc: SongDocument,
+		selectionMin: number,
+		selectionMax: number,
+		offset: number,
+	) {
+		super();
 
-        const count = selectionMax - selectionMin + 1;
-        const newStart = selectionMin + offset;
+		const oldChannels = [...doc.song.channels];
+		const count = selectionMax - selectionMin + 1;
+		const newStart = selectionMin + offset;
 
-        // This function determines the new index of a channel given its original index.
-        const remap = (oldIndex: number): number => {
-            // Check if the index is part of the moved selection.
-            if (oldIndex >= selectionMin && oldIndex <= selectionMax) {
-                return newStart + (oldIndex - selectionMin);
-            }
+		const tempChannels = [...oldChannels];
+		const movedItems = tempChannels.splice(selectionMin, count);
+		tempChannels.splice(newStart, 0, ...movedItems);
 
-            // Check if the index is displaced by the move.
-            if (offset > 0) {
-                // Moving a block DOWN. Channels between the old and new positions are shifted UP.
-                if (oldIndex > selectionMax && oldIndex < newStart + count) {
-                    return oldIndex - count;
-                }
-            } else {
-                // Moving a block UP. Channels between the new and old positions are shifted DOWN.
-                if (oldIndex >= newStart && oldIndex < selectionMin) {
-                    return oldIndex + count;
-                }
-            }
+		const channelToNewIndexMap = new Map<Channel, number>();
+		for (let i = 0; i < tempChannels.length; i++) {
+			channelToNewIndexMap.set(tempChannels[i], i);
+		}
 
-            // This index was not affected by the move.
-            return oldIndex;
-        };
+		const remap = (oldIndex: number): number => {
+			if (oldIndex < 0) return oldIndex;
+			const channelObject = oldChannels[oldIndex];
+			return channelToNewIndexMap.get(channelObject) ?? oldIndex;
+		};
 
-        // Apply the remapping to all modulator targets *before* actually moving the channels.
-        doc.song._updateAllModTargetIndices(remap);
+		doc.song._updateAllModTargetIndices(remap);
 
-        // Now, perform the actual reordering of the channels in the array.
-        doc.song.channels.splice(
-            newStart,
-            0,
-            ...doc.song.channels.splice(selectionMin, count),
-        );
+		const movedLiveItems = doc.song.channels.splice(selectionMin, count);
+		doc.song.channels.splice(newStart, 0, ...movedLiveItems);
 
-        doc.notifier.changed();
-        this._didSomething();
-    }
+		// Add this line to match the working pattern of addChannel.
+		doc.song.updateDefaultChannelNames();
+
+		doc.notifier.changed();
+		ColorConfig.resetColors();
+		this._didSomething();
+	}
 }
 
 export class ChangeCustomScale extends Change {

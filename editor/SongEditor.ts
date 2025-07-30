@@ -3245,39 +3245,45 @@ export class SongEditor {
             for (let mod: number = 0; mod < Config.modCount; mod++) {
 
                 let instrument: Instrument = this.doc.song.channels[this.doc.channel].instruments[this.doc.getCurrentInstrument()];
-                let modChannel: number = Math.max(0, instrument.modChannels[mod]);
+                let modChannelValue: number = instrument.modChannels[mod];
+                let modChannel: number = Math.max(0, modChannelValue);
                 let modInstrument: number = instrument.modInstruments[mod];
 
                 // Boundary checking
-                if (modInstrument >= this.doc.song.channels[modChannel].instruments.length + 2 || (modInstrument > 0 && this.doc.song.channels[modChannel].instruments.length <= 1)) {
-                    modInstrument = 0;
-                    instrument.modInstruments[mod] = 0;
-                }
-                if (modChannel >= this.doc.song.pitchChannelCount + this.doc.song.noiseChannelCount) {
-                    instrument.modInstruments[mod] = 0;
-                    instrument.modulators[mod] = 0;
+                if (modChannelValue >= 0) {
+                    if (modInstrument >= this.doc.song.channels[modChannel].instruments.length + 2 || (modInstrument > 0 && this.doc.song.channels[modChannel].instruments.length <= 1)) {
+                        modInstrument = 0;
+                        instrument.modInstruments[mod] = 0;
+                    }
+                    if (this.doc.song.channels[modChannel].type == ChannelType.Mod) {
+                        instrument.modInstruments[mod] = 0;
+                        instrument.modulators[mod] = 0;
+                    }
                 }
 
                 // Build options for modulator channels (make sure it has the right number).
-                if (this.doc.recalcChannelNames || (this._modChannelBoxes[mod].children.length != 2 + this.doc.song.pitchChannelCount + this.doc.song.noiseChannelCount)) {
+                const playableChannelCount = this.doc.song.pitchChannelCount + this.doc.song.noiseChannelCount;
+                if (this.doc.recalcChannelNames || (this._modChannelBoxes[mod].children.length != 2 + playableChannelCount)) {
                     while (this._modChannelBoxes[mod].firstChild) this._modChannelBoxes[mod].remove(0);
                     const channelList: string[] = [];
                     channelList.push("none");
                     channelList.push("song");
-                    for (let i: number = 0; i < this.doc.song.pitchChannelCount; i++) {
-                        if (this.doc.song.channels[i].name == "") {
-                            channelList.push("pitch " + (i + 1));
-                        }
-                        else {
-                            channelList.push(this.doc.song.channels[i].name);
-                        }
-                    }
-                    for (let i: number = 0; i < this.doc.song.noiseChannelCount; i++) {
-                        if (this.doc.song.channels[i + this.doc.song.pitchChannelCount].name == "") {
-                            channelList.push("noise " + (i + 1));
-                        }
-                        else {
-                            channelList.push(this.doc.song.channels[i + this.doc.song.pitchChannelCount].name);
+                    let pitchCounter = 1;
+                    let noiseCounter = 1;
+                    for (let i = 0; i < this.doc.song.channels.length; i++) {
+                        const channel = this.doc.song.channels[i];
+                        if (channel.type === ChannelType.Pitch) {
+                            if (channel.name == "") {
+                                channelList.push("pitch " + pitchCounter++);
+                            } else {
+                                channelList.push(channel.name);
+                            }
+                        } else if (channel.type === ChannelType.Noise) {
+                            if (channel.name == "") {
+                                channelList.push("noise " + noiseCounter++);
+                            } else {
+                                channelList.push(channel.name);
+                            }
                         }
                     }
                     buildOptions(this._modChannelBoxes[mod], channelList);
@@ -3285,7 +3291,25 @@ export class SongEditor {
 
                 // Set selected index based on channel info.
 
-                this._modChannelBoxes[mod].selectedIndex = instrument.modChannels[mod] + 2; // Offset to get to first pitch channel
+                let selectedIndex = 0;
+                if (instrument.modChannels[mod] == -2) {
+                    selectedIndex = 0; // "none"
+                } else if (instrument.modChannels[mod] == -1) {
+                    selectedIndex = 1; // "song"
+                } else {
+                    let playableChannelCounter = 0;
+                    for (let i = 0; i < this.doc.song.channels.length; i++) {
+                        const channel = this.doc.song.channels[i];
+                        if (channel.type === ChannelType.Pitch || channel.type === ChannelType.Noise) {
+                            if (i == instrument.modChannels[mod]) {
+                                selectedIndex = 2 + playableChannelCounter;
+                                break;
+                            }
+                            playableChannelCounter++;
+                        }
+                    }
+                }
+                this._modChannelBoxes[mod].selectedIndex = selectedIndex;
 
                 let channel: Channel = this.doc.song.channels[modChannel];
 
@@ -4859,6 +4883,8 @@ export class SongEditor {
 						this.doc.record(new ChangeChannelOrder(this.doc, channel, channel, -1));
 						this.doc.song.updateDefaultChannelNames();
 						this.doc.selection.setChannelBar(channel - 1, this.doc.bar);
+                        this.doc.recalcChannelNames = true;
+                        this.doc.notifier.changed();
 					}
                 } else if (event.shiftKey) {
                     this.doc.selection.boxSelectionY1 = Math.max(0, this.doc.selection.boxSelectionY1 - 1);
@@ -4880,6 +4906,8 @@ export class SongEditor {
 						this.doc.record(new ChangeChannelOrder(this.doc, channel, channel, 1));
 						this.doc.song.updateDefaultChannelNames();
 						this.doc.selection.setChannelBar(channel + 1, this.doc.bar);
+                        this.doc.recalcChannelNames = true;
+                        this.doc.notifier.changed();
 					}
                 } else if (event.shiftKey) {
                     this.doc.selection.boxSelectionY1 = Math.min(this.doc.song.getChannelCount() - 1, this.doc.selection.boxSelectionY1 + 1);
@@ -5342,16 +5370,33 @@ export class SongEditor {
     }
 
     private _whenSetModChannel = (mod: number): void => {
+        const selectedDropdownIndex = this._modChannelBoxes[mod].selectedIndex;
+        let selectedChannelIndex = -2; // default to "none"
+        if (selectedDropdownIndex == 1) {
+            selectedChannelIndex = -1; // "song"
+        } else if (selectedDropdownIndex > 1) {
+            let playableChannelCounter = 0;
+            for (let i = 0; i < this.doc.song.channels.length; i++) {
+                const channel = this.doc.song.channels[i];
+                if (channel.type === ChannelType.Pitch || channel.type === ChannelType.Noise) {
+                    if (playableChannelCounter == selectedDropdownIndex - 2) {
+                        selectedChannelIndex = i;
+                        break;
+                    }
+                    playableChannelCounter++;
+                }
+            }
+        }
 
         let instrument: Instrument = this.doc.song.channels[this.doc.channel].instruments[this.doc.getCurrentInstrument()];
         let previouslyUnset: boolean = (instrument.modulators[mod] == 0 || Config.modulators[instrument.modulators[mod]].forSong);
 
-        this.doc.selection.setModChannel(mod, this._modChannelBoxes[mod].selectedIndex);
+        this.doc.selection.setModChannel(mod, selectedChannelIndex + 2);
 
-        const modChannel: number = Math.max(0, instrument.modChannels[mod]);
+        const modChannel: number = Math.max(0, selectedChannelIndex);
 
         // Check if setting was 'song' or 'none' and is changing to a channel number, in which case suggested instrument to mod will auto-set to the current one.
-        if (this.doc.song.channels[modChannel].instruments.length > 1 && previouslyUnset && this._modChannelBoxes[mod].selectedIndex >= 2) {
+        if (this.doc.song.channels[modChannel].instruments.length > 1 && previouslyUnset && selectedChannelIndex >= 0) {
             if (this.doc.song.channels[modChannel].bars[this.doc.bar] > 0) {
                 this.doc.selection.setModInstrument(mod, this.doc.song.channels[modChannel].patterns[this.doc.song.channels[modChannel].bars[this.doc.bar] - 1].instruments[0]);
             }

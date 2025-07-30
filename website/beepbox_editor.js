@@ -28345,27 +28345,29 @@ li.select2-results__option[role=group] > strong:hover {
     class ChangeChannelOrder extends Change {
         constructor(doc, selectionMin, selectionMax, offset) {
             super();
+            const oldChannels = [...doc.song.channels];
             const count = selectionMax - selectionMin + 1;
             const newStart = selectionMin + offset;
+            const tempChannels = [...oldChannels];
+            const movedItems = tempChannels.splice(selectionMin, count);
+            tempChannels.splice(newStart, 0, ...movedItems);
+            const channelToNewIndexMap = new Map();
+            for (let i = 0; i < tempChannels.length; i++) {
+                channelToNewIndexMap.set(tempChannels[i], i);
+            }
             const remap = (oldIndex) => {
-                if (oldIndex >= selectionMin && oldIndex <= selectionMax) {
-                    return newStart + (oldIndex - selectionMin);
-                }
-                if (offset > 0) {
-                    if (oldIndex > selectionMax && oldIndex < newStart + count) {
-                        return oldIndex - count;
-                    }
-                }
-                else {
-                    if (oldIndex >= newStart && oldIndex < selectionMin) {
-                        return oldIndex + count;
-                    }
-                }
-                return oldIndex;
+                var _a;
+                if (oldIndex < 0)
+                    return oldIndex;
+                const channelObject = oldChannels[oldIndex];
+                return (_a = channelToNewIndexMap.get(channelObject)) !== null && _a !== void 0 ? _a : oldIndex;
             };
             doc.song._updateAllModTargetIndices(remap);
-            doc.song.channels.splice(newStart, 0, ...doc.song.channels.splice(selectionMin, count));
+            const movedLiveItems = doc.song.channels.splice(selectionMin, count);
+            doc.song.channels.splice(newStart, 0, ...movedLiveItems);
+            doc.song.updateDefaultChannelNames();
             doc.notifier.changed();
+            ColorConfig.resetColors();
             this._didSomething();
         }
     }
@@ -48701,41 +48703,70 @@ You should be redirected to the song at:<br /><br />
                     this._modulatorGroup.style.color = ColorConfig.getChannelColor(this.doc.song, this.doc.channel).primaryNote;
                     for (let mod = 0; mod < Config.modCount; mod++) {
                         let instrument = this.doc.song.channels[this.doc.channel].instruments[this.doc.getCurrentInstrument()];
-                        let modChannel = Math.max(0, instrument.modChannels[mod]);
+                        let modChannelValue = instrument.modChannels[mod];
+                        let modChannel = Math.max(0, modChannelValue);
                         let modInstrument = instrument.modInstruments[mod];
-                        if (modInstrument >= this.doc.song.channels[modChannel].instruments.length + 2 || (modInstrument > 0 && this.doc.song.channels[modChannel].instruments.length <= 1)) {
-                            modInstrument = 0;
-                            instrument.modInstruments[mod] = 0;
+                        if (modChannelValue >= 0) {
+                            if (modInstrument >= this.doc.song.channels[modChannel].instruments.length + 2 || (modInstrument > 0 && this.doc.song.channels[modChannel].instruments.length <= 1)) {
+                                modInstrument = 0;
+                                instrument.modInstruments[mod] = 0;
+                            }
+                            if (this.doc.song.channels[modChannel].type == ChannelType.Mod) {
+                                instrument.modInstruments[mod] = 0;
+                                instrument.modulators[mod] = 0;
+                            }
                         }
-                        if (modChannel >= this.doc.song.pitchChannelCount + this.doc.song.noiseChannelCount) {
-                            instrument.modInstruments[mod] = 0;
-                            instrument.modulators[mod] = 0;
-                        }
-                        if (this.doc.recalcChannelNames || (this._modChannelBoxes[mod].children.length != 2 + this.doc.song.pitchChannelCount + this.doc.song.noiseChannelCount)) {
+                        const playableChannelCount = this.doc.song.pitchChannelCount + this.doc.song.noiseChannelCount;
+                        if (this.doc.recalcChannelNames || (this._modChannelBoxes[mod].children.length != 2 + playableChannelCount)) {
                             while (this._modChannelBoxes[mod].firstChild)
                                 this._modChannelBoxes[mod].remove(0);
                             const channelList = [];
                             channelList.push("none");
                             channelList.push("song");
-                            for (let i = 0; i < this.doc.song.pitchChannelCount; i++) {
-                                if (this.doc.song.channels[i].name == "") {
-                                    channelList.push("pitch " + (i + 1));
+                            let pitchCounter = 1;
+                            let noiseCounter = 1;
+                            for (let i = 0; i < this.doc.song.channels.length; i++) {
+                                const channel = this.doc.song.channels[i];
+                                if (channel.type === ChannelType.Pitch) {
+                                    if (channel.name == "") {
+                                        channelList.push("pitch " + pitchCounter++);
+                                    }
+                                    else {
+                                        channelList.push(channel.name);
+                                    }
                                 }
-                                else {
-                                    channelList.push(this.doc.song.channels[i].name);
-                                }
-                            }
-                            for (let i = 0; i < this.doc.song.noiseChannelCount; i++) {
-                                if (this.doc.song.channels[i + this.doc.song.pitchChannelCount].name == "") {
-                                    channelList.push("noise " + (i + 1));
-                                }
-                                else {
-                                    channelList.push(this.doc.song.channels[i + this.doc.song.pitchChannelCount].name);
+                                else if (channel.type === ChannelType.Noise) {
+                                    if (channel.name == "") {
+                                        channelList.push("noise " + noiseCounter++);
+                                    }
+                                    else {
+                                        channelList.push(channel.name);
+                                    }
                                 }
                             }
                             buildOptions(this._modChannelBoxes[mod], channelList);
                         }
-                        this._modChannelBoxes[mod].selectedIndex = instrument.modChannels[mod] + 2;
+                        let selectedIndex = 0;
+                        if (instrument.modChannels[mod] == -2) {
+                            selectedIndex = 0;
+                        }
+                        else if (instrument.modChannels[mod] == -1) {
+                            selectedIndex = 1;
+                        }
+                        else {
+                            let playableChannelCounter = 0;
+                            for (let i = 0; i < this.doc.song.channels.length; i++) {
+                                const channel = this.doc.song.channels[i];
+                                if (channel.type === ChannelType.Pitch || channel.type === ChannelType.Noise) {
+                                    if (i == instrument.modChannels[mod]) {
+                                        selectedIndex = 2 + playableChannelCounter;
+                                        break;
+                                    }
+                                    playableChannelCounter++;
+                                }
+                            }
+                        }
+                        this._modChannelBoxes[mod].selectedIndex = selectedIndex;
                         let channel = this.doc.song.channels[modChannel];
                         if (this._modInstrumentBoxes[mod].children.length != channel.instruments.length + 2) {
                             while (this._modInstrumentBoxes[mod].firstChild)
@@ -49995,6 +50026,8 @@ You should be redirected to the song at:<br /><br />
                                 this.doc.record(new ChangeChannelOrder(this.doc, channel, channel, -1));
                                 this.doc.song.updateDefaultChannelNames();
                                 this.doc.selection.setChannelBar(channel - 1, this.doc.bar);
+                                this.doc.recalcChannelNames = true;
+                                this.doc.notifier.changed();
                             }
                         }
                         else if (event.shiftKey) {
@@ -50016,6 +50049,8 @@ You should be redirected to the song at:<br /><br />
                                 this.doc.record(new ChangeChannelOrder(this.doc, channel, channel, 1));
                                 this.doc.song.updateDefaultChannelNames();
                                 this.doc.selection.setChannelBar(channel + 1, this.doc.bar);
+                                this.doc.recalcChannelNames = true;
+                                this.doc.notifier.changed();
                             }
                         }
                         else if (event.shiftKey) {
@@ -50356,11 +50391,29 @@ You should be redirected to the song at:<br /><br />
                 this.refocusStage();
             };
             this._whenSetModChannel = (mod) => {
+                const selectedDropdownIndex = this._modChannelBoxes[mod].selectedIndex;
+                let selectedChannelIndex = -2;
+                if (selectedDropdownIndex == 1) {
+                    selectedChannelIndex = -1;
+                }
+                else if (selectedDropdownIndex > 1) {
+                    let playableChannelCounter = 0;
+                    for (let i = 0; i < this.doc.song.channels.length; i++) {
+                        const channel = this.doc.song.channels[i];
+                        if (channel.type === ChannelType.Pitch || channel.type === ChannelType.Noise) {
+                            if (playableChannelCounter == selectedDropdownIndex - 2) {
+                                selectedChannelIndex = i;
+                                break;
+                            }
+                            playableChannelCounter++;
+                        }
+                    }
+                }
                 let instrument = this.doc.song.channels[this.doc.channel].instruments[this.doc.getCurrentInstrument()];
                 let previouslyUnset = (instrument.modulators[mod] == 0 || Config.modulators[instrument.modulators[mod]].forSong);
-                this.doc.selection.setModChannel(mod, this._modChannelBoxes[mod].selectedIndex);
-                const modChannel = Math.max(0, instrument.modChannels[mod]);
-                if (this.doc.song.channels[modChannel].instruments.length > 1 && previouslyUnset && this._modChannelBoxes[mod].selectedIndex >= 2) {
+                this.doc.selection.setModChannel(mod, selectedChannelIndex + 2);
+                const modChannel = Math.max(0, selectedChannelIndex);
+                if (this.doc.song.channels[modChannel].instruments.length > 1 && previouslyUnset && selectedChannelIndex >= 0) {
                     if (this.doc.song.channels[modChannel].bars[this.doc.bar] > 0) {
                         this.doc.selection.setModInstrument(mod, this.doc.song.channels[modChannel].patterns[this.doc.song.channels[modChannel].bars[this.doc.bar] - 1].instruments[0]);
                     }
