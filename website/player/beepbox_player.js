@@ -12412,6 +12412,9 @@ var beepbox = (function (exports) {
             this.eqFilterSimpleCut = Config.filterSimpleCutRange - 1;
             this.eqFilterSimplePeak = 0;
             this.eqSubFilters = [];
+            this.channelTags = [];
+            this.getChannelTagIdByName = (name) => { var _a; return (_a = this.channelTags.find(tag => tag.name === name)) === null || _a === void 0 ? void 0 : _a.id; };
+            this.getChannelTagNameById = (id) => { var _a; return (_a = this.channelTags.find(tag => tag.id === id)) === null || _a === void 0 ? void 0 : _a.name; };
             this.getNewNoteVolume = (isMod, modChannel, modInstrument, modCount) => {
                 if (!isMod || modChannel == undefined || modInstrument == undefined || modCount == undefined)
                     return Config.noteSizeMax;
@@ -12586,6 +12589,65 @@ var beepbox = (function (exports) {
                 this.initToDefault(true);
             }
         }
+        _generateUniqueTagId() {
+            let id;
+            do {
+                id = Math.random().toString(36).substring(2, 9);
+            } while (this.channelTags.some(tag => tag.id === id));
+            return id;
+        }
+        createChannelTag(name, startChannel, endChannel, id) {
+            const newId = id || this._generateUniqueTagId();
+            if (this.channelTags.some(tag => tag.id === newId)) {
+                console.error("A tag with this ID already exists.");
+                return null;
+            }
+            if (this.channelTags.some(tag => tag.name === name)) {
+                console.error("A tag with this name already exists.");
+                return null;
+            }
+            const newTag = {
+                id: newId,
+                name: name,
+                startChannel: Math.min(startChannel, endChannel),
+                endChannel: Math.max(startChannel, endChannel),
+            };
+            this.channelTags.push(newTag);
+            return newId;
+        }
+        removeChannelTagById(id) {
+            const index = this.channelTags.findIndex(tag => tag.id === id);
+            if (index > -1) {
+                this.channelTags.splice(index, 1);
+                return true;
+            }
+            return false;
+        }
+        removeChannelTagByName(name) {
+            const id = this.getChannelTagIdByName(name);
+            if (id) {
+                return this.removeChannelTagById(id);
+            }
+            return false;
+        }
+        updateChannelTagRangeById(id, startChannel, endChannel) {
+            const tag = this.channelTags.find(tag => tag.id === id);
+            if (tag) {
+                tag.startChannel = Math.min(startChannel, endChannel);
+                tag.endChannel = Math.max(startChannel, endChannel);
+                return true;
+            }
+            return false;
+        }
+        updateChannelTagRangeByName(name, startChannel, endChannel) {
+            const tag = this.channelTags.find(tag => tag.name === name);
+            if (tag) {
+                tag.startChannel = Math.min(startChannel, endChannel);
+                tag.endChannel = Math.max(startChannel, endChannel);
+                return true;
+            }
+            return false;
+        }
         getChannelCount() {
             return this.channels.length;
         }
@@ -12723,6 +12785,7 @@ var beepbox = (function (exports) {
             for (let i = 0; i < Config.filterMorphCount - 1; i++) {
                 this.eqSubFilters[i] = null;
             }
+            this.channelTags.length = 0;
             this.title = "Untitled";
             document.title = this.title + " - " + EditorConfig.versionDisplayName;
             if (andResetChannels) {
@@ -13406,6 +13469,24 @@ var beepbox = (function (exports) {
             buffer.push(base64IntToCharCode[digits.length]);
             Array.prototype.push.apply(buffer, digits);
             bits.encodeBase64(buffer);
+            if (this.channelTags.length > 0) {
+                buffer.push(89);
+                buffer.push(base64IntToCharCode[this.channelTags.length]);
+                for (const tag of this.channelTags) {
+                    buffer.push(base64IntToCharCode[tag.startChannel]);
+                    buffer.push(base64IntToCharCode[tag.endChannel]);
+                    const encodedId = tag.id;
+                    buffer.push(base64IntToCharCode[encodedId.length]);
+                    for (let i = 0; i < encodedId.length; i++) {
+                        buffer.push(encodedId.charCodeAt(i));
+                    }
+                    const encodedName = encodeURIComponent(tag.name);
+                    buffer.push(base64IntToCharCode[encodedName.length >> 6], base64IntToCharCode[encodedName.length & 0x3f]);
+                    for (let i = 0; i < encodedName.length; i++) {
+                        buffer.push(encodedName.charCodeAt(i));
+                    }
+                }
+            }
             const maxApplyArgs = 64000;
             let customSamplesStr = "";
             if (EditorConfig.customSamples != undefined && EditorConfig.customSamples.length > 0) {
@@ -15344,6 +15425,27 @@ var beepbox = (function (exports) {
                                 URLDebugger.log("X", "aliases", startIndex, charIndex, "Legacy tag, skipped value logging.");
                             }
                             break;
+                        case 89:
+                            {
+                                const startIndex = charIndex;
+                                const tagCount = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
+                                this.channelTags.length = 0;
+                                for (let i = 0; i < tagCount; i++) {
+                                    const startChannel = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
+                                    const endChannel = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
+                                    const idLength = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
+                                    const id = compressed.substring(charIndex, charIndex + idLength);
+                                    charIndex += idLength;
+                                    const nameLength = (base64CharCodeToInt[compressed.charCodeAt(charIndex++)] << 6) + base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
+                                    const name = decodeURIComponent(compressed.substring(charIndex, charIndex + nameLength));
+                                    charIndex += nameLength;
+                                    this.channelTags.push({
+                                        id: id, name: name, startChannel: startChannel, endChannel: endChannel,
+                                    });
+                                }
+                                URLDebugger.log("Y", "channelTags", startIndex, charIndex, this.channelTags);
+                            }
+                            break;
                         case 98:
                             {
                                 const startIndex = charIndex;
@@ -16172,6 +16274,14 @@ var beepbox = (function (exports) {
             for (let i = 0; i < Config.filterMorphCount - 1; i++) {
                 result["songEq" + i] = this.eqSubFilters[i];
             }
+            if (this.channelTags.length > 0) {
+                result["channelTags"] = this.channelTags.map(tag => ({
+                    id: tag.id,
+                    name: tag.name,
+                    start: tag.startChannel,
+                    end: tag.endChannel,
+                }));
+            }
             if (EditorConfig.customSamples != null && EditorConfig.customSamples.length > 0) {
                 result["customSamples"] = EditorConfig.customSamples;
             }
@@ -16715,6 +16825,19 @@ var beepbox = (function (exports) {
                     }
                     channel.bars.length = this.barCount;
                     newChannels.push(channel);
+                }
+            }
+            this.channelTags.length = 0;
+            if (Array.isArray(jsonObject["channelTags"])) {
+                for (const tagObject of jsonObject["channelTags"]) {
+                    if (tagObject.id && tagObject.name && tagObject.start != null && tagObject.end != null) {
+                        this.channelTags.push({
+                            id: String(tagObject.id),
+                            name: String(tagObject.name),
+                            startChannel: Number(tagObject.start),
+                            endChannel: Number(tagObject.end),
+                        });
+                    }
                 }
             }
             this.channels.length = 0;

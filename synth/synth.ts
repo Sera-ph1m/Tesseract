@@ -64,6 +64,7 @@ const songTagNameMap: { [key: number]: string } = {
 	[CharCode.V]: "feedbackEnvelope",
 	[CharCode.W]: "pulseWidth",
 	[CharCode.X]: "aliases",
+    [CharCode.Y]: "channelTags",
 };
 
 export function getSongTagName(charCode: number): string {  // export to shut up the compiler
@@ -338,7 +339,7 @@ const enum SongTagCode {
     feedbackEnvelope = CharCode.V, // added in BeepBox URL version 6, DEPRECATED
     pulseWidth = CharCode.W, // added in BeepBox URL version 7
     aliases = CharCode.X, // added in JummBox URL version 4 for aliases, DEPRECATED, [UB] repurposed for PWM decimal offset (DEPRECATED as well)
-    //                      = CharCode.Y, 
+    channelTags = CharCode.Y,
     //	                    = CharCode.Z,
     //	                    = CharCode.NUM_0,
     //	                    = CharCode.NUM_1,
@@ -499,6 +500,15 @@ export interface NotePin {
     time: number;
     size: number;
 }
+
+
+export interface ChannelTag {
+    id: string;
+    name: string;
+    startChannel: number;
+    endChannel: number;
+}
+
 
 export function makeNotePin(interval: number, time: number, size: number): NotePin {
     return { interval: interval, time: time, size: size };
@@ -3353,6 +3363,7 @@ export class Song {
     public eqSubFilters: (FilterSettings | null)[] = [];
     public tmpEqFilterStart: FilterSettings | null;
     public tmpEqFilterEnd: FilterSettings | null;
+    public readonly channelTags: ChannelTag[] = [];
 
     constructor(string?: string) {
         if (string != undefined) {
@@ -3361,7 +3372,78 @@ export class Song {
             this.initToDefault(true);
         }
     }
+    private _generateUniqueTagId(): string {
+        let id: string;
+        do {
+            // A simple alphanumeric random ID.
+            id = Math.random().toString(36).substring(2, 9);
+        } while (this.channelTags.some(tag => tag.id === id));
+        return id;
+    }
 
+    public createChannelTag(name: string, startChannel: number, endChannel: number, id?: string): string | null {
+        const newId = id || this._generateUniqueTagId();
+    
+        if (this.channelTags.some(tag => tag.id === newId)) {
+            console.error("A tag with this ID already exists.");
+            return null;
+        }
+        if (this.channelTags.some(tag => tag.name === name)) {
+            console.error("A tag with this name already exists.");
+            return null;
+        }
+    
+        const newTag: ChannelTag = {
+            id: newId,
+            name: name,
+            startChannel: Math.min(startChannel, endChannel),
+            endChannel: Math.max(startChannel, endChannel),
+        };
+    
+        this.channelTags.push(newTag);
+        return newId;
+    }
+
+    public removeChannelTagById(id: string): boolean {
+        const index = this.channelTags.findIndex(tag => tag.id === id);
+        if (index > -1) {
+            this.channelTags.splice(index, 1);
+            return true;
+        }
+        return false;
+    }
+
+    public removeChannelTagByName(name: string): boolean {
+        const id = this.getChannelTagIdByName(name);
+        if (id) {
+            return this.removeChannelTagById(id);
+        }
+        return false;
+    }
+
+    public updateChannelTagRangeById(id: string, startChannel: number, endChannel: number): boolean {
+        const tag = this.channelTags.find(tag => tag.id === id);
+        if (tag) {
+            tag.startChannel = Math.min(startChannel, endChannel);
+            tag.endChannel = Math.max(startChannel, endChannel);
+            return true;
+        }
+        return false;
+    }
+
+    public updateChannelTagRangeByName(name: string, startChannel: number, endChannel: number): boolean {
+        const tag = this.channelTags.find(tag => tag.name === name);
+        if (tag) {
+            tag.startChannel = Math.min(startChannel, endChannel);
+            tag.endChannel = Math.max(startChannel, endChannel);
+            return true;
+        }
+        return false;
+    }
+
+
+    public getChannelTagIdByName = (name: string): string | undefined => this.channelTags.find(tag => tag.name === name)?.id;
+    public getChannelTagNameById = (id: string): string | undefined => this.channelTags.find(tag => tag.id === id)?.name;
     // Returns the ideal new note volume when dragging (max volume for a normal note, a "neutral" value for mod notes based on how they work)
     public getNewNoteVolume = (isMod: boolean, modChannel?: number, modInstrument?: number, modCount?: number): number => {
         if (!isMod || modChannel == undefined || modInstrument == undefined || modCount == undefined)
@@ -3740,6 +3822,7 @@ export class Song {
         for (let i: number = 0; i < Config.filterMorphCount - 1; i++) {
             this.eqSubFilters[i] = null;
         }
+        this.channelTags.length = 0;
 
         //This is the tab's display name
         this.title = "Untitled";
@@ -4516,7 +4599,28 @@ export class Song {
         buffer.push(base64IntToCharCode[digits.length]);
         Array.prototype.push.apply(buffer, digits); // append digits to buffer.
         bits.encodeBase64(buffer);
+        if (this.channelTags.length > 0) {
+            buffer.push(SongTagCode.channelTags);
+            buffer.push(base64IntToCharCode[this.channelTags.length]);
 
+            for (const tag of this.channelTags) {
+                buffer.push(base64IntToCharCode[tag.startChannel]);
+                buffer.push(base64IntToCharCode[tag.endChannel]);
+
+                // Assuming ID is URL-safe and short.
+                const encodedId: string = tag.id;
+                buffer.push(base64IntToCharCode[encodedId.length]);
+                for (let i: number = 0; i < encodedId.length; i++) {
+                    buffer.push(encodedId.charCodeAt(i));
+                }
+
+                const encodedName: string = encodeURIComponent(tag.name);
+                buffer.push(base64IntToCharCode[encodedName.length >> 6], base64IntToCharCode[encodedName.length & 0x3f]);
+                for (let i: number = 0; i < encodedName.length; i++) {
+                    buffer.push(encodedName.charCodeAt(i));
+                }
+            }
+        }
         const maxApplyArgs: number = 64000;
         let customSamplesStr = "";
         if (EditorConfig.customSamples != undefined && EditorConfig.customSamples.length > 0) {
@@ -6473,6 +6577,28 @@ export class Song {
                 URLDebugger.log("X", "aliases", startIndex, charIndex, "Legacy tag, skipped value logging.");
             }
                 break;
+            case SongTagCode.channelTags: {
+                const startIndex = charIndex;
+                const tagCount = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
+                this.channelTags.length = 0;
+                for (let i = 0; i < tagCount; i++) {
+                    const startChannel = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
+                    const endChannel = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
+
+                    const idLength = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
+                    const id = compressed.substring(charIndex, charIndex + idLength);
+                    charIndex += idLength;
+
+                    const nameLength = (base64CharCodeToInt[compressed.charCodeAt(charIndex++)] << 6) + base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
+                    const name = decodeURIComponent(compressed.substring(charIndex, charIndex + nameLength));
+                    charIndex += nameLength;
+
+                    this.channelTags.push({
+                        id: id, name: name, startChannel: startChannel, endChannel: endChannel,
+                    });
+                }
+                URLDebugger.log("Y", "channelTags", startIndex, charIndex, this.channelTags);
+            } break;
             case SongTagCode.bars: {
                 const startIndex = charIndex;
                 let subStringLength: number;
@@ -7369,6 +7495,14 @@ export class Song {
         for (let i: number = 0; i < Config.filterMorphCount - 1; i++) {
             result["songEq" + i] = this.eqSubFilters[i];
         }
+        if (this.channelTags.length > 0) {
+            result["channelTags"] = this.channelTags.map(tag => ({
+                id: tag.id,
+                name: tag.name,
+                start: tag.startChannel,
+                end: tag.endChannel,
+            }));
+        }
 
         if (EditorConfig.customSamples != null && EditorConfig.customSamples.length > 0) {
             result["customSamples"] = EditorConfig.customSamples;
@@ -7996,7 +8130,19 @@ export class Song {
                 newChannels.push(channel);
             }
         }
-        
+        this.channelTags.length = 0;
+        if (Array.isArray(jsonObject["channelTags"])) {
+            for (const tagObject of jsonObject["channelTags"]) {
+                if (tagObject.id && tagObject.name && tagObject.start != null && tagObject.end != null) {
+                    this.channelTags.push({
+                        id: String(tagObject.id),
+                        name: String(tagObject.name),
+                        startChannel: Number(tagObject.start),
+                        endChannel: Number(tagObject.end),
+                    });
+                }
+            }
+        }
         this.channels.length = 0;
         Array.prototype.push.apply(this.channels, newChannels);
     }
