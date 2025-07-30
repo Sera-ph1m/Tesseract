@@ -11541,10 +11541,11 @@ export class Synth {
                 const tickTimeStart: number = ticksIntoBar;
                 const secondsPerTick: number = samplesPerTick / this.samplesPerSecond;
                 const currentPart: number = this.getCurrentPart();
-                for (let channel: number = 0; channel < this.song.pitchChannelCount + this.song.noiseChannelCount; channel++) {
-                    for (let instrumentIdx: number = 0; instrumentIdx < this.song.channels[channel].instruments.length; instrumentIdx++) {
-                        let instrument: Instrument = this.song.channels[channel].instruments[instrumentIdx];
-                        let instrumentState: InstrumentState = this.channels[channel].instruments[instrumentIdx];
+                for (let channelIndex: number = 0; channelIndex < this.song.getChannelCount(); channelIndex++) {
+                    if (this.song.channels[channelIndex].type === ChannelType.Mod) continue;
+                    for (let instrumentIdx: number = 0; instrumentIdx < this.song.channels[channelIndex].instruments.length; instrumentIdx++) {
+                        let instrument: Instrument = this.song.channels[channelIndex].instruments[instrumentIdx];
+                        let instrumentState: InstrumentState = this.channels[channelIndex].instruments[instrumentIdx];
 
                         // Update envelope time, which is used to calculate (all envelopes') position
                         const envelopeComputer: EnvelopeComputer = instrumentState.envelopeComputer;
@@ -11555,11 +11556,11 @@ export class Synth {
                         for (let envelopeIndex: number = 0; envelopeIndex < instrument.envelopeCount; envelopeIndex++) {
                             let useEnvelopeSpeed: number = instrument.envelopeSpeed;
                             let perEnvelopeSpeed: number = instrument.envelopes[envelopeIndex].perEnvelopeSpeed;
-                            if (this.isModActive(Config.modulators.dictionary["individual envelope speed"].index, channel, instrumentIdx) && instrument.envelopes[envelopeIndex].tempEnvelopeSpeed != null) {
+                            if (this.isModActive(Config.modulators.dictionary["individual envelope speed"].index, channelIndex, instrumentIdx) && instrument.envelopes[envelopeIndex].tempEnvelopeSpeed != null) {
                                 perEnvelopeSpeed = instrument.envelopes[envelopeIndex].tempEnvelopeSpeed!;
                             }
-                            if (this.isModActive(Config.modulators.dictionary["envelope speed"].index, channel, instrumentIdx)) {
-                                useEnvelopeSpeed = Math.max(0, Math.min(Config.arpSpeedScale.length - 1, this.getModValue(Config.modulators.dictionary["envelope speed"].index, channel, instrumentIdx, false)));
+                            if (this.isModActive(Config.modulators.dictionary["envelope speed"].index, channelIndex, instrumentIdx)) {
+                                useEnvelopeSpeed = Math.max(0, Math.min(Config.arpSpeedScale.length - 1, this.getModValue(Config.modulators.dictionary["envelope speed"].index, channelIndex, instrumentIdx, false)));
                                 if (Number.isInteger(useEnvelopeSpeed)) {
                                     instrumentState.envelopeTime[envelopeIndex] += Config.arpSpeedScale[useEnvelopeSpeed] * perEnvelopeSpeed;
                                 } else {
@@ -11574,7 +11575,7 @@ export class Synth {
 
                         if (instrumentState.activeTones.count() > 0) {
                             const tone: Tone = instrumentState.activeTones.get(0);
-                            envelopeComputer.computeEnvelopes(instrument, currentPart, instrumentState.envelopeTime, tickTimeStart, secondsPerTick, tone, envelopeSpeeds, instrumentState, this, channel, instrumentIdx);
+                            envelopeComputer.computeEnvelopes(instrument, currentPart, instrumentState.envelopeTime, tickTimeStart, secondsPerTick, tone, envelopeSpeeds, instrumentState, this, channelIndex, instrumentIdx);
                         }
 
                         const envelopeStarts: number[] = envelopeComputer.envelopeStarts;
@@ -11585,8 +11586,8 @@ export class Synth {
                         const arpEnvelopeStart: number = envelopeStarts[EnvelopeComputeIndex.arpeggioSpeed]; //only discrete for now
                         //const arpEnvelopeEnd: number = envelopeEnds[EnvelopeComputeIndex.arpeggioSpeed];
                         let useArpeggioSpeed: number = instrument.arpeggioSpeed;
-                        if (this.isModActive(Config.modulators.dictionary["arp speed"].index, channel, instrumentIdx)) {
-                            useArpeggioSpeed = clamp(0, Config.arpSpeedScale.length, arpEnvelopeStart * this.getModValue(Config.modulators.dictionary["arp speed"].index, channel, instrumentIdx, false));
+                        if (this.isModActive(Config.modulators.dictionary["arp speed"].index, channelIndex, instrumentIdx)) {
+                            useArpeggioSpeed = clamp(0, Config.arpSpeedScale.length, arpEnvelopeStart * this.getModValue(Config.modulators.dictionary["arp speed"].index, channelIndex, instrumentIdx, false));
                             if (Number.isInteger(useArpeggioSpeed)) {
                                 instrumentState.arpTime += Config.arpSpeedScale[useArpeggioSpeed];
                             } else {
@@ -11687,7 +11688,8 @@ export class Synth {
 
             // Bound LFO times to be within their period (to keep values from getting large)
             // I figured this modulo math probably doesn't have to happen every LFO tick.
-            for (let channelIndex: number = 0; channelIndex < this.song.pitchChannelCount + this.song.noiseChannelCount; channelIndex++) {
+            for (let channelIndex: number = 0; channelIndex < this.song.getChannelCount(); channelIndex++) {
+                if (this.song.channels[channelIndex].type === ChannelType.Mod) continue;
                 for (let instrumentIndex = 0; instrumentIndex < this.channels[channelIndex].instruments.length; instrumentIndex++) {
                     const instrumentState: InstrumentState = this.channels[channelIndex].instruments[instrumentIndex];
                     const instrument: Instrument = this.song.channels[channelIndex].instruments[instrumentIndex];

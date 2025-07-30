@@ -21663,10 +21663,12 @@ li.select2-results__option[role=group] > strong:hover {
                     const tickTimeStart = ticksIntoBar;
                     const secondsPerTick = samplesPerTick / this.samplesPerSecond;
                     const currentPart = this.getCurrentPart();
-                    for (let channel = 0; channel < this.song.pitchChannelCount + this.song.noiseChannelCount; channel++) {
-                        for (let instrumentIdx = 0; instrumentIdx < this.song.channels[channel].instruments.length; instrumentIdx++) {
-                            let instrument = this.song.channels[channel].instruments[instrumentIdx];
-                            let instrumentState = this.channels[channel].instruments[instrumentIdx];
+                    for (let channelIndex = 0; channelIndex < this.song.getChannelCount(); channelIndex++) {
+                        if (this.song.channels[channelIndex].type === ChannelType.Mod)
+                            continue;
+                        for (let instrumentIdx = 0; instrumentIdx < this.song.channels[channelIndex].instruments.length; instrumentIdx++) {
+                            let instrument = this.song.channels[channelIndex].instruments[instrumentIdx];
+                            let instrumentState = this.channels[channelIndex].instruments[instrumentIdx];
                             const envelopeComputer = instrumentState.envelopeComputer;
                             const envelopeSpeeds = [];
                             for (let i = 0; i < Config.maxEnvelopeCount; i++) {
@@ -21675,11 +21677,11 @@ li.select2-results__option[role=group] > strong:hover {
                             for (let envelopeIndex = 0; envelopeIndex < instrument.envelopeCount; envelopeIndex++) {
                                 let useEnvelopeSpeed = instrument.envelopeSpeed;
                                 let perEnvelopeSpeed = instrument.envelopes[envelopeIndex].perEnvelopeSpeed;
-                                if (this.isModActive(Config.modulators.dictionary["individual envelope speed"].index, channel, instrumentIdx) && instrument.envelopes[envelopeIndex].tempEnvelopeSpeed != null) {
+                                if (this.isModActive(Config.modulators.dictionary["individual envelope speed"].index, channelIndex, instrumentIdx) && instrument.envelopes[envelopeIndex].tempEnvelopeSpeed != null) {
                                     perEnvelopeSpeed = instrument.envelopes[envelopeIndex].tempEnvelopeSpeed;
                                 }
-                                if (this.isModActive(Config.modulators.dictionary["envelope speed"].index, channel, instrumentIdx)) {
-                                    useEnvelopeSpeed = Math.max(0, Math.min(Config.arpSpeedScale.length - 1, this.getModValue(Config.modulators.dictionary["envelope speed"].index, channel, instrumentIdx, false)));
+                                if (this.isModActive(Config.modulators.dictionary["envelope speed"].index, channelIndex, instrumentIdx)) {
+                                    useEnvelopeSpeed = Math.max(0, Math.min(Config.arpSpeedScale.length - 1, this.getModValue(Config.modulators.dictionary["envelope speed"].index, channelIndex, instrumentIdx, false)));
                                     if (Number.isInteger(useEnvelopeSpeed)) {
                                         instrumentState.envelopeTime[envelopeIndex] += Config.arpSpeedScale[useEnvelopeSpeed] * perEnvelopeSpeed;
                                     }
@@ -21693,13 +21695,13 @@ li.select2-results__option[role=group] > strong:hover {
                             }
                             if (instrumentState.activeTones.count() > 0) {
                                 const tone = instrumentState.activeTones.get(0);
-                                envelopeComputer.computeEnvelopes(instrument, currentPart, instrumentState.envelopeTime, tickTimeStart, secondsPerTick, tone, envelopeSpeeds, instrumentState, this, channel, instrumentIdx);
+                                envelopeComputer.computeEnvelopes(instrument, currentPart, instrumentState.envelopeTime, tickTimeStart, secondsPerTick, tone, envelopeSpeeds, instrumentState, this, channelIndex, instrumentIdx);
                             }
                             const envelopeStarts = envelopeComputer.envelopeStarts;
                             const arpEnvelopeStart = envelopeStarts[48];
                             let useArpeggioSpeed = instrument.arpeggioSpeed;
-                            if (this.isModActive(Config.modulators.dictionary["arp speed"].index, channel, instrumentIdx)) {
-                                useArpeggioSpeed = clamp(0, Config.arpSpeedScale.length, arpEnvelopeStart * this.getModValue(Config.modulators.dictionary["arp speed"].index, channel, instrumentIdx, false));
+                            if (this.isModActive(Config.modulators.dictionary["arp speed"].index, channelIndex, instrumentIdx)) {
+                                useArpeggioSpeed = clamp(0, Config.arpSpeedScale.length, arpEnvelopeStart * this.getModValue(Config.modulators.dictionary["arp speed"].index, channelIndex, instrumentIdx, false));
                                 if (Number.isInteger(useArpeggioSpeed)) {
                                     instrumentState.arpTime += Config.arpSpeedScale[useArpeggioSpeed];
                                 }
@@ -21789,7 +21791,9 @@ li.select2-results__option[role=group] > strong:hover {
                     samplesPerTick = this.getSamplesPerTick();
                     this.tickSampleCountdown = Math.min(this.tickSampleCountdown, samplesPerTick);
                 }
-                for (let channelIndex = 0; channelIndex < this.song.pitchChannelCount + this.song.noiseChannelCount; channelIndex++) {
+                for (let channelIndex = 0; channelIndex < this.song.getChannelCount(); channelIndex++) {
+                    if (this.song.channels[channelIndex].type === ChannelType.Mod)
+                        continue;
                     for (let instrumentIndex = 0; instrumentIndex < this.channels[channelIndex].instruments.length; instrumentIndex++) {
                         const instrumentState = this.channels[channelIndex].instruments[instrumentIndex];
                         const instrument = this.song.channels[channelIndex].instruments[instrumentIndex];
