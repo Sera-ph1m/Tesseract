@@ -12606,11 +12606,25 @@ var beepbox = (function (exports) {
                 console.error("A tag with this name already exists.");
                 return null;
             }
+            const newStart = Math.min(startChannel, endChannel);
+            const newEnd = Math.max(startChannel, endChannel);
+            for (const existingTag of this.channelTags) {
+                const existingStart = existingTag.startChannel;
+                const existingEnd = existingTag.endChannel;
+                const newCrossesExisting = (newStart < existingStart && newEnd >= existingStart && newEnd < existingEnd);
+                const existingCrossesNew = (existingStart < newStart && existingEnd >= newStart && existingEnd < newEnd);
+                if (newCrossesExisting || existingCrossesNew) {
+                    const errorMessage = "Cannot create tag: The range [" + newStart + ", " + newEnd + "] crosses with existing tag '" + existingTag.name + "' [" + existingStart + ", " + existingEnd + "]. Tags cannot partially overlap.";
+                    console.error(errorMessage);
+                    alert(errorMessage);
+                    return null;
+                }
+            }
             const newTag = {
                 id: newId,
                 name: name,
-                startChannel: Math.min(startChannel, endChannel),
-                endChannel: Math.max(startChannel, endChannel),
+                startChannel: newStart,
+                endChannel: newEnd,
             };
             this.channelTags.push(newTag);
             return newId;
@@ -15466,6 +15480,28 @@ var beepbox = (function (exports) {
                                     this.channelTags.push({
                                         id: id, name: name, startChannel: startChannel, endChannel: endChannel,
                                     });
+                                }
+                                let hasCrossTags = false;
+                                const tags = this.channelTags;
+                                for (let i = 0; i < tags.length; i++) {
+                                    for (let j = i + 1; j < tags.length; j++) {
+                                        const tagA = tags[i];
+                                        const tagB = tags[j];
+                                        const aCrossesB = (tagA.startChannel < tagB.startChannel && tagA.endChannel >= tagB.startChannel && tagA.endChannel < tagB.endChannel);
+                                        const bCrossesA = (tagB.startChannel < tagA.startChannel && tagB.endChannel >= tagA.startChannel && tagB.endChannel < tagA.endChannel);
+                                        if (aCrossesB || bCrossesA) {
+                                            hasCrossTags = true;
+                                            break;
+                                        }
+                                    }
+                                    if (hasCrossTags)
+                                        break;
+                                }
+                                if (hasCrossTags) {
+                                    const errorMessage = "Corrupted song data: Found overlapping channel tags which are not allowed. The song may not behave as expected.";
+                                    console.error(errorMessage);
+                                    alert(errorMessage);
+                                    this.channelTags.length = 0;
                                 }
                                 URLDebugger.log("Y", "channelTags", startIndex, charIndex, this.channelTags);
                             }

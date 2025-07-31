@@ -5,56 +5,70 @@ import { ColorConfig } from "./ColorConfig";
 import { SongDocument } from "./SongDocument";
 import { HTML } from "imperative-html/dist/esm/elements-strict";
 
-// This helper function is not exported.
-function getChannelTypeIndex(doc: SongDocument, channelIndex: number): number {
-	const isNoise = doc.song.getChannelIsNoise(channelIndex);
-	const isMod = doc.song.getChannelIsMod(channelIndex);
+// Centralized color computation logic for global note color getters.
+// NOTE: This logic is duplicated from TrackEditor.ts's _computeChannelColors.
+function computeColorForChannel(doc: SongDocument, channelIndex: number, type: "primary" | "secondary"): string {
+	const song = doc.song;
+	const channelCount = song.getChannelCount();
+	const tags = song.channelTags;
 
-	let typeIndex = 0;
-	for (let i = 0; i < channelIndex; i++) {
-		const otherIsNoise = doc.song.getChannelIsNoise(i);
-		const otherIsMod = doc.song.getChannelIsMod(i);
-		if (isNoise && otherIsNoise) {
-			typeIndex++;
-		} else if (isMod && otherIsMod) {
-			typeIndex++;
-		} else if (!isNoise && !isMod && !otherIsNoise && !otherIsMod) {
-			typeIndex++;
+	let pitchCounter = 0;
+	let modCounter = 0;
+
+	const tagColors = new Map<string, { primary: string; secondary: string }>();
+	const baseChannelColors = new Map<
+		number,
+		{ primary: string; secondary: string }
+	>();
+
+	// First pass: Iterate through visual rows to determine base colors and tag colors
+	for (let ch = 0; ch < channelCount; ch++) {
+		tags
+			.filter(t => t.startChannel === ch)
+			.forEach(tag => {
+				const colorIndex = (pitchCounter % 10) + 1;
+				const colors = {
+					primary: `var(--pitch${colorIndex}-primary-note)`,
+					secondary: `var(--pitch${colorIndex}-secondary-note)`,
+				};
+				tagColors.set(tag.id, colors);
+				pitchCounter = (pitchCounter + 1) % 10;
+			});
+
+		// The channel itself
+		if (song.getChannelIsMod(ch)) {
+			const colorIndex = (modCounter % 4) + 1;
+			baseChannelColors.set(ch, {
+				primary: `var(--mod${colorIndex}-primary-note)`,
+				secondary: `var(--mod${colorIndex}-secondary-note)`,
+			});
+			modCounter = (modCounter + 1) % 4;
+		} else {
+			// Pitch and Noise channels share the same color sequence
+			const colorIndex = (pitchCounter % 10) + 1;
+			baseChannelColors.set(ch, {
+				primary: `var(--pitch${colorIndex}-primary-note)`,
+				secondary: `var(--pitch${colorIndex}-secondary-note)`,
+			});
+			pitchCounter = (pitchCounter + 1) % 10;
 		}
 	}
-	return typeIndex;
-}
 
-// This helper function is not exported, it's only used by the two functions below.
-function _getNoteColor(
-	doc: SongDocument,
-	channelIndex: number,
-	type: "primary" | "secondary"
-): string {
-	const song = doc.song;
-	const isNoise: boolean = song.getChannelIsNoise(channelIndex);
-	const isMod: boolean = song.getChannelIsMod(channelIndex);
-	const typeIndex = getChannelTypeIndex(doc, channelIndex);
+	// Second pass: Apply tag overrides to find the final color for the requested channelIndex
+	const innermostTag = tags
+		.filter(t => t.startChannel <= channelIndex && channelIndex <= t.endChannel)
+		.pop();
 
-	let colorVarName: string;
-
-	if (isMod) {
-		const colorIndex = (typeIndex % 4) + 1;
-		colorVarName = `--mod${colorIndex}-${type}-note`;
-	} else if (isNoise) {
-		const colorIndex = (typeIndex % 5) + 1;
-		colorVarName = `--noise${colorIndex}-${type}-note`;
+	if (innermostTag) {
+		return tagColors.get(innermostTag.id)![type];
 	} else {
-		// is pitch
-		const colorIndex = (typeIndex % 10) + 1;
-		colorVarName = `--pitch${colorIndex}-${type}-note`;
+		return baseChannelColors.get(channelIndex)![type];
 	}
-
-	return `var(${colorVarName})`;
 }
 
 /**
  * Returns the CSS variable for a channel's primary note color.
+ * This function computes the color based on the current song state, including tags.
  * @param doc The song document.
  * @param channelIndex The index of the channel.
  * @returns A CSS var() string for the channel's primary note color.
@@ -63,11 +77,12 @@ export function getPrimaryNoteColor(
 	doc: SongDocument,
 	channelIndex: number
 ): string {
-	return _getNoteColor(doc, channelIndex, "primary");
+	return computeColorForChannel(doc, channelIndex, "primary");
 }
 
 /**
  * Returns the CSS variable for a channel's secondary note color.
+ * This function computes the color based on the current song state, including tags.
  * @param doc The song document.
  * @param channelIndex The index of the channel.
  * @returns A CSS var() string for the channel's secondary note color.
@@ -76,7 +91,7 @@ export function getSecondaryNoteColor(
 	doc: SongDocument,
 	channelIndex: number
 ): string {
-	return _getNoteColor(doc, channelIndex, "secondary");
+	return computeColorForChannel(doc, channelIndex, "secondary");
 }
 
 export class Box {
@@ -112,11 +127,11 @@ export class Box {
 	}
 
 	public setWidth(width: number): void {
-		this.container.style.width = width - 2 + "px"; // there's a 1 pixel margin on either side.
+		this.container.style.width = width - 2 + "px";
 	}
 
 	public setHeight(height: number): void {
-		this.container.style.height = height - 2 + "px"; // there's a 1 pixel margin on either side.
+		this.container.style.height = height - 2 + "px";
 	}
 
 	public setIndex(
@@ -153,7 +168,6 @@ export class Box {
 	}
 
 	private _updateColors(): void {
-		// Set the color for the number text itself.
 		const useColor: string = this._selected
 			? ColorConfig.c_invertedText
 			: this._labelColor;
@@ -162,7 +176,6 @@ export class Box {
 			this._renderedLabelColor = useColor;
 		}
 
-		// Set the background color for the box.
 		let backgroundColor: string;
 		if (this._selected) {
 			backgroundColor = this._primaryColor;
@@ -189,8 +202,7 @@ export class Box {
 			this._renderedBackgroundColor = backgroundColor;
 		}
 	}
-	// These cache the value given to them, since they're apparently quite
-	// expensive to set.
+
 	public setVisibility(visibility: string): void {
 		if (this._renderedVisibility != visibility) {
 			this.container.style.visibility = visibility;
@@ -225,7 +237,7 @@ export class ChannelRow {
 		public readonly index: number
 	) {}
 
-	public render(): void {
+	public render(colors: { primary: string; secondary: string }): void {
 		ChannelRow.patternHeight = this._doc.getChannelHeight();
 
 		const barWidth: number = this._doc.getBarWidth();
@@ -235,7 +247,6 @@ export class ChannelRow {
 				x < this._doc.song.barCount;
 				x++
 			) {
-				// Use a safe default color; render() will set the correct one.
 				const box: Box = new Box(this.index, ColorConfig.secondaryText);
 				box.setWidth(barWidth);
 				this.container.appendChild(box.container);
@@ -267,28 +278,9 @@ export class ChannelRow {
 
 		const isNoise: boolean = this._doc.song.getChannelIsNoise(this.index);
 		const isMod: boolean = this._doc.song.getChannelIsMod(this.index);
-		const typeIndex: number = getChannelTypeIndex(this._doc, this.index);
 
-		// Determine the CSS variable names for the channel's label colors.
-		let primaryColorVar: string;
-		let secondaryColorVar: string;
-
-		if (isMod) {
-			const colorIndex = (typeIndex % 4) + 1;
-			primaryColorVar = `--mod${colorIndex}-primary-channel`;
-			secondaryColorVar = `--mod${colorIndex}-secondary-channel`;
-		} else if (isNoise) {
-			const colorIndex = (typeIndex % 5) + 1;
-			primaryColorVar = `--noise${colorIndex}-primary-channel`;
-			secondaryColorVar = `--noise${colorIndex}-secondary-channel`;
-		} else {
-			// is pitch
-			const colorIndex = (typeIndex % 10) + 1;
-			primaryColorVar = `--pitch${colorIndex}-primary-channel`;
-			secondaryColorVar = `--pitch${colorIndex}-secondary-channel`;
-		}
-
-		const primaryColor = `var(${primaryColorVar})`;
+		const primaryColor = colors.primary;
+		const secondaryColor = colors.secondary;
 
 		for (let i: number = 0; i < this._boxes.length; i++) {
 			const pattern: Pattern | null = this._doc.song.getPattern(this.index, i);
@@ -300,9 +292,7 @@ export class ChannelRow {
 			const box: Box = this._boxes[i];
 			if (i < this._doc.song.barCount) {
 				const useSecondary = dim || patternIndex === 0;
-				const labelColor = `var(${
-					useSecondary ? secondaryColorVar : primaryColorVar
-				})`;
+				const labelColor = useSecondary ? secondaryColor : primaryColor;
 
 				box.setIndex(
 					patternIndex,

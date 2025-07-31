@@ -938,9 +938,7 @@ export class Selection {
         const endChannel   = Math.max(this.boxSelectionY0, this.boxSelectionY1);
         const name         = window.prompt("Name this channel tag:", "");
         if (name == null) return;  // cancelled
-        this._doc.record(
-            new ChangeCreateChannelTag(this._doc, name, startChannel, endChannel)
-        );
+        this._doc.record( new ChangeCreateChannelTag(this._doc, name, startChannel, endChannel));
     }
 
     public resetBoxSelection(): void {
