@@ -2028,7 +2028,7 @@ export class ChangeRemoveChannelTag extends UndoableChange {
     private _index: number;
 
     constructor(doc: SongDocument, id: string) {
-        super(true);
+        super(false);
         this._doc = doc;
         this._index = this._doc.song.channelTags.findIndex(tag => tag.id === id);
         if (this._index === -1) {
@@ -5322,14 +5322,21 @@ export class ChangeSongTitle extends Change {
     }
 }
 
+
 export class ChangeChannelName extends Change {
-    constructor(doc: SongDocument, oldValue: string, newValue: string) {
+    constructor(
+        doc: SongDocument,
+        channelIndex: number,
+        oldValue: string,
+        newValue: string
+    ) {
         super();
         if (newValue.length > 15) {
             newValue = newValue.substring(0, 15);
         }
 
-        doc.song.channels[doc.muteEditorChannel].name = newValue;
+        // Use the channelIndex passed to the constructor, not doc.muteEditorChannel.
+        doc.song.channels[channelIndex].name = newValue;
         doc.recalcChannelNames = true;
 
         doc.notifier.changed();

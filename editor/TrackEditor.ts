@@ -6,6 +6,7 @@ import { ChannelTag } from "../synth/synth";
 import { isMobile } from "./EditorConfig";
 import { SongDocument } from "./SongDocument";
 import { ChannelRow } from "./ChannelRow";
+import { ChangeRenameChannelTag } from "./changes";
 import { SongEditor } from "./SongEditor";
 import { HTML, SVG } from "imperative-html/dist/esm/elements-strict";
 
@@ -22,6 +23,7 @@ class TagRow {
 					padding-left: 4px;
 					margin: 0;
 					height: ${ChannelRow.patternHeight}px;
+					box-sizing: border-box;
 					background: transparent;
             `,
 		});
@@ -139,20 +141,6 @@ export class TrackEditor {
 			"background: none; border: none; appearance: none; border-radius: initial; box-shadow: none; color: transparent; position: absolute; touch-action: none;",
 	});
 
-	private readonly _tagDropDown: HTMLSelectElement = HTML.select(
-		{
-			class: "trackTagSelectBox",
-			style: `
-			 width: 32px;
-			 height: ${Config.barEditorHeight}px;
-			 position: absolute;
-			 top: 0;
-			 opacity: 0;
-		  `,
-		}
-		// no <option> children for now
-	);
-
 	public readonly container: HTMLElement = HTML.div(
 		{
 			class: "noSelection",
@@ -161,7 +149,6 @@ export class TrackEditor {
 		this._channelRowContainer,
 		this._svg,
 		this._select,
-		this._tagDropDown,
 		this._barDropDown
 	);
 
@@ -187,13 +174,13 @@ export class TrackEditor {
 	private _lastScrollTime: number = 0;
 
 	constructor(private _doc: SongDocument, public _songEditor: SongEditor) {
-		this._tagDropDown.selectedIndex = -1;
 		window.requestAnimationFrame(this._animatePlayhead);
 		this._svg.addEventListener("mousedown", this._whenMousePressed);
 		document.addEventListener("mousemove", this._whenMouseMoved);
 		document.addEventListener("mouseup", this._whenMouseReleased);
 		this._svg.addEventListener("mouseover", this._whenMouseOver);
 		this._svg.addEventListener("mouseout", this._whenMouseOut);
+		this._svg.addEventListener("contextmenu", this._whenContextMenu);
 
 		this._select.addEventListener("change", this._whenSelectChanged);
 		this._select.addEventListener("touchstart", this._whenSelectPressed);
@@ -257,7 +244,6 @@ export class TrackEditor {
 
 		// First pass: Iterate through visual rows to determine base colors and tag colors
 		for (let ch = 0; ch < channelCount; ch++) {
-			// Tags starting at this channel index
 			tags
 				.filter(t => t.startChannel === ch)
 				.forEach(tag => {
@@ -308,27 +294,63 @@ export class TrackEditor {
 			this._channelRowContainer.children
 		) as HTMLElement[];
 		let cum = 0;
-		let channelCount = 0;
 		for (const row of rows) {
-			const h = row.getBoundingClientRect().height;
+			if (row.style.display === "none") continue;
+			const h = row.offsetHeight;
 			if (relY < cum + h) {
 				if (row.classList.contains("tagRow")) {
 					const idx = parseInt(row.dataset.startChannel!);
 					return isNaN(idx) ? 0 : idx;
 				} else {
-					return channelCount;
+					const idx = parseInt(row.dataset.channelIndex!);
+					return isNaN(idx) ? 0 : idx;
 				}
 			}
-			if (!row.classList.contains("tagRow")) channelCount++;
 			cum += h;
 		}
 		return Math.max(0, this._doc.song.getChannelCount() - 1);
 	}
 
-	private _rowIndexFromChannel(channel: number): number {
-		const tags = this._doc.song.channelTags;
-		const count = tags.filter(t => t.startChannel <= channel).length;
-		return channel + count;
+	private _getVisualRowInfo(channelIndex: number): { y: number; height: number } | null {
+		let cumulativeY = Config.barEditorHeight;
+		const channelRow = this._channelRowContainer.querySelector(`[data-channel-index='${channelIndex}']`) as HTMLElement | null;
+
+		if (!channelRow || channelRow.style.display === "none") {
+			return null;
+		}
+
+		const rows = Array.from(this._channelRowContainer.children) as HTMLElement[];
+		for (const row of rows) {
+			if (row.style.display === "none") continue;
+			if (row === channelRow) {
+				return { y: cumulativeY, height: row.offsetHeight };
+			}
+			cumulativeY += row.offsetHeight;
+		}
+		return null;
+	}
+
+	private _getTagRowAtY(y: number): HTMLElement | null {
+		const relY = y - Config.barEditorHeight;
+		if (relY < 0) return null;
+
+		let cumulativeHeight = 0;
+		const rows = Array.from(
+			this._channelRowContainer.children
+		) as HTMLElement[];
+
+		for (const row of rows) {
+			if (row.style.display === "none") continue;
+			const rowHeight = row.offsetHeight;
+			if (relY >= cumulativeHeight && relY < cumulativeHeight + rowHeight) {
+				if (row.classList.contains("tagRow")) {
+					return row;
+				}
+				return null;
+			}
+			cumulativeHeight += rowHeight;
+		}
+		return null;
 	}
 
 	private _barDropDownGetOpenedPosition = (event: MouseEvent): void => {
@@ -471,10 +493,38 @@ export class TrackEditor {
 
 	private _whenMousePressed = (event: MouseEvent): void => {
 		event.preventDefault();
+		if (event.button !== 0) return;
 		this._mousePressed = true;
 		this._updateMousePos(event);
 		this._mouseStartBar = this._mouseBar;
 		this._mouseStartChannel = this._mouseChannel;
+
+		const tagRow = this._getTagRowAtY(this._mouseY);
+		if (tagRow) {
+			// On any non‐left click, bail *and* clear the pressed/dragging state:
+			if (event.button !== 0) {
+				this._mousePressed = false;
+				this._mouseDragging = false;
+				return;
+			}
+			// Left‐click on tag → rename
+			const tagId = tagRow.dataset.tagId;
+			if (tagId) {
+				const tag = this._doc.song.channelTags.find(t => t.id === tagId);
+				if (tag) {
+					const orig = tag.name;
+					const collapsed = orig.endsWith("...");
+					const newName = collapsed ? orig.slice(0, -3) : orig + "...";
+					this._doc.record(
+						new ChangeRenameChannelTag(this._doc, tag.id, newName)
+					);
+				}
+			}
+			// Prevent any further mouse‐up logic from firing on the svg
+			this._mousePressed = false;
+			this._mouseDragging = false;
+			return;
+		}
 
 		if (this._mouseY >= Config.barEditorHeight) {
 			if (event.shiftKey) {
@@ -518,27 +568,27 @@ export class TrackEditor {
 	};
 
 	private _whenMouseReleased = (event: MouseEvent): void => {
+		if (event.button !== 0) return;
 		if (this._mousePressed && !this._mouseDragging) {
 			if (
 				this._doc.channel == this._mouseChannel &&
 				this._doc.bar == this._mouseBar
 			) {
-				const rowIdx = this._rowIndexFromChannel(this._mouseChannel);
-				const rowTop =
-					this._svg.getBoundingClientRect().top +
-					Config.barEditorHeight +
-					rowIdx * ChannelRow.patternHeight;
-				const localY = event.clientY - rowTop;
-				const up: boolean = localY < ChannelRow.patternHeight / 2;
+				const visualRowInfo = this._getVisualRowInfo(this._mouseChannel);
+				if (visualRowInfo) {
+					const rowTop = visualRowInfo.y;
+					const localY = this._mouseY - rowTop;
+					const up: boolean = localY < visualRowInfo.height / 2;
 
-				const patternCount: number = this._doc.song.patternsPerChannel;
-				this._doc.selection.setPattern(
-					(this._doc.song.channels[this._mouseChannel].bars[
-						this._mouseBar
-					] +
-						(up ? 1 : patternCount)) %
-						(patternCount + 1)
-				);
+					const patternCount: number = this._doc.song.patternsPerChannel;
+					this._doc.selection.setPattern(
+						(this._doc.song.channels[this._mouseChannel].bars[
+							this._mouseBar
+						] +
+							(up ? 1 : patternCount)) %
+							(patternCount + 1)
+					);
+				}
 			}
 		}
 		this._mousePressed = false;
@@ -546,7 +596,52 @@ export class TrackEditor {
 		this._updatePreview();
 	};
 
+	private _whenContextMenu = (event: MouseEvent): void => {
+		event.preventDefault();
+		this._updateMousePos(event);
+
+		const tagRow = this._getTagRowAtY(this._mouseY);
+		if (tagRow) {
+			document.dispatchEvent(
+				new CustomEvent("muteeditor-open-tag-menu", {
+					detail: { tagId: tagRow.dataset.tagId, originalEvent: event },
+				})
+			);
+			this._boxHighlight.style.visibility = "hidden";
+			this._upHighlight.style.visibility = "hidden";
+			this._downHighlight.style.visibility = "hidden";
+			return;
+		}
+		// === NEW: right‐click on a channel row ⇒ channel menu
+		if (this._mouseY >= Config.barEditorHeight) {
+			const ch = this._mouseChannel;
+			document.dispatchEvent(
+				new CustomEvent("muteeditor-open-channel-menu", {
+					detail: { channelIndex: ch, originalEvent: event },
+				})
+			);
+			this._boxHighlight.style.visibility = "hidden";
+			this._upHighlight.style.visibility = "hidden";
+			this._downHighlight.style.visibility = "hidden";
+			return;
+		}
+
+		this._updatePreview();
+	};
+
 	private _updatePreview(): void {
+		// First, handle special UI states when hovering over a tag row.
+		if (this._mouseOver && this._getTagRowAtY(this._mouseY)) {
+			this._svg.style.cursor = "pointer";
+			this._boxHighlight.style.visibility = "hidden";
+			this._upHighlight.style.visibility = "hidden";
+			this._downHighlight.style.visibility = "hidden";
+			return; // Exit early, no other previews needed.
+		} else if (this._mouseOver) {
+			// Ensure cursor is default when not over a tag.
+			this._svg.style.cursor = "default";
+		}
+
 		let channel: number = this._mouseChannel;
 		let bar: number = this._mouseBar;
 
@@ -558,6 +653,7 @@ export class TrackEditor {
 		const selected: boolean =
 			bar == this._doc.bar && channel == this._doc.channel;
 		const overTrackEditor: boolean = this._mouseY >= Config.barEditorHeight;
+		const visualRowInfo = this._getVisualRowInfo(channel);
 
 		if (this._mouseDragging && this._mouseStartBar != this._mouseBar) {
 			var timestamp: number = Date.now();
@@ -576,16 +672,12 @@ export class TrackEditor {
 			}
 		}
 
-		if (this._mouseOver && !this._mousePressed && !selected && overTrackEditor) {
-			const hoverRow = this._rowIndexFromChannel(channel);
+		if (this._mouseOver && !this._mousePressed && !selected && overTrackEditor && visualRowInfo) {
 			this._boxHighlight.setAttribute("x", "" + (1 + this._barWidth * bar));
-			this._boxHighlight.setAttribute(
-				"y",
-				"" + (1 + Config.barEditorHeight + ChannelRow.patternHeight * hoverRow)
-			);
+			this._boxHighlight.setAttribute("y", "" + (1 + visualRowInfo.y));
 			this._boxHighlight.setAttribute(
 				"height",
-				"" + (ChannelRow.patternHeight - 2)
+				"" + (visualRowInfo.height - 2)
 			);
 			this._boxHighlight.setAttribute("width", "" + (this._barWidth - 2));
 			this._boxHighlight.style.visibility = "visible";
@@ -607,19 +699,14 @@ export class TrackEditor {
 			this._boxHighlight.style.visibility = "hidden";
 		}
 
-		if ((this._mouseOver || this._touchMode) && selected && overTrackEditor) {
+		if ((this._mouseOver || this._touchMode) && selected && overTrackEditor && visualRowInfo) {
 			const up: boolean =
-				(this._mouseY - Config.barEditorHeight) %
-					ChannelRow.patternHeight <
-				ChannelRow.patternHeight / 2;
+				(this._mouseY - visualRowInfo.y) < visualRowInfo.height / 2;
 			const center: number = this._barWidth * (bar + 0.8);
-			const rowIdx = this._rowIndexFromChannel(channel);
-			const middle: number =
-				Config.barEditorHeight +
-				ChannelRow.patternHeight * (rowIdx + 0.5);
-			const base: number = ChannelRow.patternHeight * 0.1;
-			const tip: number = ChannelRow.patternHeight * 0.4;
-			const width: number = ChannelRow.patternHeight * 0.175;
+			const middle: number = visualRowInfo.y + visualRowInfo.height * 0.5;
+			const base: number = visualRowInfo.height * 0.1;
+			const tip: number = visualRowInfo.height * 0.4;
+			const width: number = visualRowInfo.height * 0.175;
 
 			this._upHighlight.setAttribute(
 				"fill",
@@ -654,13 +741,13 @@ export class TrackEditor {
 			this._downHighlight.style.visibility = "hidden";
 		}
 
-		this._select.style.left = this._barWidth * this._doc.bar + "px";
-		this._select.style.width = this._barWidth + "px";
-		this._select.style.top =
-			Config.barEditorHeight +
-			ChannelRow.patternHeight * this._doc.channel +
-			"px";
-		this._select.style.height = ChannelRow.patternHeight + "px";
+		const selectedVisualRow = this._getVisualRowInfo(this._doc.channel);
+		if (selectedVisualRow) {
+			this._select.style.left = this._barWidth * this._doc.bar + "px";
+			this._select.style.width = this._barWidth + "px";
+			this._select.style.top = selectedVisualRow.y + "px";
+			this._select.style.height = selectedVisualRow.height + "px";
+		}
 
 		this._barDropDown.style.left = this._barWidth * bar + "px";
 
@@ -707,6 +794,7 @@ export class TrackEditor {
 				this._tagRows.set(tag.id, new TagRow(tag));
 			}
 			const row = this._tagRows.get(tag.id)!;
+			row.container.dataset.tagId = tag.id;
 			row.update(tag);
 			row.setColor(this._channelColors.get(tag.startChannel)!.primary);
 		});
@@ -714,17 +802,39 @@ export class TrackEditor {
 			if (!tags.find(t => t.id === id)) this._tagRows.delete(id);
 		}
 
-		// 6. Rebuild the DOM in (tag→channel) order
+		// 6. Rebuild the DOM in (tag→channel) order, handling collapsed tags
 		this._channelRowContainer.innerHTML = "";
+		const collapsedTagIds = new Set(
+			tags.filter(t => t.name.endsWith("...")).map(t => t.id)
+		);
+
 		for (let ch = 0; ch < channelCount; ch++) {
+			// Add any tags that start at this channel index
 			tags
 				.filter(t => t.startChannel === ch)
-				.forEach(t =>
-					this._channelRowContainer.appendChild(
-						this._tagRows.get(t.id)!.container
-					)
-				);
-			this._channelRowContainer.appendChild(this._channels[ch].container);
+				.forEach(tag => {
+					const tagRow = this._tagRows.get(tag.id)!.container;
+					const isInsideCollapsed = tags.some(
+						p =>
+							collapsedTagIds.has(p.id) &&
+							tag.startChannel >= p.startChannel &&
+							tag.endChannel <= p.endChannel &&
+							p.id !== tag.id
+					);
+					tagRow.style.display = isInsideCollapsed ? "none" : "flex";
+					this._channelRowContainer.appendChild(tagRow);
+				});
+
+			// Add the channel row itself
+			const channelRow = this._channels[ch].container;
+			const parentTag = tags.find(
+				t =>
+					ch >= t.startChannel &&
+					ch <= t.endChannel &&
+					collapsedTagIds.has(t.id)
+			);
+			channelRow.style.display = parentTag ? "none" : "";
+			this._channelRowContainer.appendChild(channelRow);
 		}
 
 		// 7. Update dimensions and bar numbers
@@ -792,36 +902,69 @@ export class TrackEditor {
 		}
 
 		// 8. Draw tag borders
-		const totalRows = channelCount + tags.length;
-		for (let i = 0; i < totalRows; i++) {
-			const rowElem = this._channelRowContainer.children[i] as HTMLElement;
-			rowElem.style.position = "relative";
-			Array.from(rowElem.querySelectorAll(".tagBorder")).forEach(el => el.remove());
-		}
+		Array.from(this.container.querySelectorAll(".tagBorder")).forEach(el => el.remove());
 		tags.forEach(tag => {
-			const group = tags.filter(t => t.endChannel === tag.endChannel);
-			const indexInGroup = group.findIndex(t => t.id === tag.id);
 			const color = this._channelColors.get(tag.startChannel)!.primary;
-
-			const rowIdx = this._rowIndexFromChannel(tag.endChannel);
-			const rowElem = this._channelRowContainer.children[rowIdx] as HTMLElement;
-			const channelBorder = HTML.div({
-				class: "tagBorder",
-				style: `position: absolute; bottom: ${indexInGroup * 3}px; left: 0; width: 100%; height: 2px; background: ${color}; pointer-events: none; z-index: ${100 + indexInGroup};`,
-			});
-			rowElem.appendChild(channelBorder);
-
+			const sameEnd = tags.filter(t => t.endChannel === tag.endChannel);
+			const idx = sameEnd.findIndex(t => t.id === tag.id);
 			const tagRowElem = this._tagRows.get(tag.id)!.container;
-			const tagBorder = HTML.div({
-				class: "tagBorder",
-				style: `position: absolute; bottom: 0; left: 0; width: 100%; height: 2px; background: ${color}; pointer-events: none; z-index: ${200 + indexInGroup};`,
-			});
-			tagRowElem.style.position = "relative";
-			tagRowElem.appendChild(tagBorder);
+			const isCollapsed = collapsedTagIds.has(tag.id);
+
+			// Top border between tagRow & channelRows (only if expanded)
+			if (!isCollapsed) {
+				const top = HTML.div({
+					class: "tagBorder",
+					style: `position:absolute;bottom:0;left:0;
+                           width:100%;height:2px;background:${color};
+                           pointer-events:none;z-index:${200+idx};`,
+				});
+				tagRowElem.style.position = "relative";
+				tagRowElem.appendChild(top);
+			}
+
+			// Bottom border: always draw.
+			// Attach to the channelRow if it's visible; otherwise to
+			// the innermost visible tagRow that covers endChannel.
+			let attachElem: HTMLElement | null = null;
+			const channelRow = this._channelRowContainer.querySelector(
+				`[data-channel-index='${tag.endChannel}']`
+			) as HTMLElement | null;
+			if (channelRow && channelRow.style.display !== "none") {
+				attachElem = channelRow;
+			} else {
+				// find all visible tagRows covering endChannel
+				const candidates = tags
+					.map(t2 => this._tagRows.get(t2.id)!.container)
+					.filter(el => el.style.display !== "none")
+					.filter(el => {
+						const start = parseInt(el.dataset.startChannel!);
+						const t2 = tags.find(x => x.id === el.dataset.tagId)!;
+						return start <= tag.endChannel && tag.endChannel <= t2.endChannel;
+					});
+				if (candidates.length) {
+					// pick the innermost: largest startChannel
+					attachElem = candidates.reduce((best, cur) => {
+						return parseInt(cur.dataset.startChannel!) >
+							parseInt(best.dataset.startChannel!)
+							? cur
+							: best;
+					}, candidates[0]);
+				}
+			}
+			if (attachElem) {
+				const bot = HTML.div({
+					class: "tagBorder",
+					style: `position:absolute;bottom:${idx*3}px;left:0;
+                           width:100%;height:2px;background:${color};
+                           pointer-events:none;z-index:${100+idx};`,
+				});
+				attachElem.style.position = "relative";
+				attachElem.appendChild(bot);
+			}
 		});
 
 		// 9. Update overall editor height
-		const editorHeightVisual = totalRows * ChannelRow.patternHeight;
+		const editorHeightVisual = Array.from(this._channelRowContainer.children).reduce((sum, child) => sum + (child as HTMLElement).offsetHeight, 0);
 		if (this._renderedEditorHeight !== editorHeightVisual) {
 			this._renderedEditorHeight = editorHeightVisual;
 			this._svg.setAttribute(
@@ -840,13 +983,18 @@ export class TrackEditor {
 		if (this._doc.selection.boxSelectionActive) {
 			const startCh = this._doc.selection.boxSelectionChannel;
 			const endCh = startCh + this._doc.selection.boxSelectionHeight - 1;
-			const vs = this._rowIndexFromChannel(startCh);
-			const ve = this._rowIndexFromChannel(Math.min(endCh, this._doc.song.getChannelCount() - 1));
-			this._selectionRect.setAttribute("x", String(this._barWidth * this._doc.selection.boxSelectionBar + 1));
-			this._selectionRect.setAttribute("y", String(Config.barEditorHeight + ChannelRow.patternHeight * vs + 1));
-			this._selectionRect.setAttribute("width", String(this._barWidth * this._doc.selection.boxSelectionWidth - 2));
-			this._selectionRect.setAttribute("height", String((ve - vs + 1) * ChannelRow.patternHeight - 2));
-			this._selectionRect.setAttribute("visibility", "visible");
+			const startVisual = this._getVisualRowInfo(startCh);
+			const endVisual = this._getVisualRowInfo(Math.min(endCh, this._doc.song.getChannelCount() - 1));
+
+			if (startVisual && endVisual) {
+				this._selectionRect.setAttribute("x", String(this._barWidth * this._doc.selection.boxSelectionBar + 1));
+				this._selectionRect.setAttribute("y", String(startVisual.y + 1));
+				this._selectionRect.setAttribute("width", String(this._barWidth * this._doc.selection.boxSelectionWidth - 2));
+				this._selectionRect.setAttribute("height", String((endVisual.y + endVisual.height) - startVisual.y - 2));
+				this._selectionRect.setAttribute("visibility", "visible");
+			} else {
+				this._selectionRect.setAttribute("visibility", "hidden");
+			}
 		} else {
 			this._selectionRect.setAttribute("visibility", "hidden");
 		}

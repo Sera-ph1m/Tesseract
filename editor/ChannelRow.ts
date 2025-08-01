@@ -5,8 +5,6 @@ import { ColorConfig } from "./ColorConfig";
 import { SongDocument } from "./SongDocument";
 import { HTML } from "imperative-html/dist/esm/elements-strict";
 
-// Centralized color computation logic for global note color getters.
-// NOTE: This logic is duplicated from TrackEditor.ts's _computeChannelColors.
 function computeColorForChannel(doc: SongDocument, channelIndex: number, type: "primary" | "secondary"): string {
 	const song = doc.song;
 	const channelCount = song.getChannelCount();
@@ -66,13 +64,7 @@ function computeColorForChannel(doc: SongDocument, channelIndex: number, type: "
 	}
 }
 
-/**
- * Returns the CSS variable for a channel's primary note color.
- * This function computes the color based on the current song state, including tags.
- * @param doc The song document.
- * @param channelIndex The index of the channel.
- * @returns A CSS var() string for the channel's primary note color.
- */
+
 export function getPrimaryNoteColor(
 	doc: SongDocument,
 	channelIndex: number
@@ -80,13 +72,6 @@ export function getPrimaryNoteColor(
 	return computeColorForChannel(doc, channelIndex, "primary");
 }
 
-/**
- * Returns the CSS variable for a channel's secondary note color.
- * This function computes the color based on the current song state, including tags.
- * @param doc The song document.
- * @param channelIndex The index of the channel.
- * @returns A CSS var() string for the channel's secondary note color.
- */
 export function getSecondaryNoteColor(
 	doc: SongDocument,
 	channelIndex: number
@@ -235,7 +220,9 @@ export class ChannelRow {
 	constructor(
 		private readonly _doc: SongDocument,
 		public readonly index: number
-	) {}
+	) {
+		this.container.dataset.channelIndex = this.index.toString();
+	}
 
 	public render(colors: { primary: string; secondary: string }): void {
 		ChannelRow.patternHeight = this._doc.getChannelHeight();

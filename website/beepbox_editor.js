@@ -28562,6 +28562,58 @@ li.select2-results__option[role=group] > strong:hover {
             this._doc.notifier.changed();
         }
     }
+    class ChangeRemoveChannelTag extends UndoableChange {
+        constructor(doc, id) {
+            super(false);
+            this._doc = doc;
+            this._index = this._doc.song.channelTags.findIndex(tag => tag.id === id);
+            if (this._index === -1) {
+                this._tag = { id: '', name: '', startChannel: 0, endChannel: 0 };
+                return;
+            }
+            this._tag = this._doc.song.channelTags[this._index];
+            this._didSomething();
+            this.redo();
+        }
+        _doForwards() {
+            if (this._index > -1) {
+                this._doc.song.channelTags.splice(this._index, 1);
+            }
+            this._doc.notifier.changed();
+        }
+        _doBackwards() {
+            if (this._index > -1) {
+                this._doc.song.channelTags.splice(this._index, 0, this._tag);
+            }
+            this._doc.notifier.changed();
+        }
+    }
+    class ChangeRenameChannelTag extends UndoableChange {
+        constructor(doc, id, newName) {
+            super(false);
+            this._doc = doc;
+            this._tagId = id;
+            this._newName = newName;
+            const tag = this._doc.song.channelTags.find(tag => tag.id === id);
+            if (!tag) {
+                this._oldName = "";
+                return;
+            }
+            this._oldName = tag.name;
+            if (this._oldName !== this._newName) {
+                this._didSomething();
+            }
+            this.redo();
+        }
+        _doForwards() {
+            this._doc.song.renameChannelTagById(this._tagId, this._newName);
+            this._doc.notifier.changed();
+        }
+        _doBackwards() {
+            this._doc.song.renameChannelTagById(this._tagId, this._oldName);
+            this._doc.notifier.changed();
+        }
+    }
     class ChangeChannelOrder extends Change {
         constructor(doc, selectionMin, selectionMax, offset) {
             super();
@@ -31282,12 +31334,12 @@ li.select2-results__option[role=group] > strong:hover {
         }
     }
     class ChangeChannelName extends Change {
-        constructor(doc, oldValue, newValue) {
+        constructor(doc, channelIndex, oldValue, newValue) {
             super();
             if (newValue.length > 15) {
                 newValue = newValue.substring(0, 15);
             }
-            doc.song.channels[doc.muteEditorChannel].name = newValue;
+            doc.song.channels[channelIndex].name = newValue;
             doc.recalcChannelNames = true;
             doc.notifier.changed();
             if (oldValue != newValue)
@@ -38982,6 +39034,7 @@ You should be redirected to the song at:<br /><br />
             this._renderedBarHeight = -1;
             this._boxes = [];
             this.container = HTML.div({ class: "channelRow" });
+            this.container.dataset.channelIndex = this.index.toString();
         }
         render(colors) {
             ChannelRow.patternHeight = this._doc.getChannelHeight();
@@ -40521,7 +40574,9 @@ You should be redirected to the song at:<br /><br />
             const tagColors = new Map();
             const baseChannelColors = new Map();
             for (let ch = 0; ch < channelCount; ch++) {
-                tags.filter(t => t.startChannel === ch).forEach(tag => {
+                tags
+                    .filter(t => t.startChannel === ch)
+                    .forEach(tag => {
                     const colorIndex = (pitchCounter % 10) + 1;
                     tagColors.set(tag.id, {
                         primary: `var(--pitch${colorIndex}-primary-note)`,
@@ -40531,17 +40586,25 @@ You should be redirected to the song at:<br /><br />
                 });
                 if (song.getChannelIsMod(ch)) {
                     const colorIndex = (modCounter % 4) + 1;
-                    baseChannelColors.set(ch, { primary: `var(--mod${colorIndex}-primary-note)`, secondary: `var(--mod${colorIndex}-secondary-note)` });
+                    baseChannelColors.set(ch, {
+                        primary: `var(--mod${colorIndex}-primary-note)`,
+                        secondary: `var(--mod${colorIndex}-secondary-note)`,
+                    });
                     modCounter = (modCounter + 1) % 4;
                 }
                 else {
                     const colorIndex = (pitchCounter % 10) + 1;
-                    baseChannelColors.set(ch, { primary: `var(--pitch${colorIndex}-primary-note)`, secondary: `var(--pitch${colorIndex}-secondary-note)` });
+                    baseChannelColors.set(ch, {
+                        primary: `var(--pitch${colorIndex}-primary-note)`,
+                        secondary: `var(--pitch${colorIndex}-secondary-note)`,
+                    });
                     pitchCounter = (pitchCounter + 1) % 10;
                 }
             }
             for (let ch = 0; ch < channelCount; ch++) {
-                const innermostTag = tags.filter(t => t.startChannel <= ch && ch <= t.endChannel).pop();
+                const innermostTag = tags
+                    .filter(t => t.startChannel <= ch && ch <= t.endChannel)
+                    .pop();
                 if (innermostTag) {
                     this._channelColors.set(ch, tagColors.get(innermostTag.id));
                 }
@@ -40553,15 +40616,22 @@ You should be redirected to the song at:<br /><br />
         constructor(_doc, _editor) {
             this._doc = _doc;
             this._editor = _editor;
-            this._tagDropDown = HTML.select({
-                style: "width:0px; height:19px; left:19px; top:0; position:absolute; opacity:0",
+            this._tagContextMenu = HTML.div({
+                style: `display: none; position: fixed; z-index: 1000; background: ${ColorConfig.editorBackground}; border: 1px solid ${ColorConfig.primaryText}; font-size: 12px; width: max-content;`,
             });
-            this._tagDropDownOpen = false;
+            this._channelContextMenu = HTML.div({
+                style: `display: none; position: fixed; z-index: 1000;
+                background: ${ColorConfig.editorBackground};
+                border: 1px solid ${ColorConfig.primaryText};
+                font-size: 12px; width: max-content;`,
+            });
+            this._activeChannelIndexForMenu = null;
             this._cornerFiller = HTML.div({
                 style: `background: ${ColorConfig.editorBackground}; position: sticky; bottom: 0; left: 0; width: 32px; height: 30px;`,
             });
             this._buttons = [];
             this._rowToChannel = [];
+            this._rowToTag = [];
             this._channelCounts = [];
             this._channelNameDisplay = HTML.div({
                 style: `background-color: ${ColorConfig.uiWidgetFocus}; white-space:nowrap; display: none; transform:translate(20px); width: auto; pointer-events: none; position: absolute; border-radius: 0.2em; z-index: 2;`,
@@ -40570,22 +40640,30 @@ You should be redirected to the song at:<br /><br />
             this._channelNameInput = new InputBox(HTML.input({
                 style: `color: ${ColorConfig.primaryText}; background-color: ${ColorConfig.uiWidgetFocus}; margin-top: -2px; display: none; width: 6em; position: absolute; border-radius: 0.2em; z-index: 2;`,
                 color: ColorConfig.primaryText,
-            }, ""), this._doc, (oldValue, newValue) => new ChangeChannelName(this._doc, oldValue, newValue));
-            this._channelDropDown = HTML.select({
-                style: "width: 0px; left: 19px; height: 19px; position:absolute; opacity:0",
-            }, HTML.option({ value: "rename" }, "Rename..."), HTML.option({ value: "chnUp" }, "Move Channel Up"), HTML.option({ value: "chnDown" }, "Move Channel Down"), HTML.option({ value: "chnMute" }, "Mute Channel"), HTML.option({ value: "chnSolo" }, "Solo Channel"), HTML.option({ value: "chnInsert" }, "Insert Channel Below"), HTML.option({ value: "chnDelete" }, "Delete This Channel"));
+            }, ""), this._doc, (oldValue, newValue) => new ChangeChannelName(this._doc, this._activeChannelIndexForMenu, oldValue, newValue));
             this.container = HTML.div({
                 class: "muteEditor",
-                style: "position: sticky; padding-top: " + Config.barEditorHeight + "px;",
-            }, this._channelNameDisplay, this._channelNameInput.input, this._channelDropDown, this._tagDropDown);
+                style: "position: sticky; padding-top: " +
+                    Config.barEditorHeight +
+                    "px;",
+            }, this._channelNameDisplay, this._channelNameInput.input);
             this._channelColors = new Map();
             this._renderedPitchChannels = 0;
             this._renderedNoiseChannels = 0;
             this._renderedChannelHeight = -1;
             this._renderedModChannels = 0;
-            this._channelDropDownChannel = 0;
             this._channelDropDownOpen = false;
-            this._channelDropDownLastState = false;
+            this._activeTagIdForMenu = null;
+            this._onDocumentMouseDown = (event) => {
+                if (this._tagContextMenu.style.display !== "none" &&
+                    !this._tagContextMenu.contains(event.target)) {
+                    this._tagContextMenu.style.display = "none";
+                }
+                if (this._channelContextMenu.style.display !== "none" &&
+                    !this._channelContextMenu.contains(event.target)) {
+                    this._channelContextMenu.style.display = "none";
+                }
+            };
             this._channelNameInputWhenInput = () => {
                 let newValue = this._channelNameInput.input.value;
                 if (newValue.length > 15) {
@@ -40598,122 +40676,6 @@ You should be redirected to the song at:<br /><br />
             this._channelNameInputHide = () => {
                 this._channelNameInput.input.style.setProperty("display", "none");
                 this._channelNameDisplay.style.setProperty("display", "none");
-            };
-            this._channelDropDownClick = (event) => {
-                this._channelDropDownOpen = !this._channelDropDownLastState;
-                this._channelDropDownGetOpenedPosition(event);
-            };
-            this._channelDropDownBlur = () => {
-                this._channelDropDownOpen = false;
-                this._channelNameDisplay.style.setProperty("display", "none");
-            };
-            this._channelDropDownGetOpenedPosition = (event) => {
-                this._channelDropDownLastState = this._channelDropDownOpen;
-                this._channelDropDownChannel = Math.floor(Math.min(this._doc.song.getChannelCount(), Math.max(0, (event.clientY -
-                    this.container.getBoundingClientRect().top -
-                    Config.barEditorHeight) /
-                    ChannelRow.patternHeight)));
-                this._doc.muteEditorChannel = this._channelDropDownChannel;
-                this._channelNameDisplay.style.setProperty("display", "");
-                if ((this._channelDropDownChannel < this._doc.song.pitchChannelCount &&
-                    this._doc.song.pitchChannelCount == Config.pitchChannelCountMax) ||
-                    (this._channelDropDownChannel >= this._doc.song.pitchChannelCount &&
-                        this._channelDropDownChannel <
-                            this._doc.song.pitchChannelCount +
-                                this._doc.song.noiseChannelCount &&
-                        this._doc.song.noiseChannelCount == Config.noiseChannelCountMax) ||
-                    (this._channelDropDownChannel >=
-                        this._doc.song.pitchChannelCount +
-                            this._doc.song.noiseChannelCount &&
-                        this._doc.song.modChannelCount == Config.modChannelCountMax)) {
-                    this._channelDropDown.options[5].disabled = true;
-                }
-                else {
-                    this._channelDropDown.options[5].disabled = false;
-                }
-                this._channelDropDown.options[1].disabled = false;
-                this._channelDropDown.options[2].disabled = false;
-                if (this._doc.song.pitchChannelCount == 1 &&
-                    this._channelDropDownChannel == 0) {
-                    this._channelDropDown.options[6].disabled = true;
-                }
-                else {
-                    this._channelDropDown.options[6].disabled = false;
-                }
-            };
-            this._channelDropDownHandler = (event) => {
-                this._channelNameDisplay.style.setProperty("display", "none");
-                this._channelDropDown.style.setProperty("display", "none");
-                this._channelDropDownOpen = false;
-                event.stopPropagation();
-                switch (this._channelDropDown.value) {
-                    case "rename":
-                        this._channelNameInput.input.style.setProperty("display", "");
-                        this._channelNameInput.input.style.setProperty("transform", this._channelNameDisplay.style.getPropertyValue("transform"));
-                        this._channelNameInput.input.value =
-                            this._channelNameDisplay.textContent || "";
-                        this._channelNameInput.input.select();
-                        break;
-                    case "chnUp":
-                        this._doc.record(new ChangeChannelOrder(this._doc, this._channelDropDownChannel, this._channelDropDownChannel, -1));
-                        this._doc.song.updateDefaultChannelNames();
-                        break;
-                    case "chnDown":
-                        this._doc.record(new ChangeChannelOrder(this._doc, this._channelDropDownChannel, this._channelDropDownChannel, 1));
-                        this._doc.song.updateDefaultChannelNames();
-                        break;
-                    case "chnMute":
-                        this._doc.song.channels[this._channelDropDownChannel].muted =
-                            !this._doc.song.channels[this._channelDropDownChannel].muted;
-                        this.render();
-                        break;
-                    case "chnSolo":
-                        {
-                            let shouldSolo = false;
-                            for (let ch = 0; ch < this._doc.song.getChannelCount(); ch++) {
-                                if (this._doc.song.channels[ch].type === ChannelType.Mod)
-                                    continue;
-                                if (this._doc.song.channels[ch].muted ==
-                                    (ch == this._channelDropDownChannel)) {
-                                    shouldSolo = true;
-                                    break;
-                                }
-                            }
-                            for (let ch = 0; ch < this._doc.song.getChannelCount(); ch++) {
-                                if (this._doc.song.channels[ch].type === ChannelType.Mod)
-                                    continue;
-                                this._doc.song.channels[ch].muted = shouldSolo
-                                    ? ch != this._channelDropDownChannel
-                                    : false;
-                            }
-                            this.render();
-                        }
-                        break;
-                    case "chnInsert":
-                        {
-                            let type;
-                            if (this._doc.song.getChannelIsMod(this._channelDropDownChannel)) {
-                                type = ChannelType.Mod;
-                            }
-                            else if (this._doc.song.getChannelIsNoise(this._channelDropDownChannel)) {
-                                type = ChannelType.Noise;
-                            }
-                            else {
-                                type = ChannelType.Pitch;
-                            }
-                            this._doc.record(new ChangeAddChannel(this._doc, type, this._channelDropDownChannel));
-                            this._doc.notifier.changed();
-                        }
-                        break;
-                    case "chnDelete":
-                        {
-                            this._doc.record(new ChangeRemoveChannel(this._doc, this._channelDropDownChannel));
-                        }
-                        break;
-                }
-                if (this._channelDropDown.value != "rename")
-                    this._editor.refocusStage();
-                this._channelDropDown.selectedIndex = -1;
             };
             this._onClick = (event) => {
                 const container = event.target.closest(".muteContainer");
@@ -40728,15 +40690,12 @@ You should be redirected to the song at:<br /><br />
                 }
                 const xPos = event.clientX - container.getBoundingClientRect().left;
                 if (xPos < 21.0) {
-                    this._doc.song.channels[ch].muted = !this._doc.song.channels[ch].muted;
+                    this._doc.song.channels[ch].muted =
+                        !this._doc.song.channels[ch].muted;
                     this._doc.notifier.changed();
                 }
                 else {
-                    this._channelDropDownOpen = !this._channelDropDownLastState;
-                    this._channelDropDownGetOpenedPosition(event);
-                    this._channelDropDown.style.setProperty("display", "");
-                    this._channelDropDown.style.setProperty("width", "15px");
-                    this._channelDropDown.focus();
+                    this.openChannelContextMenu(ch, event);
                 }
             };
             this._onMouseMove = (event) => {
@@ -40748,14 +40707,10 @@ You should be redirected to the song at:<br /><br />
                 const index = this._buttons.indexOf(rowContainer);
                 if (index == -1) {
                     if (!this._channelDropDownOpen &&
-                        !this._tagDropDownOpen &&
-                        target != this._channelNameDisplay &&
-                        target != this._channelDropDown &&
-                        target != this._tagDropDown) {
+                        this._tagContextMenu.style.display === "none" &&
+                        this._channelContextMenu.style.display === "none" &&
+                        target != this._channelNameDisplay) {
                         this._channelNameDisplay.style.setProperty("display", "none");
-                        this._channelDropDown.style.setProperty("display", "none");
-                        this._channelDropDown.style.setProperty("width", "0px");
-                        this._tagDropDown.style.setProperty("width", "0px");
                     }
                     return;
                 }
@@ -40764,9 +40719,10 @@ You should be redirected to the song at:<br /><br />
                 if (ch !== null) {
                     if (xPos >= 21.0) {
                         if (!this._channelDropDownOpen) {
-                            this._channelDropDown.style.setProperty("display", "");
-                            var height = ChannelRow.patternHeight;
-                            this._channelNameDisplay.style.setProperty("transform", "translate(20px, " + (height / 4 + height * index) + "px)");
+                            var height = this._doc.getChannelHeight();
+                            this._channelNameDisplay.style.setProperty("transform", "translate(20px, " +
+                                (height / 4 + height * index) +
+                                "px)");
                             this._channelNameDisplay.textContent =
                                 this._doc.song.channels[ch].name ||
                                     (ch < this._doc.song.pitchChannelCount
@@ -40774,82 +40730,214 @@ You should be redirected to the song at:<br /><br />
                                         : ch <
                                             this._doc.song.pitchChannelCount +
                                                 this._doc.song.noiseChannelCount
-                                            ? "Noise " + (ch - this._doc.song.pitchChannelCount + 1)
+                                            ? "Noise " +
+                                                (ch - this._doc.song.pitchChannelCount + 1)
                                             : "Mod " +
                                                 (ch -
                                                     this._doc.song.pitchChannelCount -
                                                     this._doc.song.noiseChannelCount +
                                                     1));
                             this._channelNameDisplay.style.setProperty("display", "");
-                            this._channelDropDown.style.top =
-                                Config.barEditorHeight + 2 + index * height + "px";
-                            this._channelDropDown.style.setProperty("width", "15px");
                         }
                     }
                     else {
                         if (!this._channelDropDownOpen) {
                             this._channelNameDisplay.style.setProperty("display", "none");
-                            this._channelDropDown.style.setProperty("display", "none");
-                            this._channelDropDown.style.setProperty("width", "0px");
                         }
                     }
                 }
                 else {
-                    if (xPos >= 21.0) {
-                        if (!this._tagDropDownOpen) {
-                            this._tagDropDown.style.setProperty("display", "");
-                            var height = ChannelRow.patternHeight;
-                            this._tagDropDown.style.top =
-                                Config.barEditorHeight + 2 + index * height + "px";
-                            this._tagDropDown.style.setProperty("width", "15px");
-                        }
-                    }
-                    else {
-                        if (!this._tagDropDownOpen) {
-                            this._tagDropDown.style.setProperty("display", "none");
-                            this._tagDropDown.style.setProperty("width", "0px");
-                        }
-                    }
                     this._channelNameDisplay.style.setProperty("display", "none");
-                    if (!this._channelDropDownOpen) {
-                        this._channelDropDown.style.setProperty("display", "none");
-                        this._channelDropDown.style.setProperty("width", "0px");
-                    }
+                    if (!this._channelDropDownOpen) ;
                 }
             };
             this._onMouseLeave = (event) => {
-                if (!this._channelDropDownOpen && !this._tagDropDownOpen) {
+                if (!this._channelDropDownOpen &&
+                    this._tagContextMenu.style.display === "none" &&
+                    this._channelContextMenu.style.display === "none") {
                     this._channelNameDisplay.style.setProperty("display", "none");
-                    this._channelDropDown.style.setProperty("width", "0px");
-                    this._tagDropDown.style.setProperty("width", "0px");
                 }
+            };
+            this._onOpenTagMenu = (evt) => {
+                this.openTagContextMenu(evt.detail.tagId, evt.detail.originalEvent);
+            };
+            this._onOpenChannelMenu = (evt) => {
+                this.openChannelContextMenu(evt.detail.channelIndex, evt.detail.originalEvent);
+            };
+            this._onTagMenuClick = (event) => {
+                const target = event.target;
+                const action = target.dataset.action;
+                if (!action)
+                    return;
+                this._tagContextMenu.style.display = "none";
+                if (!this._activeTagIdForMenu)
+                    return;
+                const tag = this._doc.song.channelTags.find(t => t.id === this._activeTagIdForMenu);
+                if (!tag)
+                    return;
+                switch (action) {
+                    case "tagRename": {
+                        const isCollapsed = tag.name.endsWith("...");
+                        const currentName = isCollapsed
+                            ? tag.name.slice(0, -3)
+                            : tag.name;
+                        const newName = window.prompt("Enter new tag name:", currentName);
+                        if (newName !== null && newName.trim() !== "") {
+                            const finalName = isCollapsed
+                                ? newName.trim() + "..."
+                                : newName.trim();
+                            this._doc.record(new ChangeRenameChannelTag(this._doc, tag.id, finalName));
+                        }
+                        break;
+                    }
+                    case "tagMute": {
+                        const chs = [];
+                        for (let i = tag.startChannel; i <= tag.endChannel; i++) {
+                            if (!this._doc.song.getChannelIsMod(i))
+                                chs.push(i);
+                        }
+                        const allMuted = chs.every(i => this._doc.song.channels[i].muted);
+                        chs.forEach(i => (this._doc.song.channels[i].muted = !allMuted));
+                        this._doc.notifier.changed();
+                        break;
+                    }
+                    case "tagSolo": {
+                        const total = this._doc.song.getChannelCount();
+                        const inside = [];
+                        const outside = [];
+                        for (let i = 0; i < total; i++) {
+                            if (this._doc.song.getChannelIsMod(i))
+                                continue;
+                            if (i >= tag.startChannel && i <= tag.endChannel)
+                                inside.push(i);
+                            else
+                                outside.push(i);
+                        }
+                        const isSoloed = inside.every(i => !this._doc.song.channels[i].muted) &&
+                            outside.every(i => this._doc.song.channels[i].muted);
+                        if (isSoloed) {
+                            for (let i = 0; i < total; i++)
+                                this._doc.song.channels[i].muted = false;
+                        }
+                        else {
+                            for (let i = 0; i < total; i++) {
+                                if (this._doc.song.getChannelIsMod(i)) {
+                                    this._doc.song.channels[i].muted = false;
+                                }
+                                else if (i >= tag.startChannel &&
+                                    i <= tag.endChannel) {
+                                    this._doc.song.channels[i].muted = false;
+                                }
+                                else {
+                                    this._doc.song.channels[i].muted = true;
+                                }
+                            }
+                        }
+                        this._doc.notifier.changed();
+                        break;
+                    }
+                    case "tagRemove":
+                        this._doc.record(new ChangeRemoveChannelTag(this._doc, this._activeTagIdForMenu));
+                        break;
+                    case "tagRemoveChannels": {
+                        this._doc.record(new ChangeRemoveChannelTag(this._doc, this._activeTagIdForMenu));
+                        for (let i = tag.endChannel; i >= tag.startChannel; i--) {
+                            this._doc.record(new ChangeRemoveChannel(this._doc, i));
+                        }
+                        break;
+                    }
+                }
+                this._activeTagIdForMenu = null;
+            };
+            this._onChannelMenuClick = (event) => {
+                const target = event.target;
+                const action = target.dataset.action;
+                if (!action || this._activeChannelIndexForMenu == null)
+                    return;
+                this._channelContextMenu.style.display = "none";
+                const ch = this._activeChannelIndexForMenu;
+                const channel = this._doc.song.channels[ch];
+                switch (action) {
+                    case "rename": {
+                        const oldName = channel.name;
+                        const newName = window.prompt("New channel name:", oldName);
+                        if (newName !== null && newName.trim() !== oldName) {
+                            this._doc.record(new ChangeChannelName(this._doc, ch, oldName, newName.trim()));
+                        }
+                        break;
+                    }
+                    case "chnUp":
+                        this._doc.record(new ChangeChannelOrder(this._doc, ch, ch, -1));
+                        this._doc.song.updateDefaultChannelNames();
+                        break;
+                    case "chnDown":
+                        this._doc.record(new ChangeChannelOrder(this._doc, ch, ch, 1));
+                        this._doc.song.updateDefaultChannelNames();
+                        break;
+                    case "chnMute":
+                        channel.muted = !channel.muted;
+                        this._doc.notifier.changed();
+                        break;
+                    case "chnSolo": {
+                        let shouldSolo = false;
+                        for (let chi = 0; chi < this._doc.song.getChannelCount(); chi++) {
+                            if (this._doc.song.channels[chi].type === ChannelType.Mod)
+                                continue;
+                            if (this._doc.song.channels[chi].muted ==
+                                (chi == ch)) {
+                                shouldSolo = true;
+                                break;
+                            }
+                        }
+                        for (let chi = 0; chi < this._doc.song.getChannelCount(); chi++) {
+                            if (this._doc.song.channels[chi].type === ChannelType.Mod)
+                                continue;
+                            this._doc.song.channels[chi].muted = shouldSolo
+                                ? chi != ch
+                                : false;
+                        }
+                        this._doc.notifier.changed();
+                        break;
+                    }
+                    case "chnInsert": {
+                        const type = this._doc.song.getChannelIsMod(ch)
+                            ? ChannelType.Mod
+                            : this._doc.song.getChannelIsNoise(ch)
+                                ? ChannelType.Noise
+                                : ChannelType.Pitch;
+                        this._doc.record(new ChangeAddChannel(this._doc, type, ch));
+                        this._doc.notifier.changed();
+                        break;
+                    }
+                    case "chnDelete":
+                        this._doc.record(new ChangeRemoveChannel(this._doc, ch));
+                        break;
+                }
+                this._editor.refocusStage();
+                this._activeChannelIndexForMenu = null;
             };
             this.container.addEventListener("click", this._onClick);
             this.container.addEventListener("mousemove", this._onMouseMove);
             this.container.addEventListener("mouseleave", this._onMouseLeave);
-            this._tagDropDown.addEventListener("blur", () => {
-                this._tagDropDownOpen = false;
-                this._tagDropDown.style.width = "0px";
-            });
-            this._tagDropDown.addEventListener("click", () => {
-                this._tagDropDownOpen = !this._tagDropDownOpen;
-            });
-            this._channelDropDown.selectedIndex = -1;
-            this._channelDropDown.addEventListener("change", this._channelDropDownHandler);
-            this._channelDropDown.addEventListener("mousedown", this._channelDropDownGetOpenedPosition);
-            this._channelDropDown.addEventListener("blur", this._channelDropDownBlur);
-            this._channelDropDown.addEventListener("click", this._channelDropDownClick);
+            this._tagContextMenu.addEventListener("click", this._onTagMenuClick);
+            this._channelContextMenu.addEventListener("click", this._onChannelMenuClick);
+            document.addEventListener("mousedown", this._onDocumentMouseDown, true);
+            document.body.appendChild(this._channelContextMenu);
+            document.addEventListener("muteeditor-open-tag-menu", this._onOpenTagMenu);
+            document.addEventListener("muteeditor-open-channel-menu", this._onOpenChannelMenu);
             this._channelNameInput.input.addEventListener("change", this._channelNameInputHide);
             this._channelNameInput.input.addEventListener("blur", this._channelNameInputHide);
             this._channelNameInput.input.addEventListener("mousedown", this._channelNameInputClicked);
             this._channelNameInput.input.addEventListener("input", this._channelNameInputWhenInput);
+            document.body.appendChild(this._tagContextMenu);
         }
         onKeyUp(event) {
             switch (event.keyCode) {
                 case 27:
                 case 13:
                     this._channelDropDownOpen = false;
-                    this._tagDropDownOpen = false;
+                    this._tagContextMenu.style.display = "none";
+                    this._channelContextMenu.style.display = "none";
                     this._channelNameDisplay.style.setProperty("display", "none");
                     break;
             }
@@ -40887,8 +40975,10 @@ You should be redirected to the song at:<br /><br />
                 this._buttons.length = totalRows;
                 this._channelCounts.length = totalRows;
                 this._rowToChannel.length = totalRows;
+                this._rowToTag.length = totalRows;
                 this.container.appendChild(this._cornerFiller);
             }
+            const collapsedTagIds = new Set(tags.filter(t => t.name.endsWith("...")).map(t => t.id));
             let rowIndex = 0;
             for (let ch = 0; ch < channelCount; ch++) {
                 tags
@@ -40897,29 +40987,29 @@ You should be redirected to the song at:<br /><br />
                     const muteContainer = this._buttons[rowIndex];
                     const countText = this._channelCounts[rowIndex];
                     this._rowToChannel[rowIndex] = null;
-                    muteContainer.children[0].style.visibility =
-                        "hidden";
+                    this._rowToTag[rowIndex] = tag.id;
+                    muteContainer.children[0].style.visibility = "hidden";
                     countText.textContent = "○";
                     countText.style.color = this._channelColors.get(tag.startChannel).primary;
                     countText.style.fontSize = "inherit";
-                    const currentRowIndex = rowIndex;
-                    muteContainer.onclick = e => {
-                        e.stopPropagation();
-                        const top = Config.barEditorHeight +
-                            currentRowIndex * ChannelRow.patternHeight;
-                        this._tagDropDown.style.top = top + "px";
-                        this._tagDropDown.style.left = "19px";
-                        this._tagDropDown.style.width = "15px";
-                        this._tagDropDown.style.display = "";
-                        this._tagDropDown.focus();
-                        this._tagDropDownOpen = true;
-                    };
+                    const isInsideCollapsed = tags.some(p => collapsedTagIds.has(p.id) &&
+                        tag.startChannel >= p.startChannel &&
+                        tag.endChannel <= p.endChannel &&
+                        p.id !== tag.id);
+                    muteContainer.style.display = isInsideCollapsed
+                        ? "none"
+                        : "table";
                     rowIndex++;
                 });
                 const muteContainer = this._buttons[rowIndex];
                 const countText = this._channelCounts[rowIndex];
                 const muteButton = muteContainer.children[0];
                 this._rowToChannel[rowIndex] = ch;
+                this._rowToTag[rowIndex] = null;
+                const parentTag = tags.find(t => ch >= t.startChannel &&
+                    ch <= t.endChannel &&
+                    collapsedTagIds.has(t.id));
+                muteContainer.style.display = parentTag ? "none" : "table";
                 muteButton.style.visibility = "";
                 const isMod = this._doc.song.getChannelIsMod(ch);
                 const isMuted = this._doc.song.channels[ch].muted;
@@ -40931,13 +41021,14 @@ You should be redirected to the song at:<br /><br />
                 countText.style.fontSize = val >= 10 ? "xx-small" : "inherit";
                 rowIndex++;
             }
-            if (this._renderedChannelHeight != ChannelRow.patternHeight ||
+            const currentChannelHeight = this._doc.getChannelHeight();
+            if (this._renderedChannelHeight != currentChannelHeight ||
                 startingRowCount != totalRows) {
                 for (let y = 0; y < totalRows; y++) {
                     this._buttons[y].style.marginTop =
-                        (ChannelRow.patternHeight - 20) / 2 + "px";
+                        (currentChannelHeight - 20) / 2 + "px";
                     this._buttons[y].style.marginBottom =
-                        (ChannelRow.patternHeight - 20) / 2 + "px";
+                        (currentChannelHeight - 20) / 2 + "px";
                 }
             }
             if (this._renderedModChannels != this._doc.song.modChannelCount ||
@@ -40947,27 +41038,109 @@ You should be redirected to the song at:<br /><br />
                 this._renderedNoiseChannels = this._doc.song.noiseChannelCount;
                 this._renderedModChannels = this._doc.song.modChannelCount;
             }
-            if (startingRowCount != totalRows || this._renderedChannelHeight != ChannelRow.patternHeight) {
-                this._renderedChannelHeight = ChannelRow.patternHeight;
-                const editorHeight = Config.barEditorHeight + totalRows * ChannelRow.patternHeight;
+            if (startingRowCount != totalRows ||
+                this._renderedChannelHeight != currentChannelHeight) {
+                this._renderedChannelHeight = currentChannelHeight;
+                const editorHeight = Config.barEditorHeight +
+                    Array.from(this._buttons).reduce((sum, btn) => sum + btn.offsetHeight, 0);
                 this._channelNameDisplay.style.setProperty("display", "none");
                 this.container.style.height = editorHeight + 16 + "px";
-                if (ChannelRow.patternHeight < 27) {
+                if (currentChannelHeight < 27) {
                     this._channelNameDisplay.style.setProperty("margin-top", "-2px");
-                    this._channelDropDown.style.setProperty("margin-top", "-4px");
                     this._channelNameInput.input.style.setProperty("margin-top", "-4px");
                 }
-                else if (ChannelRow.patternHeight < 30) {
+                else if (currentChannelHeight < 30) {
                     this._channelNameDisplay.style.setProperty("margin-top", "-1px");
-                    this._channelDropDown.style.setProperty("margin-top", "-3px");
                     this._channelNameInput.input.style.setProperty("margin-top", "-3px");
                 }
                 else {
                     this._channelNameDisplay.style.setProperty("margin-top", "0px");
-                    this._channelDropDown.style.setProperty("margin-top", "0px");
                     this._channelNameInput.input.style.setProperty("margin-top", "-2px");
                 }
             }
+        }
+        openTagContextMenu(tagId, event) {
+            if (!tagId)
+                return;
+            this._activeTagIdForMenu = tagId;
+            this._tagContextMenu.innerHTML = "";
+            const options = [
+                { label: "Rename...", action: "tagRename" },
+                { label: "Mute Tag", action: "tagMute" },
+                { label: "Solo/Unsolo Tag", action: "tagSolo" },
+                { label: "Remove Tag", action: "tagRemove" },
+                { label: "Remove Channels & Tag", action: "tagRemoveChannels" },
+            ];
+            for (const opt of options) {
+                const optionDiv = HTML.div({
+                    "data-action": opt.action,
+                    style: `padding: 4px 8px; cursor: pointer; color: ${ColorConfig.primaryText};`,
+                }, opt.label);
+                optionDiv.addEventListener("mouseenter", () => {
+                    optionDiv.style.backgroundColor = ColorConfig.uiWidgetFocus;
+                });
+                optionDiv.addEventListener("mouseleave", () => {
+                    optionDiv.style.backgroundColor = "transparent";
+                });
+                this._tagContextMenu.appendChild(optionDiv);
+            }
+            this._tagContextMenu.style.visibility = "hidden";
+            this._tagContextMenu.style.display = "block";
+            const menuHeight = this._tagContextMenu.offsetHeight;
+            this._tagContextMenu.style.visibility = "";
+            this._tagContextMenu.style.left = event.clientX + "px";
+            this._tagContextMenu.style.top = event.clientY - menuHeight + "px";
+        }
+        openChannelContextMenu(channelIndex, event) {
+            this._activeChannelIndexForMenu = channelIndex;
+            const ch = this._doc.song.channels[channelIndex];
+            const pc = this._doc.song.pitchChannelCount;
+            const nc = this._doc.song.noiseChannelCount;
+            this._channelContextMenu.innerHTML = "";
+            const displayName = ch.name ||
+                (channelIndex < pc
+                    ? `Pitch ${channelIndex + 1}`
+                    : channelIndex < pc + nc
+                        ? `Noise ${channelIndex - pc + 1}`
+                        : `Mod ${channelIndex - pc - nc + 1}`);
+            const hdr = HTML.div({
+                style: `padding:4px 8px;
+                        color:${ColorConfig.secondaryText};
+                        pointer-events:none;
+                        font-weight:bold;`
+            }, displayName);
+            this._channelContextMenu.appendChild(hdr);
+            const sep = HTML.div({
+                style: `border-top:1px solid ${ColorConfig.primaryText};
+                    margin:4px 0;
+                    pointer-events:none;`
+            });
+            this._channelContextMenu.appendChild(sep);
+            const options = [
+                { label: "Rename…", action: "rename" },
+                { label: "Move Channel Up", action: "chnUp" },
+                { label: "Move Channel Down", action: "chnDown" },
+                { label: ch.muted ? "Unmute Channel" : "Mute Channel", action: "chnMute" },
+                { label: "Solo Channel", action: "chnSolo" },
+                { label: "Insert Channel Below", action: "chnInsert" },
+                { label: "Delete This Channel", action: "chnDelete" }
+            ];
+            for (const o of options) {
+                const d = HTML.div({ "data-action": o.action,
+                    style: `padding:4px 8px;
+                          cursor:pointer;
+                          color:${ColorConfig.primaryText};`
+                }, o.label);
+                d.addEventListener("mouseenter", () => d.style.backgroundColor = ColorConfig.uiWidgetFocus);
+                d.addEventListener("mouseleave", () => d.style.backgroundColor = "transparent");
+                this._channelContextMenu.appendChild(d);
+            }
+            this._channelContextMenu.style.visibility = "hidden";
+            this._channelContextMenu.style.display = "block";
+            const h = this._channelContextMenu.offsetHeight;
+            this._channelContextMenu.style.visibility = "";
+            this._channelContextMenu.style.left = `${event.clientX}px`;
+            this._channelContextMenu.style.top = `${event.clientY - h}px`;
         }
     }
 
@@ -45423,6 +45596,7 @@ You should be redirected to the song at:<br /><br />
 					padding-left: 4px;
 					margin: 0;
 					height: ${ChannelRow.patternHeight}px;
+					box-sizing: border-box;
 					background: transparent;
             `,
             });
@@ -45515,20 +45689,10 @@ You should be redirected to the song at:<br /><br />
                 class: "trackSelectBox",
                 style: "background: none; border: none; appearance: none; border-radius: initial; box-shadow: none; color: transparent; position: absolute; touch-action: none;",
             });
-            this._tagDropDown = HTML.select({
-                class: "trackTagSelectBox",
-                style: `
-			 width: 32px;
-			 height: ${Config.barEditorHeight}px;
-			 position: absolute;
-			 top: 0;
-			 opacity: 0;
-		  `,
-            });
             this.container = HTML.div({
                 class: "noSelection",
                 style: `background-color: ${ColorConfig.editorBackground}; position: relative; overflow: hidden;`,
-            }, this._channelRowContainer, this._svg, this._select, this._tagDropDown, this._barDropDown);
+            }, this._channelRowContainer, this._svg, this._select, this._barDropDown);
             this._channels = [];
             this._barNumbers = [];
             this._mouseX = 0;
@@ -45620,10 +45784,33 @@ You should be redirected to the song at:<br /><br />
             };
             this._whenMousePressed = (event) => {
                 event.preventDefault();
+                if (event.button !== 0)
+                    return;
                 this._mousePressed = true;
                 this._updateMousePos(event);
                 this._mouseStartBar = this._mouseBar;
                 this._mouseStartChannel = this._mouseChannel;
+                const tagRow = this._getTagRowAtY(this._mouseY);
+                if (tagRow) {
+                    if (event.button !== 0) {
+                        this._mousePressed = false;
+                        this._mouseDragging = false;
+                        return;
+                    }
+                    const tagId = tagRow.dataset.tagId;
+                    if (tagId) {
+                        const tag = this._doc.song.channelTags.find(t => t.id === tagId);
+                        if (tag) {
+                            const orig = tag.name;
+                            const collapsed = orig.endsWith("...");
+                            const newName = collapsed ? orig.slice(0, -3) : orig + "...";
+                            this._doc.record(new ChangeRenameChannelTag(this._doc, tag.id, newName));
+                        }
+                    }
+                    this._mousePressed = false;
+                    this._mouseDragging = false;
+                    return;
+                }
                 if (this._mouseY >= Config.barEditorHeight) {
                     if (event.shiftKey) {
                         this._mouseDragging = true;
@@ -45653,32 +45840,59 @@ You should be redirected to the song at:<br /><br />
                 this._updatePreview();
             };
             this._whenMouseReleased = (event) => {
+                if (event.button !== 0)
+                    return;
                 if (this._mousePressed && !this._mouseDragging) {
                     if (this._doc.channel == this._mouseChannel &&
                         this._doc.bar == this._mouseBar) {
-                        const rowIdx = this._rowIndexFromChannel(this._mouseChannel);
-                        const rowTop = this._svg.getBoundingClientRect().top +
-                            Config.barEditorHeight +
-                            rowIdx * ChannelRow.patternHeight;
-                        const localY = event.clientY - rowTop;
-                        const up = localY < ChannelRow.patternHeight / 2;
-                        const patternCount = this._doc.song.patternsPerChannel;
-                        this._doc.selection.setPattern((this._doc.song.channels[this._mouseChannel].bars[this._mouseBar] +
-                            (up ? 1 : patternCount)) %
-                            (patternCount + 1));
+                        const visualRowInfo = this._getVisualRowInfo(this._mouseChannel);
+                        if (visualRowInfo) {
+                            const rowTop = visualRowInfo.y;
+                            const localY = this._mouseY - rowTop;
+                            const up = localY < visualRowInfo.height / 2;
+                            const patternCount = this._doc.song.patternsPerChannel;
+                            this._doc.selection.setPattern((this._doc.song.channels[this._mouseChannel].bars[this._mouseBar] +
+                                (up ? 1 : patternCount)) %
+                                (patternCount + 1));
+                        }
                     }
                 }
                 this._mousePressed = false;
                 this._mouseDragging = false;
                 this._updatePreview();
             };
-            this._tagDropDown.selectedIndex = -1;
+            this._whenContextMenu = (event) => {
+                event.preventDefault();
+                this._updateMousePos(event);
+                const tagRow = this._getTagRowAtY(this._mouseY);
+                if (tagRow) {
+                    document.dispatchEvent(new CustomEvent("muteeditor-open-tag-menu", {
+                        detail: { tagId: tagRow.dataset.tagId, originalEvent: event },
+                    }));
+                    this._boxHighlight.style.visibility = "hidden";
+                    this._upHighlight.style.visibility = "hidden";
+                    this._downHighlight.style.visibility = "hidden";
+                    return;
+                }
+                if (this._mouseY >= Config.barEditorHeight) {
+                    const ch = this._mouseChannel;
+                    document.dispatchEvent(new CustomEvent("muteeditor-open-channel-menu", {
+                        detail: { channelIndex: ch, originalEvent: event },
+                    }));
+                    this._boxHighlight.style.visibility = "hidden";
+                    this._upHighlight.style.visibility = "hidden";
+                    this._downHighlight.style.visibility = "hidden";
+                    return;
+                }
+                this._updatePreview();
+            };
             window.requestAnimationFrame(this._animatePlayhead);
             this._svg.addEventListener("mousedown", this._whenMousePressed);
             document.addEventListener("mousemove", this._whenMouseMoved);
             document.addEventListener("mouseup", this._whenMouseReleased);
             this._svg.addEventListener("mouseover", this._whenMouseOver);
             this._svg.addEventListener("mouseout", this._whenMouseOut);
+            this._svg.addEventListener("contextmenu", this._whenContextMenu);
             this._select.addEventListener("change", this._whenSelectChanged);
             this._select.addEventListener("touchstart", this._whenSelectPressed);
             this._select.addEventListener("touchmove", this._whenSelectMoved);
@@ -45759,28 +45973,60 @@ You should be redirected to the song at:<br /><br />
         _computeChannelIndexFromY(relY) {
             const rows = Array.from(this._channelRowContainer.children);
             let cum = 0;
-            let channelCount = 0;
             for (const row of rows) {
-                const h = row.getBoundingClientRect().height;
+                if (row.style.display === "none")
+                    continue;
+                const h = row.offsetHeight;
                 if (relY < cum + h) {
                     if (row.classList.contains("tagRow")) {
                         const idx = parseInt(row.dataset.startChannel);
                         return isNaN(idx) ? 0 : idx;
                     }
                     else {
-                        return channelCount;
+                        const idx = parseInt(row.dataset.channelIndex);
+                        return isNaN(idx) ? 0 : idx;
                     }
                 }
-                if (!row.classList.contains("tagRow"))
-                    channelCount++;
                 cum += h;
             }
             return Math.max(0, this._doc.song.getChannelCount() - 1);
         }
-        _rowIndexFromChannel(channel) {
-            const tags = this._doc.song.channelTags;
-            const count = tags.filter(t => t.startChannel <= channel).length;
-            return channel + count;
+        _getVisualRowInfo(channelIndex) {
+            let cumulativeY = Config.barEditorHeight;
+            const channelRow = this._channelRowContainer.querySelector(`[data-channel-index='${channelIndex}']`);
+            if (!channelRow || channelRow.style.display === "none") {
+                return null;
+            }
+            const rows = Array.from(this._channelRowContainer.children);
+            for (const row of rows) {
+                if (row.style.display === "none")
+                    continue;
+                if (row === channelRow) {
+                    return { y: cumulativeY, height: row.offsetHeight };
+                }
+                cumulativeY += row.offsetHeight;
+            }
+            return null;
+        }
+        _getTagRowAtY(y) {
+            const relY = y - Config.barEditorHeight;
+            if (relY < 0)
+                return null;
+            let cumulativeHeight = 0;
+            const rows = Array.from(this._channelRowContainer.children);
+            for (const row of rows) {
+                if (row.style.display === "none")
+                    continue;
+                const rowHeight = row.offsetHeight;
+                if (relY >= cumulativeHeight && relY < cumulativeHeight + rowHeight) {
+                    if (row.classList.contains("tagRow")) {
+                        return row;
+                    }
+                    return null;
+                }
+                cumulativeHeight += rowHeight;
+            }
+            return null;
         }
         movePlayheadToMouse() {
             if (this._mouseOver) {
@@ -45819,6 +46065,16 @@ You should be redirected to the song at:<br /><br />
             this._mouseChannel = this._computeChannelIndexFromY(relY);
         }
         _updatePreview() {
+            if (this._mouseOver && this._getTagRowAtY(this._mouseY)) {
+                this._svg.style.cursor = "pointer";
+                this._boxHighlight.style.visibility = "hidden";
+                this._upHighlight.style.visibility = "hidden";
+                this._downHighlight.style.visibility = "hidden";
+                return;
+            }
+            else if (this._mouseOver) {
+                this._svg.style.cursor = "default";
+            }
             let channel = this._mouseChannel;
             let bar = this._mouseBar;
             if (this._touchMode) {
@@ -45827,6 +46083,7 @@ You should be redirected to the song at:<br /><br />
             }
             const selected = bar == this._doc.bar && channel == this._doc.channel;
             const overTrackEditor = this._mouseY >= Config.barEditorHeight;
+            const visualRowInfo = this._getVisualRowInfo(channel);
             if (this._mouseDragging && this._mouseStartBar != this._mouseBar) {
                 var timestamp = Date.now();
                 if (timestamp - this._lastScrollTime >= 50) {
@@ -45841,11 +46098,10 @@ You should be redirected to the song at:<br /><br />
                     this._lastScrollTime = timestamp;
                 }
             }
-            if (this._mouseOver && !this._mousePressed && !selected && overTrackEditor) {
-                const hoverRow = this._rowIndexFromChannel(channel);
+            if (this._mouseOver && !this._mousePressed && !selected && overTrackEditor && visualRowInfo) {
                 this._boxHighlight.setAttribute("x", "" + (1 + this._barWidth * bar));
-                this._boxHighlight.setAttribute("y", "" + (1 + Config.barEditorHeight + ChannelRow.patternHeight * hoverRow));
-                this._boxHighlight.setAttribute("height", "" + (ChannelRow.patternHeight - 2));
+                this._boxHighlight.setAttribute("y", "" + (1 + visualRowInfo.y));
+                this._boxHighlight.setAttribute("height", "" + (visualRowInfo.height - 2));
                 this._boxHighlight.setAttribute("width", "" + (this._barWidth - 2));
                 this._boxHighlight.style.visibility = "visible";
             }
@@ -45862,17 +46118,13 @@ You should be redirected to the song at:<br /><br />
             else {
                 this._boxHighlight.style.visibility = "hidden";
             }
-            if ((this._mouseOver || this._touchMode) && selected && overTrackEditor) {
-                const up = (this._mouseY - Config.barEditorHeight) %
-                    ChannelRow.patternHeight <
-                    ChannelRow.patternHeight / 2;
+            if ((this._mouseOver || this._touchMode) && selected && overTrackEditor && visualRowInfo) {
+                const up = (this._mouseY - visualRowInfo.y) < visualRowInfo.height / 2;
                 const center = this._barWidth * (bar + 0.8);
-                const rowIdx = this._rowIndexFromChannel(channel);
-                const middle = Config.barEditorHeight +
-                    ChannelRow.patternHeight * (rowIdx + 0.5);
-                const base = ChannelRow.patternHeight * 0.1;
-                const tip = ChannelRow.patternHeight * 0.4;
-                const width = ChannelRow.patternHeight * 0.175;
+                const middle = visualRowInfo.y + visualRowInfo.height * 0.5;
+                const base = visualRowInfo.height * 0.1;
+                const tip = visualRowInfo.height * 0.4;
+                const width = visualRowInfo.height * 0.175;
                 this._upHighlight.setAttribute("fill", up && !this._touchMode
                     ? ColorConfig.hoverPreview
                     : ColorConfig.invertedText);
@@ -45888,13 +46140,13 @@ You should be redirected to the song at:<br /><br />
                 this._upHighlight.style.visibility = "hidden";
                 this._downHighlight.style.visibility = "hidden";
             }
-            this._select.style.left = this._barWidth * this._doc.bar + "px";
-            this._select.style.width = this._barWidth + "px";
-            this._select.style.top =
-                Config.barEditorHeight +
-                    ChannelRow.patternHeight * this._doc.channel +
-                    "px";
-            this._select.style.height = ChannelRow.patternHeight + "px";
+            const selectedVisualRow = this._getVisualRowInfo(this._doc.channel);
+            if (selectedVisualRow) {
+                this._select.style.left = this._barWidth * this._doc.bar + "px";
+                this._select.style.width = this._barWidth + "px";
+                this._select.style.top = selectedVisualRow.y + "px";
+                this._select.style.height = selectedVisualRow.height + "px";
+            }
             this._barDropDown.style.left = this._barWidth * bar + "px";
             const patternCount = this._doc.song.patternsPerChannel + 1;
             for (let i = this._renderedPatternCount; i < patternCount; i++) {
@@ -45928,6 +46180,7 @@ You should be redirected to the song at:<br /><br />
                     this._tagRows.set(tag.id, new TagRow(tag));
                 }
                 const row = this._tagRows.get(tag.id);
+                row.container.dataset.tagId = tag.id;
                 row.update(tag);
                 row.setColor(this._channelColors.get(tag.startChannel).primary);
             });
@@ -45936,11 +46189,25 @@ You should be redirected to the song at:<br /><br />
                     this._tagRows.delete(id);
             }
             this._channelRowContainer.innerHTML = "";
+            const collapsedTagIds = new Set(tags.filter(t => t.name.endsWith("...")).map(t => t.id));
             for (let ch = 0; ch < channelCount; ch++) {
                 tags
                     .filter(t => t.startChannel === ch)
-                    .forEach(t => this._channelRowContainer.appendChild(this._tagRows.get(t.id).container));
-                this._channelRowContainer.appendChild(this._channels[ch].container);
+                    .forEach(tag => {
+                    const tagRow = this._tagRows.get(tag.id).container;
+                    const isInsideCollapsed = tags.some(p => collapsedTagIds.has(p.id) &&
+                        tag.startChannel >= p.startChannel &&
+                        tag.endChannel <= p.endChannel &&
+                        p.id !== tag.id);
+                    tagRow.style.display = isInsideCollapsed ? "none" : "flex";
+                    this._channelRowContainer.appendChild(tagRow);
+                });
+                const channelRow = this._channels[ch].container;
+                const parentTag = tags.find(t => ch >= t.startChannel &&
+                    ch <= t.endChannel &&
+                    collapsedTagIds.has(t.id));
+                channelRow.style.display = parentTag ? "none" : "";
+                this._channelRowContainer.appendChild(channelRow);
             }
             const editorWidth = this._barWidth * this._doc.song.barCount;
             if (this._renderedEditorWidth != editorWidth) {
@@ -45985,32 +46252,58 @@ You should be redirected to the song at:<br /><br />
                     this._barNumbers[pos].setAttribute("x", pos * this._barWidth + this._barWidth / 2 + "px");
                 }
             }
-            const totalRows = channelCount + tags.length;
-            for (let i = 0; i < totalRows; i++) {
-                const rowElem = this._channelRowContainer.children[i];
-                rowElem.style.position = "relative";
-                Array.from(rowElem.querySelectorAll(".tagBorder")).forEach(el => el.remove());
-            }
+            Array.from(this.container.querySelectorAll(".tagBorder")).forEach(el => el.remove());
             tags.forEach(tag => {
-                const group = tags.filter(t => t.endChannel === tag.endChannel);
-                const indexInGroup = group.findIndex(t => t.id === tag.id);
                 const color = this._channelColors.get(tag.startChannel).primary;
-                const rowIdx = this._rowIndexFromChannel(tag.endChannel);
-                const rowElem = this._channelRowContainer.children[rowIdx];
-                const channelBorder = HTML.div({
-                    class: "tagBorder",
-                    style: `position: absolute; bottom: ${indexInGroup * 3}px; left: 0; width: 100%; height: 2px; background: ${color}; pointer-events: none; z-index: ${100 + indexInGroup};`,
-                });
-                rowElem.appendChild(channelBorder);
+                const sameEnd = tags.filter(t => t.endChannel === tag.endChannel);
+                const idx = sameEnd.findIndex(t => t.id === tag.id);
                 const tagRowElem = this._tagRows.get(tag.id).container;
-                const tagBorder = HTML.div({
-                    class: "tagBorder",
-                    style: `position: absolute; bottom: 0; left: 0; width: 100%; height: 2px; background: ${color}; pointer-events: none; z-index: ${200 + indexInGroup};`,
-                });
-                tagRowElem.style.position = "relative";
-                tagRowElem.appendChild(tagBorder);
+                const isCollapsed = collapsedTagIds.has(tag.id);
+                if (!isCollapsed) {
+                    const top = HTML.div({
+                        class: "tagBorder",
+                        style: `position:absolute;bottom:0;left:0;
+                           width:100%;height:2px;background:${color};
+                           pointer-events:none;z-index:${200 + idx};`,
+                    });
+                    tagRowElem.style.position = "relative";
+                    tagRowElem.appendChild(top);
+                }
+                let attachElem = null;
+                const channelRow = this._channelRowContainer.querySelector(`[data-channel-index='${tag.endChannel}']`);
+                if (channelRow && channelRow.style.display !== "none") {
+                    attachElem = channelRow;
+                }
+                else {
+                    const candidates = tags
+                        .map(t2 => this._tagRows.get(t2.id).container)
+                        .filter(el => el.style.display !== "none")
+                        .filter(el => {
+                        const start = parseInt(el.dataset.startChannel);
+                        const t2 = tags.find(x => x.id === el.dataset.tagId);
+                        return start <= tag.endChannel && tag.endChannel <= t2.endChannel;
+                    });
+                    if (candidates.length) {
+                        attachElem = candidates.reduce((best, cur) => {
+                            return parseInt(cur.dataset.startChannel) >
+                                parseInt(best.dataset.startChannel)
+                                ? cur
+                                : best;
+                        }, candidates[0]);
+                    }
+                }
+                if (attachElem) {
+                    const bot = HTML.div({
+                        class: "tagBorder",
+                        style: `position:absolute;bottom:${idx * 3}px;left:0;
+                           width:100%;height:2px;background:${color};
+                           pointer-events:none;z-index:${100 + idx};`,
+                    });
+                    attachElem.style.position = "relative";
+                    attachElem.appendChild(bot);
+                }
             });
-            const editorHeightVisual = totalRows * ChannelRow.patternHeight;
+            const editorHeightVisual = Array.from(this._channelRowContainer.children).reduce((sum, child) => sum + child.offsetHeight, 0);
             if (this._renderedEditorHeight !== editorHeightVisual) {
                 this._renderedEditorHeight = editorHeightVisual;
                 this._svg.setAttribute("height", "" + (editorHeightVisual + Config.barEditorHeight));
@@ -46021,13 +46314,18 @@ You should be redirected to the song at:<br /><br />
             if (this._doc.selection.boxSelectionActive) {
                 const startCh = this._doc.selection.boxSelectionChannel;
                 const endCh = startCh + this._doc.selection.boxSelectionHeight - 1;
-                const vs = this._rowIndexFromChannel(startCh);
-                const ve = this._rowIndexFromChannel(Math.min(endCh, this._doc.song.getChannelCount() - 1));
-                this._selectionRect.setAttribute("x", String(this._barWidth * this._doc.selection.boxSelectionBar + 1));
-                this._selectionRect.setAttribute("y", String(Config.barEditorHeight + ChannelRow.patternHeight * vs + 1));
-                this._selectionRect.setAttribute("width", String(this._barWidth * this._doc.selection.boxSelectionWidth - 2));
-                this._selectionRect.setAttribute("height", String((ve - vs + 1) * ChannelRow.patternHeight - 2));
-                this._selectionRect.setAttribute("visibility", "visible");
+                const startVisual = this._getVisualRowInfo(startCh);
+                const endVisual = this._getVisualRowInfo(Math.min(endCh, this._doc.song.getChannelCount() - 1));
+                if (startVisual && endVisual) {
+                    this._selectionRect.setAttribute("x", String(this._barWidth * this._doc.selection.boxSelectionBar + 1));
+                    this._selectionRect.setAttribute("y", String(startVisual.y + 1));
+                    this._selectionRect.setAttribute("width", String(this._barWidth * this._doc.selection.boxSelectionWidth - 2));
+                    this._selectionRect.setAttribute("height", String((endVisual.y + endVisual.height) - startVisual.y - 2));
+                    this._selectionRect.setAttribute("visibility", "visible");
+                }
+                else {
+                    this._selectionRect.setAttribute("visibility", "hidden");
+                }
             }
             else {
                 this._selectionRect.setAttribute("visibility", "hidden");
