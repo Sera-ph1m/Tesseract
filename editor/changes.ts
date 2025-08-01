@@ -2306,25 +2306,36 @@ export class ChangeAddChannel extends Change {
 
 
 export class ChangeRemoveChannel extends Change {
-	private _removedChannel: Channel;
-	private _index: number;
+    private _removedChannel: Channel;
+    private _index: number;
+    private _oldChannelIndex: number; // Store the original selected channel index
 
-	constructor(doc: SongDocument, index: number) {
-		super(); // No arguments here.
-		// IMPORTANT: Capture the state *before* performing the action.
-		this._removedChannel = doc.song.channels[index];
-		this._index = index;
+    constructor(doc: SongDocument, index: number) {
+        super();
+        this._oldChannelIndex = doc.channel; // Capture current channel index before any changes
+        this._removedChannel = doc.song.channels[index];
+        this._index = index;
 
-		// Perform the action immediately in the constructor, using the passed 'doc'.
-		doc.song.removeChannel(this._index);
-		doc.notifier.changed();
-		this._didSomething();
-	}
+        // If the channel being removed is the currently selected channel AND
+        // it's the last channel in the array (and there's more than one channel total),
+        // then move the selected channel index to the one before it.
+        // This prevents the doc.channel from becoming an out-of-bounds index after removal.
+        if (doc.channel >= this._index && doc.song.channels.length > 1) {
+            if (doc.channel == this._index && doc.channel == doc.song.channels.length - 1) {
+                doc.channel--;
+            }
+        }
 
-	protected _undo(doc: SongDocument): void {
-		doc.song.restoreChannel(this._removedChannel, this._index);
-		doc.notifier.changed();
-	}
+        doc.song.removeChannel(this._index); // Perform the removal
+        doc.notifier.changed(); // Notify listeners of the change
+        this._didSomething(); // Mark this change as having performed an action
+    }
+
+    protected _undo(doc: SongDocument): void {
+        doc.song.restoreChannel(this._removedChannel, this._index); // Restore the channel
+        doc.channel = this._oldChannelIndex; // Restore the original selected channel index
+        doc.notifier.changed(); // Notify listeners of the undo
+    }
 }
 
 export class ChangeChannelBar extends Change {

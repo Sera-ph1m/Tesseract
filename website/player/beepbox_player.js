@@ -12776,6 +12776,8 @@ var beepbox = (function (exports) {
             events.raise("channelsChanged", null);
         }
         removeChannel(index) {
+            if (this.channels.length <= 1)
+                return;
             if (index < 0 || index >= this.channels.length)
                 return;
             const remap = (oldIndex) => {
@@ -12787,7 +12789,21 @@ var beepbox = (function (exports) {
             };
             this._updateAllModTargetIndices(remap);
             this.channels.splice(index, 1);
+            for (let i = this.channelTags.length - 1; i >= 0; i--) {
+                const tag = this.channelTags[i];
+                if (index < tag.startChannel) {
+                    tag.startChannel--;
+                    tag.endChannel--;
+                }
+                else if (index >= tag.startChannel && index <= tag.endChannel) {
+                    tag.endChannel--;
+                }
+                if (tag.startChannel > tag.endChannel) {
+                    this.channelTags.splice(i, 1);
+                }
+            }
             this.updateDefaultChannelNames();
+            events.raise("channelsChanged", null);
         }
         removeChannelType(type) {
             const candidates = this._getChannelsOfType(type);

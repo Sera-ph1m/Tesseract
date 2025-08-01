@@ -3816,19 +3816,39 @@ export class Song {
     }
 
     public removeChannel(index: number): void {
-        if (index < 0 || index >= this.channels.length) return;
+		if (this.channels.length <= 1) return;
+		if (index < 0 || index >= this.channels.length) return;
 
-        // Before modifying the array, update all existing modulators.
-        const remap = (oldIndex: number) => {
-            if (oldIndex === index) return -2; // Target was deleted, set to "None".
-            if (oldIndex > index) return oldIndex - 1; // Target was shifted left.
-            return oldIndex;
-        };
-        this._updateAllModTargetIndices(remap);
-        this.channels.splice(index, 1);
-        this.updateDefaultChannelNames();
-    }
+		// Before modifying the array, update all existing modulators.
+		const remap = (oldIndex: number) => {
+			if (oldIndex === index) return -2; // Target was deleted, set to "None".
+			if (oldIndex > index) return oldIndex - 1; // Target was shifted left.
+			return oldIndex;
+		};
+		this._updateAllModTargetIndices(remap);
+		this.channels.splice(index, 1);
 
+		// Adjust channel tags to account for the removed channel.
+		for (let i = this.channelTags.length - 1; i >= 0; i--) {
+			const tag = this.channelTags[i];
+
+			if (index < tag.startChannel) {
+				// The removed channel was before the tag, so the whole tag shifts left.
+				tag.startChannel--;
+				tag.endChannel--;
+			} else if (index >= tag.startChannel && index <= tag.endChannel) {
+				// The removed channel was inside the tag, so the tag shrinks.
+				tag.endChannel--;
+			}
+
+			if (tag.startChannel > tag.endChannel) {
+				this.channelTags.splice(i, 1);
+			}
+		}
+
+		this.updateDefaultChannelNames();
+		events.raise("channelsChanged", null);
+	}
 
     public removeChannelType(type: ChannelType): void {
         const candidates = this._getChannelsOfType(type);

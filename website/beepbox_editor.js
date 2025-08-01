@@ -14669,6 +14669,8 @@ li.select2-results__option[role=group] > strong:hover {
             events.raise("channelsChanged", null);
         }
         removeChannel(index) {
+            if (this.channels.length <= 1)
+                return;
             if (index < 0 || index >= this.channels.length)
                 return;
             const remap = (oldIndex) => {
@@ -14680,7 +14682,21 @@ li.select2-results__option[role=group] > strong:hover {
             };
             this._updateAllModTargetIndices(remap);
             this.channels.splice(index, 1);
+            for (let i = this.channelTags.length - 1; i >= 0; i--) {
+                const tag = this.channelTags[i];
+                if (index < tag.startChannel) {
+                    tag.startChannel--;
+                    tag.endChannel--;
+                }
+                else if (index >= tag.startChannel && index <= tag.endChannel) {
+                    tag.endChannel--;
+                }
+                if (tag.startChannel > tag.endChannel) {
+                    this.channelTags.splice(i, 1);
+                }
+            }
             this.updateDefaultChannelNames();
+            events.raise("channelsChanged", null);
         }
         removeChannelType(type) {
             const candidates = this._getChannelsOfType(type);
@@ -28670,14 +28686,21 @@ li.select2-results__option[role=group] > strong:hover {
     class ChangeRemoveChannel extends Change {
         constructor(doc, index) {
             super();
+            this._oldChannelIndex = doc.channel;
             this._removedChannel = doc.song.channels[index];
             this._index = index;
+            if (doc.channel >= this._index && doc.song.channels.length > 1) {
+                if (doc.channel == this._index && doc.channel == doc.song.channels.length - 1) {
+                    doc.channel--;
+                }
+            }
             doc.song.removeChannel(this._index);
             doc.notifier.changed();
             this._didSomething();
         }
         _undo(doc) {
             doc.song.restoreChannel(this._removedChannel, this._index);
+            doc.channel = this._oldChannelIndex;
             doc.notifier.changed();
         }
     }
