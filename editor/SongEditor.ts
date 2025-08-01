@@ -30,6 +30,7 @@ import { BeatsPerBarPrompt } from "./BeatsPerBarPrompt";
 import { Change, ChangeGroup } from "./Change";
 import { ChannelSettingsPrompt } from "./ChannelSettingsPrompt";
 import { ColorConfig, ChannelColors } from "./ColorConfig";
+import { getPrimaryNoteColor, getSecondaryNoteColor } from "./ChannelRow";
 import { CustomChipPrompt } from "./CustomChipPrompt";
 import { CustomFilterPrompt } from "./CustomFilterPrompt";
 import { InstrumentExportPrompt } from "./InstrumentExportPrompt";
@@ -969,7 +970,7 @@ export class SongEditor {
     public readonly ringModHzNum: HTMLParagraphElement = div({ style: "font-size: 80%; ", id: "ringModHzNum" });
     private readonly _ringModHzSliderRow: HTMLDivElement = div({ class: "selectRow", style: "width:100%;" }, div({ style: "display:flex; flex-direction:column; align-items:center;" },
         span({ class: "tip", style: "font-size: smaller;", onclick: () => this._openPrompt("RingModHz") }, "Hertz: "),
-        div({ style: `color: ${ColorConfig.secondaryText}; ` }, this.ringModHzNum),
+        div({ style: `color: ${getSecondaryNoteColor(this.doc, this.doc.channel)}; ` }, this.ringModHzNum),
     ), this._ringModHzSlider.container);
     private readonly _ringModWaveText: HTMLSpanElement = span({ class: "tip", onclick: () => this._openPrompt("ringModChipWave") }, "Wave: ")
     private readonly _ringModWaveSelectRow: HTMLDivElement = div({ class: "selectRow", style: "width: 100%;" }, this._ringModWaveText, this._ringModPulsewidthSlider.container, div({ class: "selectContainer", style: "width:40%;" }, this._ringModWaveSelect));
@@ -984,7 +985,7 @@ export class SongEditor {
     public readonly grainSizeNum: HTMLParagraphElement = div({ style: "font-size: 80%; ", id: "grainSizeNum" });
     private readonly _grainSizeSliderRow: HTMLDivElement = div({ class: "selectRow", style: "width:100%;" }, div({ style: "display:flex; flex-direction:column; align-items:center;" },
         span({ class: "tip", style: "font-size: smaller;", onclick: () => this._openPrompt("grainSize") }, "Grain: "),
-        div({ style: `color: ${ColorConfig.secondaryText}; ` }, this.grainSizeNum),
+        div({ style: `color: ${getSecondaryNoteColor(this.doc, this.doc.channel)}; ` }, this.grainSizeNum),
     ), this._grainSizeSlider.container);
     private readonly _grainAmountsSlider: Slider = new Slider(input({ style: "margin: 0;", type: "range", min: "0", max: Config.grainAmountsMax, value: 8, step: "1" }), this.doc, (oldValue: number, newValue: number) => new ChangeGrainAmounts(this.doc, oldValue, newValue), false);
     private readonly _grainAmountsRow: HTMLDivElement = div({ class: "selectRow" }, span({ class: "tip", onclick: () => this._openPrompt("grainAmount") }, "Grain Freq:"), this._grainAmountsSlider.container);
@@ -992,7 +993,7 @@ export class SongEditor {
     public readonly grainRangeNum: HTMLParagraphElement = div({ style: "font-size: 80%; ", id: "grainRangeNum" });
     private readonly _grainRangeSliderRow: HTMLDivElement = div({ class: "selectRow", style: "width:100%;" }, div({ style: "display:flex; flex-direction:column; align-items:center;" },
         span({ class: "tip", style: "font-size: smaller;", onclick: () => this._openPrompt("grainRange") }, "Range: "),
-        div({ style: `color: ${ColorConfig.secondaryText}; ` }, this.grainRangeNum),
+        div({ style: `color: ${getSecondaryNoteColor(this.doc, this.doc.channel)}; ` }, this.grainRangeNum),
     ), this._grainRangeSlider.container);
     private readonly _granularContainerRow: HTMLDivElement = div({ class: "", style: "display:flex; flex-direction:column;" },
         this._granularRow,
@@ -1018,15 +1019,15 @@ export class SongEditor {
     private readonly _instrumentVolumeSliderInputBox: HTMLInputElement = input({ style: "width: 4em; font-size: 80%", id: "volumeSliderInputBox", type: "number", step: "1", min: Math.floor(-Config.volumeRange / 2), max: Math.floor(Config.volumeRange / 2), value: "0" });
     private readonly _instrumentVolumeSliderTip: HTMLDivElement = div({ class: "selectRow", style: "height: 1em" }, span({ class: "tip", style: "font-size: smaller;", onclick: () => this._openPrompt("instrumentVolume") }, "Volume: "));
     private readonly _instrumentVolumeSliderRow: HTMLDivElement = div({ class: "selectRow" }, div({},
-        div({ style: `color: ${ColorConfig.secondaryText};` }, span({ class: "tip" }, this._instrumentVolumeSliderTip)),
-        div({ style: `color: ${ColorConfig.secondaryText}; margin-top: -3px;` }, this._instrumentVolumeSliderInputBox),
+        div({ style: `color: ${getSecondaryNoteColor(this.doc, this.doc.channel)};` }, span({ class: "tip" }, this._instrumentVolumeSliderTip)),
+        div({ style: `color: ${getSecondaryNoteColor(this.doc, this.doc.channel)}; margin-top: -3px;` }, this._instrumentVolumeSliderInputBox),
     ), this._instrumentVolumeSlider.container);
     private readonly _panSlider: Slider = new Slider(input({ style: "margin: 0; position: sticky;", type: "range", min: "0", max: Config.panMax, value: Config.panCenter, step: "1" }), this.doc, (oldValue: number, newValue: number) => new ChangePan(this.doc, oldValue, newValue), true);
     private readonly _panDropdown: HTMLButtonElement = button({ style: "margin-left:0em; height:1.5em; width: 10px; padding: 0px; font-size: 8px;", onclick: () => this._toggleDropdownMenu(DropdownID.Pan) }, "▼");
     private readonly _panSliderInputBox: HTMLInputElement = input({ style: "width: 4em; font-size: 80%; ", id: "panSliderInputBox", type: "number", step: "1", min: "0", max: "100", value: "0" });
     private readonly _panSliderRow: HTMLDivElement = div({ class: "selectRow" }, div({},
         span({ class: "tip", tabindex: "0", style: "height:1em; font-size: smaller;", onclick: () => this._openPrompt("pan") }, "Pan: "),
-        div({ style: "color: " + ColorConfig.secondaryText + "; margin-top: -3px;" }, this._panSliderInputBox),
+        div({ style: "color: " + getSecondaryNoteColor(this.doc, this.doc.channel) + "; margin-top: -3px;" }, this._panSliderInputBox),
     ), this._panDropdown, this._panSlider.container);
     private readonly _panDelaySlider: Slider = new Slider(input({ style: "margin: 0;", type: "range", min: "0", max: Config.modulators.dictionary["pan delay"].maxRawVol, value: "0", step: "1" }), this.doc, (oldValue: number, newValue: number) => new ChangePanDelay(this.doc, oldValue, newValue), false);
     private readonly _panDelayRow: HTMLElement = div({ class: "selectRow dropFader" }, span({ class: "tip", style: "margin-left:4px;", onclick: () => this._openPrompt("panDelay") }, "‣ Delay:"), this._panDelaySlider.container);
@@ -1098,7 +1099,7 @@ export class SongEditor {
     private readonly _pwmSliderInputBox: HTMLInputElement = input({ style: "width: 4em; font-size: 70%;", id: "pwmSliderInputBox", type: "number", step: "1", min: "1", max: Config.pulseWidthRange, value: "1" });
     private readonly _pulseWidthRow: HTMLDivElement = div({ class: "selectRow" }, div({},
         span({ class: "tip", tabindex: "0", style: "height:1em; font-size: smaller; white-space: nowrap;", onclick: () => this._openPrompt("pulseWidth") }, "Pulse Width:"),
-        div({ style: `color: ${ColorConfig.secondaryText}; margin-top: -3px;` }, this._pwmSliderInputBox)
+        div({ style: `color: ${getSecondaryNoteColor(this.doc, this.doc.channel)}; margin-top: -3px;` }, this._pwmSliderInputBox)
     ), this._pulseWidthDropdown, this._pulseWidthSlider.container);
     //private readonly _pulseWidthRow: HTMLDivElement = div({ class: "selectRow" }, span({ class: "tip", onclick: () => this._openPrompt("pulseWidth") }, "Pulse Width:"), this._pulseWidthDropdown, this._pulseWidthSlider.container);
     private readonly _decimalOffsetSlider: Slider = new Slider(input({ style: "margin: 0;", type: "range", min: "0", max: "99", value: "0", step: "1" }), this.doc, (oldValue: number, newValue: number) => new ChangeDecimalOffset(this.doc, oldValue, 99 - newValue), false);
@@ -1114,7 +1115,7 @@ export class SongEditor {
     private readonly _detuneSliderInputBox: HTMLInputElement = input({ style: "width: 4em; font-size: 80%; ", id: "detuneSliderInputBox", type: "number", step: "1", min: Config.detuneMin - Config.detuneCenter, max: Config.detuneMax - Config.detuneCenter, value: 0 });
     private readonly _detuneSliderRow: HTMLDivElement = div({ class: "selectRow" }, div({},
         span({ class: "tip", style: "height:1em; font-size: smaller;", onclick: () => this._openPrompt("detune") }, "Detune: "),
-        div({ style: `color: ${ColorConfig.secondaryText}; margin-top: -3px;` }, this._detuneSliderInputBox),
+        div({ style: `color: ${getSecondaryNoteColor(this.doc, this.doc.channel)}; margin-top: -3px;` }, this._detuneSliderInputBox),
     ), this._detuneSlider.container);
     private readonly _distortionSlider: Slider = new Slider(input({ style: "margin: 0; position: sticky;", type: "range", min: "0", max: Config.distortionRange - 1, value: "0", step: "1" }), this.doc, (oldValue: number, newValue: number) => new ChangeDistortion(this.doc, oldValue, newValue), false);
     private readonly _distortionRow: HTMLDivElement = div({ class: "selectRow" }, span({ class: "tip", onclick: () => this._openPrompt("distortion") }, "Distortion:"), this._distortionSlider.container);
@@ -1136,28 +1137,28 @@ export class SongEditor {
     private readonly _unisonVoicesInputBox: HTMLInputElement = input({ style: "width: 150%; height: 1.5em; font-size: 80%; margin-left: 0.4em; vertical-align: middle;", id: "unisonVoicesInputBox", type: "number", step: "1", min: Config.unisonVoicesMin, max: Config.unisonVoicesMax, value: 1 });
     private readonly _unisonVoicesRow: HTMLDivElement = div({ class: "selectRow dropFader" }, div({},
         span({ class: "tip", style: "height:1em; font-size: smaller;", onclick: () => this._openPrompt("unisonVoices") }, "‣ Voices: "),
-        div({ style: "color: " + ColorConfig.secondaryText + "; margin-top: -3px;" }, this._unisonVoicesInputBox),
+        div({ style: "color: " + getSecondaryNoteColor(this.doc, this.doc.channel) + "; margin-top: -3px;" }, this._unisonVoicesInputBox),
     ));
     private readonly _unisonSpreadInputBox: HTMLInputElement = input({ style: "width: 150%; height: 1.5em; font-size: 80%; margin-left: 0.4em; vertical-align: middle;", id: "unisonSpreadInputBox", type: "number", step: "0.001", min: Config.unisonSpreadMin, max: Config.unisonSpreadMax, value: 0.0 });
     private readonly _unisonSpreadRow: HTMLDivElement = div({ class: "selectRow dropFader" }, div({},
         span({ class: "tip", style: "height:1em; font-size: smaller;", onclick: () => this._openPrompt("unisonSpread") }, "‣ Spread: "),
-        div({ style: "color: " + ColorConfig.secondaryText + "; margin-top: -3px;" }, this._unisonSpreadInputBox),
+        div({ style: "color: " + getSecondaryNoteColor(this.doc, this.doc.channel) + "; margin-top: -3px;" }, this._unisonSpreadInputBox),
     ));
 
     private readonly _unisonOffsetInputBox: HTMLInputElement = input({ style: "width: 150%; height: 1.5em; font-size: 80%; margin-left: 0.4em; vertical-align: middle;", id: "unisonOffsetInputBox", type: "number", step: "0.001", min: Config.unisonOffsetMin, max: Config.unisonOffsetMax, value: 0.0 });
     private readonly _unisonOffsetRow: HTMLDivElement = div({ class: "selectRow dropFader" }, div({},
         span({ class: "tip", style: "height:1em; font-size: smaller;", onclick: () => this._openPrompt("unisonOffset") }, "‣ Offset: "),
-        div({ style: "color: " + ColorConfig.secondaryText + "; margin-top: -3px;" }, this._unisonOffsetInputBox),
+        div({ style: "color: " + getSecondaryNoteColor(this.doc, this.doc.channel) + "; margin-top: -3px;" }, this._unisonOffsetInputBox),
     ));
     private readonly _unisonExpressionInputBox: HTMLInputElement = input({ style: "width: 150%; height: 1.5em; font-size: 80%; margin-left: 0.4em; vertical-align: middle;", id: "unisonExpressionInputBox", type: "number", step: "0.001", min: Config.unisonExpressionMin, max: Config.unisonExpressionMax, value: 1.4 });
     private readonly _unisonExpressionRow: HTMLDivElement = div({ class: "selectRow dropFader" }, div({},
         span({ class: "tip", style: "height:1em; font-size: smaller;", onclick: () => this._openPrompt("unisonExpression") }, "‣ Volume: "),
-        div({ style: "color: " + ColorConfig.secondaryText + "; margin-top: -3px;" }, this._unisonExpressionInputBox),
+        div({ style: "color: " + getSecondaryNoteColor(this.doc, this.doc.channel) + "; margin-top: -3px;" }, this._unisonExpressionInputBox),
     ));
     private readonly _unisonSignInputBox: HTMLInputElement = input({ style: "width: 150%; height: 1.5em; font-size: 80%; margin-left: 0.4em; vertical-align: middle;", id: "unisonSignInputBox", type: "number", step: "0.001", min: Config.unisonSignMin, max: Config.unisonSignMax, value: 1.0 });
     private readonly _unisonSignRow: HTMLDivElement = div({ class: "selectRow dropFader" }, div({},
         span({ class: "tip", style: "height:1em; font-size: smaller;", onclick: () => this._openPrompt("unisonSign") }, "‣ Sign: "),
-        div({ style: "color: " + ColorConfig.secondaryText + "; margin-top: -3px;" }, this._unisonSignInputBox),
+        div({ style: "color: " + getSecondaryNoteColor(this.doc, this.doc.channel) + "; margin-top: -3px;" }, this._unisonSignInputBox),
     ));
     private readonly _unisonDropdownGroup: HTMLElement = div({ class: "editor-controls", style: "display: none; gap: 3px; margin-bottom: 0.5em;" }, this._unisonVoicesRow, this._unisonSpreadRow, this._unisonOffsetRow, this._unisonExpressionRow, this._unisonSignRow);
    
@@ -1167,7 +1168,7 @@ export class SongEditor {
     private readonly _chordSelectContainer: HTMLDivElement = div({ class: "selectContainer", style: "width=100%" }, this._chordSelect);
 
     private readonly _chordSelectRow: HTMLElement = div({ class: "selectRow", style: "display: flex; flex-direction: row" }, span({ class: "tip", onclick: () => this._openPrompt("chords") }, "Chords:"), this._monophonicNoteInputBox, this._chordDropdown, this._chordSelectContainer);
-    private readonly _arpeggioSpeedDisplay: HTMLSpanElement = span({ style: `color: ${ColorConfig.secondaryText}; font-size: smaller; text-overflow: clip;` }, "x1");
+    private readonly _arpeggioSpeedDisplay: HTMLSpanElement = span({ style: `color: ${getSecondaryNoteColor(this.doc, this.doc.channel)}; font-size: smaller; text-overflow: clip;` }, "x1");
     private readonly _arpeggioSpeedSlider: Slider = new Slider(input({ style: "margin: 0;", type: "range", min: "0", max: Config.modulators.dictionary["arp speed"].maxRawVol, value: "0", step: "1" }), this.doc, (oldValue: number, newValue: number) => new ChangeArpeggioSpeed(this.doc, oldValue, newValue), false);
     private readonly _arpeggioSpeedRow: HTMLElement = div({ class: "selectRow dropFader" }, span({ class: "tip", style: "margin-left:4px;", onclick: () => this._openPrompt("arpeggioSpeed") }, "‣ Spd:"), this._arpeggioSpeedDisplay, this._arpeggioSpeedSlider.container);
     private readonly _twoNoteArpBox: HTMLInputElement = input({ type: "checkbox", style: "width: 1em; padding: 0; margin-right: 4em;" });
@@ -1180,7 +1181,7 @@ export class SongEditor {
     private readonly _vibratoSelectRow: HTMLElement = div({ class: "selectRow" }, span({ class: "tip", onclick: () => this._openPrompt("vibrato") }, "Vibrato:"), this._vibratoDropdown, div({ class: "selectContainer", style: "width: 61.5%;" }, this._vibratoSelect));
     private readonly _vibratoDepthSlider: Slider = new Slider(input({ style: "margin: 0;", type: "range", min: "0", max: Config.modulators.dictionary["vibrato depth"].maxRawVol, value: "0", step: "1" }), this.doc, (oldValue: number, newValue: number) => new ChangeVibratoDepth(this.doc, oldValue, newValue), false);
     private readonly _vibratoDepthRow: HTMLElement = div({ class: "selectRow dropFader" }, span({ class: "tip", style: "margin-left:4px;", onclick: () => this._openPrompt("vibratoDepth") }, "‣ Depth:"), this._vibratoDepthSlider.container);
-    private readonly _vibratoSpeedDisplay: HTMLSpanElement = span({ style: `color: ${ColorConfig.secondaryText}; font-size: smaller; text-overflow: clip;` }, "x1");
+    private readonly _vibratoSpeedDisplay: HTMLSpanElement = span({ style: `color: ${getSecondaryNoteColor(this.doc, this.doc.channel)}; font-size: smaller; text-overflow: clip;` }, "x1");
     private readonly _vibratoSpeedSlider: Slider = new Slider(input({ style: "margin: 0; text-overflow: clip;", type: "range", min: "0", max: Config.modulators.dictionary["vibrato speed"].maxRawVol, value: "0", step: "1" }), this.doc, (oldValue: number, newValue: number) => new ChangeVibratoSpeed(this.doc, oldValue, newValue), false);
     private readonly _vibratoSpeedRow: HTMLElement = div({ class: "selectRow dropFader" }, span({ class: "tip", style: "margin-left:4px;", onclick: () => this._openPrompt("vibratoSpeed") }, "‣ Spd:"), this._vibratoSpeedDisplay, this._vibratoSpeedSlider.container);
     private readonly _vibratoDelaySlider: Slider = new Slider(input({ style: "margin: 0;", type: "range", min: "0", max: Config.modulators.dictionary["vibrato delay"].maxRawVol, value: "0", step: "1" }), this.doc, (oldValue: number, newValue: number) => new ChangeVibratoDelay(this.doc, oldValue, newValue), false);
@@ -1200,7 +1201,7 @@ export class SongEditor {
 
     //SongEditor.ts
     readonly envelopeEditor: EnvelopeEditor = new EnvelopeEditor(this.doc, (id: number, submenu: number, subtype: string) => this._toggleDropdownMenu(id, submenu, subtype), (name: string) => this._openPrompt(name));
-    private readonly _envelopeSpeedDisplay: HTMLSpanElement = span({ style: `color: ${ColorConfig.secondaryText}; font-size: smaller; text-overflow: clip;` }, "x1");
+    private readonly _envelopeSpeedDisplay: HTMLSpanElement = span({ style: `color: ${getSecondaryNoteColor(this.doc, this.doc.channel)}; font-size: smaller; text-overflow: clip;` }, "x1");
     private readonly _envelopeSpeedSlider: Slider = new Slider(input({ style: "margin: 0;", type: "range", min: "0", max: Config.modulators.dictionary["envelope speed"].maxRawVol, value: "0", step: "1" }), this.doc, (oldValue: number, newValue: number) => new ChangeEnvelopeSpeed(this.doc, oldValue, newValue), false);
     private readonly _envelopeSpeedRow: HTMLElement = div({ class: "selectRow dropFader" }, span({ class: "tip", style: "margin-left:4px;", onclick: () => this._openPrompt("envelopeSpeed") }, "‣ Spd:"), this._envelopeSpeedDisplay, this._envelopeSpeedSlider.container);
     private readonly _envelopeDropdownGroup: HTMLElement = div({ class: "editor-controls", style: "display: none;" }, this._envelopeSpeedRow);
@@ -1373,7 +1374,7 @@ export class SongEditor {
             this._instrumentImportButton,
         ),
     );
-    private readonly _instrumentSettingsTextRow: HTMLDivElement = div({ id: "instrumentSettingsText", style: `padding: 3px 0; max-width: 15em; text-align: center; color: ${ColorConfig.secondaryText};` },
+    private readonly _instrumentSettingsTextRow: HTMLDivElement = div({ id: "instrumentSettingsText", style: `padding: 3px 0; max-width: 15em; text-align: center; color: ${getSecondaryNoteColor(this.doc, this.doc.channel)};` },
         "Instrument Settings"
     );
     private readonly _instrumentTypeSelectRow: HTMLDivElement = div({ class: "selectRow", id: "typeSelectRow" },
@@ -1450,7 +1451,7 @@ export class SongEditor {
     private readonly _sampleLoadingBar: HTMLDivElement = div({ style: `width: 0%; height: 100%; background-color: ${ColorConfig.indicatorPrimary};` });
     private readonly _sampleLoadingBarContainer: HTMLDivElement = div({ style: `width: 80%; height: 4px; overflow: hidden; margin-left: auto; margin-right: auto; margin-top: 0.5em; cursor: pointer; background-color: ${ColorConfig.indicatorSecondary};` }, this._sampleLoadingBar);
     private readonly _sampleLoadingStatusContainer: HTMLDivElement = div({ style: "cursor: pointer;" },
-        div({ style: `margin-top: 0.5em; text-align: center; color: ${ColorConfig.secondaryText};` }, "Sample Loading Status"),
+        div({ style: `margin-top: 0.5em; text-align: center; color: ${getSecondaryNoteColor(this.doc, this.doc.channel)};` }, "Sample Loading Status"),
         div({ class: "selectRow", style: "height: 6px; margin-bottom: 0.5em;" },
             this._sampleLoadingBarContainer,
         ),
@@ -1459,7 +1460,7 @@ export class SongEditor {
     private readonly _songSettingsArea: HTMLDivElement = div({ class: "song-settings-area" },
         div({ class: "editor-controls" },
             div({ class: "editor-song-settings" },
-                div({ style: "margin: 3px 0; position: relative; text-align: center; color: ${ColorConfig.secondaryText};" },
+                div({ style: "margin: 3px 0; position: relative; text-align: center; color: ${getSecondaryNoteColor(this.doc, this.doc.channel)};" },
                     div({ class: "tip", style: "flex-shrink: 0; position:absolute; left: 0; top: 0; width: 12px; height: 12px", onclick: () => this._openPrompt("usedPattern") },
                         SVG.svg({ style: "flex-shrink: 0; position: absolute; left: 0; top: 0; pointer-events: none;", width: "12px", height: "12px", "margin-right": "0.5em", viewBox: "-6 -6 12 12" },
                             this._usedPatternIndicator,
@@ -1510,7 +1511,7 @@ export class SongEditor {
         this._modulatorGroup);
     public readonly _settingsArea: HTMLDivElement = div({ class: "settings-area noSelection" },
         div({ class: "version-area" },
-            div({ style: `text-align: center; margin: 3px 0; color: ${ColorConfig.secondaryText};` },
+            div({ style: `text-align: center; margin: 3px 0; color: ${getSecondaryNoteColor(this.doc, this.doc.channel)};` },
                 this._songTitleInputBox.input,
             ),
         ),
@@ -1623,14 +1624,14 @@ export class SongEditor {
             this._modSliderValues[i] = [];
         }
 
-        this._phaseModGroup.appendChild(div({ class: "selectRow", style: `color: ${ColorConfig.secondaryText}; height: 1em; margin-top: 0.5em;` },
+        this._phaseModGroup.appendChild(div({ class: "selectRow", style: `color: ${getSecondaryNoteColor(this.doc, this.doc.channel)}; height: 1em; margin-top: 0.5em;` },
             div({ style: "margin-right: .1em; visibility: hidden;" }, 1 + "."),
             div({ style: "width: 3em; margin-right: .3em;", class: "tip", onclick: () => this._openPrompt("operatorFrequency") }, "Freq:"),
             div({ class: "tip", onclick: () => this._openPrompt("operatorVolume") }, "Volume:"),
         ));
         for (let i: number = 0; i < Config.operatorCount + 2; i++) {
             const operatorIndex: number = i;
-            const operatorNumber: HTMLDivElement = div({ style: "margin-right: 0px; color: " + ColorConfig.secondaryText + ";" }, i + 1 + "");
+            const operatorNumber: HTMLDivElement = div({ style: "margin-right: 0px; color: " + getSecondaryNoteColor(this.doc, this.doc.channel) + ";" }, i + 1 + "");
             const frequencySelect: HTMLSelectElement = buildOptions(select({ style: "width: 100%;", title: "Frequency" }), Config.operatorFrequencies.map(freq => freq.name));
             const amplitudeSlider: Slider = new Slider(input({ type: "range", min: "0", max: Config.operatorAmplitudeMax, value: "0", step: "1", title: "Volume" }), this.doc, (oldValue: number, newValue: number) => new ChangeOperatorAmplitude(this.doc, operatorIndex, oldValue, newValue), false);
             const waveformSelect: HTMLSelectElement = buildOptions(select({ style: "width: 100%;", title: "Waveform" }), Config.operatorWaves.map(wave => wave.name));
@@ -1743,7 +1744,7 @@ export class SongEditor {
             this._modEnvelopeBoxes.push(modEnvelopeBox);
             this._modTargetIndicators.push(modTarget);
 
-            this._modulatorGroup.appendChild(div({ style: "margin: 3px 0; font-weight: bold; margin-bottom: 0.7em; text-align: center; color: " + ColorConfig.secondaryText + "; background: " + ColorConfig.uiWidgetBackground + ";" }, ["Modulator " + (mod + 1), modTarget]));
+            this._modulatorGroup.appendChild(div({ style: "margin: 3px 0; font-weight: bold; margin-bottom: 0.7em; text-align: center; color: currentColor;" }, ["Modulator " + (mod + 1), modTarget]));
             this._modulatorGroup.appendChild(modNameRow);
             this._modulatorGroup.appendChild(modSetRow);
             this._modulatorGroup.appendChild(modFilterRow);
@@ -2599,8 +2600,14 @@ export class SongEditor {
             this._songEqFilterEditor.render();
         }
 
-        this._eqFilterTypeRow.style.setProperty("--text-color-lit", colors.primaryNote);
-        this._eqFilterTypeRow.style.setProperty("--text-color-dim", colors.secondaryNote);
+        this._eqFilterTypeRow.style.setProperty(
+            "--text-color-lit",
+            getPrimaryNoteColor(this.doc, this.doc.channel)
+        );
+        this._eqFilterTypeRow.style.setProperty(
+            "--text-color-dim",
+            getSecondaryNoteColor(this.doc, this.doc.channel)
+        );
         this._eqFilterTypeRow.style.setProperty("--background-color-lit", colors.primaryChannel);
         this._eqFilterTypeRow.style.setProperty("--background-color-dim", colors.secondaryChannel);
 
@@ -2986,8 +2993,14 @@ export class SongEditor {
 
             if (effectsIncludeNoteFilter(instrument.effects)) {
 
-                this._noteFilterTypeRow.style.setProperty("--text-color-lit", colors.primaryNote);
-                this._noteFilterTypeRow.style.setProperty("--text-color-dim", colors.secondaryNote);
+                this._noteFilterTypeRow.style.setProperty(
+                    "--text-color-lit",
+                    getPrimaryNoteColor(this.doc, this.doc.channel)
+                );
+                this._noteFilterTypeRow.style.setProperty(
+                    "--text-color-dim",
+                    getSecondaryNoteColor(this.doc, this.doc.channel)
+                );
                 this._noteFilterTypeRow.style.setProperty("--background-color-lit", colors.primaryChannel);
                 this._noteFilterTypeRow.style.setProperty("--background-color-dim", colors.secondaryChannel);
                 this._noteFilterTypeRow.style.display = "";
@@ -3130,7 +3143,7 @@ export class SongEditor {
                 }
             }
 
-            this._instrumentSettingsGroup.style.color = ColorConfig.getChannelColor(this.doc.song, this.doc.channel).primaryNote;
+            this._instrumentSettingsGroup.style.color = getPrimaryNoteColor(this.doc, this.doc.channel);
 
             setSelectedValue(this._transitionSelect, instrument.transition);
             setSelectedValue(this._vibratoSelect, instrument.vibrato);
@@ -3240,7 +3253,7 @@ export class SongEditor {
             this._unisonDropdownGroup.style.display = "none";
 
             this._modulatorGroup.style.display = "";
-            this._modulatorGroup.style.color = ColorConfig.getChannelColor(this.doc.song, this.doc.channel).primaryNote;
+            this._modulatorGroup.style.color = getPrimaryNoteColor(this.doc, this.doc.channel);
 
             for (let mod: number = 0; mod < Config.modCount; mod++) {
 
@@ -3863,7 +3876,7 @@ export class SongEditor {
             this._instrumentVolumeSliderRow.style.display = "none";
             this._instrumentTypeSelectRow.style.setProperty("display", "none");
 
-            this._instrumentSettingsGroup.style.color = ColorConfig.getChannelColor(this.doc.song, this.doc.channel).primaryNote;
+            this._instrumentSettingsGroup.style.color = getPrimaryNoteColor(this.doc, this.doc.channel);
 
             // Force piano to re-show, if channel is modulator
             if (this.doc.channel >= this.doc.song.pitchChannelCount + this.doc.song.noiseChannelCount) {
@@ -3874,7 +3887,7 @@ export class SongEditor {
 
         }
 
-        this._instrumentSettingsGroup.style.color = colors.primaryNote;
+        this._instrumentSettingsGroup.style.color = getPrimaryNoteColor(this.doc, this.doc.channel);
 
         if (this.doc.synth.isFilterModActive(false, this.doc.channel, this.doc.getCurrentInstrument())) {
             this._eqFilterEditor.render(true, this._ctrlHeld || this._shiftHeld);
@@ -3959,8 +3972,14 @@ export class SongEditor {
     private _renderInstrumentBar(channel: Channel, instrumentIndex: number, colors: ChannelColors) {
         if (this.doc.song.layeredInstruments || this.doc.song.patternInstruments) {
             this._instrumentsButtonRow.style.display = "";
-            this._instrumentsButtonBar.style.setProperty("--text-color-lit", colors.primaryNote);
-            this._instrumentsButtonBar.style.setProperty("--text-color-dim", colors.secondaryNote);
+            this._instrumentsButtonBar.style.setProperty(
+                "--text-color-lit",
+                getPrimaryNoteColor(this.doc, this.doc.channel)
+            );
+            this._instrumentsButtonBar.style.setProperty(
+                "--text-color-dim",
+                getSecondaryNoteColor(this.doc, this.doc.channel)
+            );
             this._instrumentsButtonBar.style.setProperty("--background-color-lit", colors.primaryChannel);
             this._instrumentsButtonBar.style.setProperty("--background-color-dim", colors.secondaryChannel);
 

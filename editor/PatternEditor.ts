@@ -2623,7 +2623,7 @@ export class PatternEditor {
                     for (const note of pattern2.notes) {
                         for (const pitch of note.pitches) {
                             let notePath: SVGPathElement = SVG.path();
-                            notePath.setAttribute("fill", ColorConfig.getChannelColor(this._doc.song, channel).secondaryNote);
+                            notePath.setAttribute("fill", getSecondaryNoteColor(this._doc, channel));
                             notePath.setAttribute("pointer-events", "none");
                             this._drawNote(notePath, pitch, note.start, note.pins, this._pitchHeight * 0.19, false, octaveOffset);
                             this._svgNoteContainer.appendChild(notePath);

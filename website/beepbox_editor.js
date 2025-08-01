@@ -35196,6 +35196,236 @@ You should be redirected to the song at:<br /><br />
         }
     }
 
+    function computeColorForChannel(doc, channelIndex, type) {
+        const song = doc.song;
+        const channelCount = song.getChannelCount();
+        const tags = song.channelTags;
+        let pitchCounter = 0;
+        let modCounter = 0;
+        const tagColors = new Map();
+        const baseChannelColors = new Map();
+        for (let ch = 0; ch < channelCount; ch++) {
+            tags
+                .filter(t => t.startChannel === ch)
+                .forEach(tag => {
+                const colorIndex = (pitchCounter % 10) + 1;
+                const colors = {
+                    primary: `var(--pitch${colorIndex}-primary-note)`,
+                    secondary: `var(--pitch${colorIndex}-secondary-note)`,
+                };
+                tagColors.set(tag.id, colors);
+                pitchCounter = (pitchCounter + 1) % 10;
+            });
+            if (song.getChannelIsMod(ch)) {
+                const colorIndex = (modCounter % 4) + 1;
+                baseChannelColors.set(ch, {
+                    primary: `var(--mod${colorIndex}-primary-note)`,
+                    secondary: `var(--mod${colorIndex}-secondary-note)`,
+                });
+                modCounter = (modCounter + 1) % 4;
+            }
+            else {
+                const colorIndex = (pitchCounter % 10) + 1;
+                baseChannelColors.set(ch, {
+                    primary: `var(--pitch${colorIndex}-primary-note)`,
+                    secondary: `var(--pitch${colorIndex}-secondary-note)`,
+                });
+                pitchCounter = (pitchCounter + 1) % 10;
+            }
+        }
+        const innermostTag = tags
+            .filter(t => t.startChannel <= channelIndex && channelIndex <= t.endChannel)
+            .pop();
+        if (innermostTag) {
+            return tagColors.get(innermostTag.id)[type];
+        }
+        else {
+            return baseChannelColors.get(channelIndex)[type];
+        }
+    }
+    function getPrimaryNoteColor(doc, channelIndex) {
+        return computeColorForChannel(doc, channelIndex, "primary");
+    }
+    function getSecondaryNoteColor(doc, channelIndex) {
+        return computeColorForChannel(doc, channelIndex, "secondary");
+    }
+    class Box {
+        constructor(channel, color) {
+            this._text = document.createTextNode("");
+            this._label = HTML.div({ class: "channelBoxLabel" }, this._text);
+            this.container = HTML.div({
+                class: "channelBox",
+                style: `margin: 1px; height: ${ChannelRow.patternHeight - 2}px;`,
+            }, this._label);
+            this._renderedIndex = -1;
+            this._patternIndex = 0;
+            this._selected = false;
+            this._dim = false;
+            this._isNoise = false;
+            this._isMod = false;
+            this._labelColor = "?";
+            this._primaryColor = "?";
+            this._renderedLabelColor = "?";
+            this._renderedVisibility = "?";
+            this._renderedBorderLeft = "?";
+            this._renderedBorderRight = "?";
+            this._renderedBackgroundColor = "?";
+            this.container.style.background = ColorConfig.uiWidgetBackground;
+            this._label.style.color = color;
+        }
+        setWidth(width) {
+            this.container.style.width = width - 2 + "px";
+        }
+        setHeight(height) {
+            this.container.style.height = height - 2 + "px";
+        }
+        setIndex(index, selected, dim, labelColor, isNoise, isMod, primaryColor) {
+            this._patternIndex = index;
+            this._selected = selected;
+            this._dim = dim;
+            this._labelColor = labelColor;
+            this._isNoise = isNoise;
+            this._isMod = isMod;
+            this._primaryColor = primaryColor;
+            if (this._renderedIndex != this._patternIndex) {
+                if (index >= 100) {
+                    this._label.setAttribute("font-size", "16");
+                    this._label.style.setProperty("transform", "translate(0px, -1.5px)");
+                }
+                else {
+                    this._label.setAttribute("font-size", "20");
+                    this._label.style.setProperty("transform", "translate(0px, 0px)");
+                }
+                this._renderedIndex = this._patternIndex;
+                this._text.data = String(this._patternIndex);
+            }
+            this._updateColors();
+        }
+        _updateColors() {
+            const useColor = this._selected
+                ? ColorConfig.c_invertedText
+                : this._labelColor;
+            if (this._renderedLabelColor != useColor) {
+                this._label.style.color = useColor;
+                this._renderedLabelColor = useColor;
+            }
+            let backgroundColor;
+            if (this._selected) {
+                backgroundColor = this._primaryColor;
+            }
+            else {
+                backgroundColor = this._isMod
+                    ? this._dim
+                        ? ColorConfig.c_trackEditorBgModDim
+                        : ColorConfig.c_trackEditorBgMod
+                    : this._isNoise
+                        ? this._dim
+                            ? ColorConfig.c_trackEditorBgNoiseDim
+                            : ColorConfig.c_trackEditorBgNoise
+                        : this._dim
+                            ? ColorConfig.c_trackEditorBgPitchDim
+                            : ColorConfig.c_trackEditorBgPitch;
+            }
+            if (this._patternIndex == 0 && !this._selected) {
+                backgroundColor = "none";
+            }
+            if (this._renderedBackgroundColor != backgroundColor) {
+                this.container.style.background = backgroundColor;
+                this._renderedBackgroundColor = backgroundColor;
+            }
+        }
+        setVisibility(visibility) {
+            if (this._renderedVisibility != visibility) {
+                this.container.style.visibility = visibility;
+                this._renderedVisibility = visibility;
+            }
+        }
+        setBorderLeft(borderLeft) {
+            if (this._renderedBorderLeft != borderLeft) {
+                this.container.style.setProperty("border-left", borderLeft);
+                this._renderedBorderLeft = borderLeft;
+            }
+        }
+        setBorderRight(borderRight) {
+            if (this._renderedBorderRight != borderRight) {
+                this.container.style.setProperty("border-right", borderRight);
+                this._renderedBorderRight = borderRight;
+            }
+        }
+    }
+    class ChannelRow {
+        constructor(_doc, index) {
+            this._doc = _doc;
+            this.index = index;
+            this._renderedBarWidth = -1;
+            this._renderedBarHeight = -1;
+            this._boxes = [];
+            this.container = HTML.div({ class: "channelRow" });
+            this.container.dataset.channelIndex = this.index.toString();
+        }
+        render(colors) {
+            ChannelRow.patternHeight = this._doc.getChannelHeight();
+            const barWidth = this._doc.getBarWidth();
+            if (this._boxes.length != this._doc.song.barCount) {
+                for (let x = this._boxes.length; x < this._doc.song.barCount; x++) {
+                    const box = new Box(this.index, ColorConfig.secondaryText);
+                    box.setWidth(barWidth);
+                    this.container.appendChild(box.container);
+                    this._boxes[x] = box;
+                }
+                for (let x = this._doc.song.barCount; x < this._boxes.length; x++) {
+                    this.container.removeChild(this._boxes[x].container);
+                }
+                this._boxes.length = this._doc.song.barCount;
+            }
+            if (this._renderedBarWidth != barWidth) {
+                this._renderedBarWidth = barWidth;
+                for (let x = 0; x < this._boxes.length; x++) {
+                    this._boxes[x].setWidth(barWidth);
+                }
+            }
+            if (this._renderedBarHeight != ChannelRow.patternHeight) {
+                this._renderedBarHeight = ChannelRow.patternHeight;
+                for (let x = 0; x < this._boxes.length; x++) {
+                    this._boxes[x].setHeight(ChannelRow.patternHeight);
+                }
+            }
+            const isNoise = this._doc.song.getChannelIsNoise(this.index);
+            const isMod = this._doc.song.getChannelIsMod(this.index);
+            const primaryColor = colors.primary;
+            const secondaryColor = colors.secondary;
+            for (let i = 0; i < this._boxes.length; i++) {
+                const pattern = this._doc.song.getPattern(this.index, i);
+                const selected = i == this._doc.bar && this.index == this._doc.channel;
+                const dim = pattern == null || pattern.notes.length == 0;
+                const patternIndex = this._doc.song.channels[this.index].bars[i];
+                const box = this._boxes[i];
+                if (i < this._doc.song.barCount) {
+                    const useSecondary = dim || patternIndex === 0;
+                    const labelColor = useSecondary ? secondaryColor : primaryColor;
+                    box.setIndex(patternIndex, selected, dim, labelColor, isNoise, isMod, primaryColor);
+                    box.setVisibility("visible");
+                }
+                else {
+                    box.setVisibility("hidden");
+                }
+                if (i == this._doc.synth.loopBarStart) {
+                    box.setBorderLeft(`1px dashed ${ColorConfig.uiWidgetFocus}`);
+                }
+                else {
+                    box.setBorderLeft("none");
+                }
+                if (i == this._doc.synth.loopBarEnd) {
+                    box.setBorderRight(`1px dashed ${ColorConfig.uiWidgetFocus}`);
+                }
+                else {
+                    box.setBorderRight("none");
+                }
+            }
+        }
+    }
+    ChannelRow.patternHeight = 28;
+
     const { button: button$l, div: div$l, h2: h2$k } = HTML;
     class CustomChipPromptCanvas {
         constructor(doc) {
@@ -38868,236 +39098,6 @@ You should be redirected to the song at:<br /><br />
             this._doc.record(new ChangeImportMidi(this._doc), true, true);
         }
     }
-
-    function computeColorForChannel(doc, channelIndex, type) {
-        const song = doc.song;
-        const channelCount = song.getChannelCount();
-        const tags = song.channelTags;
-        let pitchCounter = 0;
-        let modCounter = 0;
-        const tagColors = new Map();
-        const baseChannelColors = new Map();
-        for (let ch = 0; ch < channelCount; ch++) {
-            tags
-                .filter(t => t.startChannel === ch)
-                .forEach(tag => {
-                const colorIndex = (pitchCounter % 10) + 1;
-                const colors = {
-                    primary: `var(--pitch${colorIndex}-primary-note)`,
-                    secondary: `var(--pitch${colorIndex}-secondary-note)`,
-                };
-                tagColors.set(tag.id, colors);
-                pitchCounter = (pitchCounter + 1) % 10;
-            });
-            if (song.getChannelIsMod(ch)) {
-                const colorIndex = (modCounter % 4) + 1;
-                baseChannelColors.set(ch, {
-                    primary: `var(--mod${colorIndex}-primary-note)`,
-                    secondary: `var(--mod${colorIndex}-secondary-note)`,
-                });
-                modCounter = (modCounter + 1) % 4;
-            }
-            else {
-                const colorIndex = (pitchCounter % 10) + 1;
-                baseChannelColors.set(ch, {
-                    primary: `var(--pitch${colorIndex}-primary-note)`,
-                    secondary: `var(--pitch${colorIndex}-secondary-note)`,
-                });
-                pitchCounter = (pitchCounter + 1) % 10;
-            }
-        }
-        const innermostTag = tags
-            .filter(t => t.startChannel <= channelIndex && channelIndex <= t.endChannel)
-            .pop();
-        if (innermostTag) {
-            return tagColors.get(innermostTag.id)[type];
-        }
-        else {
-            return baseChannelColors.get(channelIndex)[type];
-        }
-    }
-    function getPrimaryNoteColor(doc, channelIndex) {
-        return computeColorForChannel(doc, channelIndex, "primary");
-    }
-    function getSecondaryNoteColor(doc, channelIndex) {
-        return computeColorForChannel(doc, channelIndex, "secondary");
-    }
-    class Box {
-        constructor(channel, color) {
-            this._text = document.createTextNode("");
-            this._label = HTML.div({ class: "channelBoxLabel" }, this._text);
-            this.container = HTML.div({
-                class: "channelBox",
-                style: `margin: 1px; height: ${ChannelRow.patternHeight - 2}px;`,
-            }, this._label);
-            this._renderedIndex = -1;
-            this._patternIndex = 0;
-            this._selected = false;
-            this._dim = false;
-            this._isNoise = false;
-            this._isMod = false;
-            this._labelColor = "?";
-            this._primaryColor = "?";
-            this._renderedLabelColor = "?";
-            this._renderedVisibility = "?";
-            this._renderedBorderLeft = "?";
-            this._renderedBorderRight = "?";
-            this._renderedBackgroundColor = "?";
-            this.container.style.background = ColorConfig.uiWidgetBackground;
-            this._label.style.color = color;
-        }
-        setWidth(width) {
-            this.container.style.width = width - 2 + "px";
-        }
-        setHeight(height) {
-            this.container.style.height = height - 2 + "px";
-        }
-        setIndex(index, selected, dim, labelColor, isNoise, isMod, primaryColor) {
-            this._patternIndex = index;
-            this._selected = selected;
-            this._dim = dim;
-            this._labelColor = labelColor;
-            this._isNoise = isNoise;
-            this._isMod = isMod;
-            this._primaryColor = primaryColor;
-            if (this._renderedIndex != this._patternIndex) {
-                if (index >= 100) {
-                    this._label.setAttribute("font-size", "16");
-                    this._label.style.setProperty("transform", "translate(0px, -1.5px)");
-                }
-                else {
-                    this._label.setAttribute("font-size", "20");
-                    this._label.style.setProperty("transform", "translate(0px, 0px)");
-                }
-                this._renderedIndex = this._patternIndex;
-                this._text.data = String(this._patternIndex);
-            }
-            this._updateColors();
-        }
-        _updateColors() {
-            const useColor = this._selected
-                ? ColorConfig.c_invertedText
-                : this._labelColor;
-            if (this._renderedLabelColor != useColor) {
-                this._label.style.color = useColor;
-                this._renderedLabelColor = useColor;
-            }
-            let backgroundColor;
-            if (this._selected) {
-                backgroundColor = this._primaryColor;
-            }
-            else {
-                backgroundColor = this._isMod
-                    ? this._dim
-                        ? ColorConfig.c_trackEditorBgModDim
-                        : ColorConfig.c_trackEditorBgMod
-                    : this._isNoise
-                        ? this._dim
-                            ? ColorConfig.c_trackEditorBgNoiseDim
-                            : ColorConfig.c_trackEditorBgNoise
-                        : this._dim
-                            ? ColorConfig.c_trackEditorBgPitchDim
-                            : ColorConfig.c_trackEditorBgPitch;
-            }
-            if (this._patternIndex == 0 && !this._selected) {
-                backgroundColor = "none";
-            }
-            if (this._renderedBackgroundColor != backgroundColor) {
-                this.container.style.background = backgroundColor;
-                this._renderedBackgroundColor = backgroundColor;
-            }
-        }
-        setVisibility(visibility) {
-            if (this._renderedVisibility != visibility) {
-                this.container.style.visibility = visibility;
-                this._renderedVisibility = visibility;
-            }
-        }
-        setBorderLeft(borderLeft) {
-            if (this._renderedBorderLeft != borderLeft) {
-                this.container.style.setProperty("border-left", borderLeft);
-                this._renderedBorderLeft = borderLeft;
-            }
-        }
-        setBorderRight(borderRight) {
-            if (this._renderedBorderRight != borderRight) {
-                this.container.style.setProperty("border-right", borderRight);
-                this._renderedBorderRight = borderRight;
-            }
-        }
-    }
-    class ChannelRow {
-        constructor(_doc, index) {
-            this._doc = _doc;
-            this.index = index;
-            this._renderedBarWidth = -1;
-            this._renderedBarHeight = -1;
-            this._boxes = [];
-            this.container = HTML.div({ class: "channelRow" });
-            this.container.dataset.channelIndex = this.index.toString();
-        }
-        render(colors) {
-            ChannelRow.patternHeight = this._doc.getChannelHeight();
-            const barWidth = this._doc.getBarWidth();
-            if (this._boxes.length != this._doc.song.barCount) {
-                for (let x = this._boxes.length; x < this._doc.song.barCount; x++) {
-                    const box = new Box(this.index, ColorConfig.secondaryText);
-                    box.setWidth(barWidth);
-                    this.container.appendChild(box.container);
-                    this._boxes[x] = box;
-                }
-                for (let x = this._doc.song.barCount; x < this._boxes.length; x++) {
-                    this.container.removeChild(this._boxes[x].container);
-                }
-                this._boxes.length = this._doc.song.barCount;
-            }
-            if (this._renderedBarWidth != barWidth) {
-                this._renderedBarWidth = barWidth;
-                for (let x = 0; x < this._boxes.length; x++) {
-                    this._boxes[x].setWidth(barWidth);
-                }
-            }
-            if (this._renderedBarHeight != ChannelRow.patternHeight) {
-                this._renderedBarHeight = ChannelRow.patternHeight;
-                for (let x = 0; x < this._boxes.length; x++) {
-                    this._boxes[x].setHeight(ChannelRow.patternHeight);
-                }
-            }
-            const isNoise = this._doc.song.getChannelIsNoise(this.index);
-            const isMod = this._doc.song.getChannelIsMod(this.index);
-            const primaryColor = colors.primary;
-            const secondaryColor = colors.secondary;
-            for (let i = 0; i < this._boxes.length; i++) {
-                const pattern = this._doc.song.getPattern(this.index, i);
-                const selected = i == this._doc.bar && this.index == this._doc.channel;
-                const dim = pattern == null || pattern.notes.length == 0;
-                const patternIndex = this._doc.song.channels[this.index].bars[i];
-                const box = this._boxes[i];
-                if (i < this._doc.song.barCount) {
-                    const useSecondary = dim || patternIndex === 0;
-                    const labelColor = useSecondary ? secondaryColor : primaryColor;
-                    box.setIndex(patternIndex, selected, dim, labelColor, isNoise, isMod, primaryColor);
-                    box.setVisibility("visible");
-                }
-                else {
-                    box.setVisibility("hidden");
-                }
-                if (i == this._doc.synth.loopBarStart) {
-                    box.setBorderLeft(`1px dashed ${ColorConfig.uiWidgetFocus}`);
-                }
-                else {
-                    box.setBorderLeft("none");
-                }
-                if (i == this._doc.synth.loopBarEnd) {
-                    box.setBorderRight(`1px dashed ${ColorConfig.uiWidgetFocus}`);
-                }
-                else {
-                    box.setBorderRight("none");
-                }
-            }
-        }
-    }
-    ChannelRow.patternHeight = 28;
 
     const { button: button$f, label: label$1, div: div$f, form, h2: h2$e, input: input$a } = HTML;
     class LayoutPrompt {
@@ -43982,7 +43982,7 @@ You should be redirected to the song at:<br /><br />
                         for (const note of pattern2.notes) {
                             for (const pitch of note.pitches) {
                                 let notePath = SVG.path();
-                                notePath.setAttribute("fill", ColorConfig.getChannelColor(this._doc.song, channel).secondaryNote);
+                                notePath.setAttribute("fill", getSecondaryNoteColor(this._doc, channel));
                                 notePath.setAttribute("pointer-events", "none");
                                 this._drawNote(notePath, pitch, note.start, note.pins, this._pitchHeight * 0.19, false, octaveOffset);
                                 this._svgNoteContainer.appendChild(notePath);
@@ -48441,7 +48441,7 @@ You should be redirected to the song at:<br /><br />
             this._ringModRow = div({ class: "selectRow" }, span({ class: "tip", onclick: () => this._openPrompt("ringMod") }, "Ring Mod:"), this._ringModSlider.container);
             this._ringModHzSlider = new Slider(input({ style: "margin: 0;", type: "range", min: "0", max: Config.ringModHzRange - 1, value: (Config.ringModHzRange - (Config.ringModHzRange / 2)), step: "1" }), this.doc, (oldValue, newValue) => new ChangeRingModHz(this.doc, oldValue, newValue), true);
             this.ringModHzNum = div({ style: "font-size: 80%; ", id: "ringModHzNum" });
-            this._ringModHzSliderRow = div({ class: "selectRow", style: "width:100%;" }, div({ style: "display:flex; flex-direction:column; align-items:center;" }, span({ class: "tip", style: "font-size: smaller;", onclick: () => this._openPrompt("RingModHz") }, "Hertz: "), div({ style: `color: ${ColorConfig.secondaryText}; ` }, this.ringModHzNum)), this._ringModHzSlider.container);
+            this._ringModHzSliderRow = div({ class: "selectRow", style: "width:100%;" }, div({ style: "display:flex; flex-direction:column; align-items:center;" }, span({ class: "tip", style: "font-size: smaller;", onclick: () => this._openPrompt("RingModHz") }, "Hertz: "), div({ style: `color: ${getSecondaryNoteColor(this.doc, this.doc.channel)}; ` }, this.ringModHzNum)), this._ringModHzSlider.container);
             this._ringModWaveText = span({ class: "tip", onclick: () => this._openPrompt("ringModChipWave") }, "Wave: ");
             this._ringModWaveSelectRow = div({ class: "selectRow", style: "width: 100%;" }, this._ringModWaveText, this._ringModPulsewidthSlider.container, div({ class: "selectContainer", style: "width:40%;" }, this._ringModWaveSelect));
             this._ringModContainerRow = div({ class: "", style: "display:flex; flex-direction:column;" }, this._ringModRow, this._ringModHzSliderRow, this._ringModWaveSelectRow);
@@ -48449,12 +48449,12 @@ You should be redirected to the song at:<br /><br />
             this._granularRow = div({ class: "selectRow" }, span({ class: "tip", onclick: () => this._openPrompt("granular") }, "Granular:"), this._granularSlider.container);
             this._grainSizeSlider = new Slider(input({ style: "margin: 0;", type: "range", min: Config.grainSizeMin / Config.grainSizeStep, max: Config.grainSizeMax / Config.grainSizeStep, value: Config.grainSizeMin / Config.grainSizeStep, step: "1" }), this.doc, (oldValue, newValue) => new ChangeGrainSize(this.doc, oldValue, newValue), false);
             this.grainSizeNum = div({ style: "font-size: 80%; ", id: "grainSizeNum" });
-            this._grainSizeSliderRow = div({ class: "selectRow", style: "width:100%;" }, div({ style: "display:flex; flex-direction:column; align-items:center;" }, span({ class: "tip", style: "font-size: smaller;", onclick: () => this._openPrompt("grainSize") }, "Grain: "), div({ style: `color: ${ColorConfig.secondaryText}; ` }, this.grainSizeNum)), this._grainSizeSlider.container);
+            this._grainSizeSliderRow = div({ class: "selectRow", style: "width:100%;" }, div({ style: "display:flex; flex-direction:column; align-items:center;" }, span({ class: "tip", style: "font-size: smaller;", onclick: () => this._openPrompt("grainSize") }, "Grain: "), div({ style: `color: ${getSecondaryNoteColor(this.doc, this.doc.channel)}; ` }, this.grainSizeNum)), this._grainSizeSlider.container);
             this._grainAmountsSlider = new Slider(input({ style: "margin: 0;", type: "range", min: "0", max: Config.grainAmountsMax, value: 8, step: "1" }), this.doc, (oldValue, newValue) => new ChangeGrainAmounts(this.doc, oldValue, newValue), false);
             this._grainAmountsRow = div({ class: "selectRow" }, span({ class: "tip", onclick: () => this._openPrompt("grainAmount") }, "Grain Freq:"), this._grainAmountsSlider.container);
             this._grainRangeSlider = new Slider(input({ style: "margin: 0;", type: "range", min: "0", max: Config.grainRangeMax / Config.grainSizeStep, value: "0", step: "1" }), this.doc, (oldValue, newValue) => new ChangeGrainRange(this.doc, oldValue, newValue), false);
             this.grainRangeNum = div({ style: "font-size: 80%; ", id: "grainRangeNum" });
-            this._grainRangeSliderRow = div({ class: "selectRow", style: "width:100%;" }, div({ style: "display:flex; flex-direction:column; align-items:center;" }, span({ class: "tip", style: "font-size: smaller;", onclick: () => this._openPrompt("grainRange") }, "Range: "), div({ style: `color: ${ColorConfig.secondaryText}; ` }, this.grainRangeNum)), this._grainRangeSlider.container);
+            this._grainRangeSliderRow = div({ class: "selectRow", style: "width:100%;" }, div({ style: "display:flex; flex-direction:column; align-items:center;" }, span({ class: "tip", style: "font-size: smaller;", onclick: () => this._openPrompt("grainRange") }, "Range: "), div({ style: `color: ${getSecondaryNoteColor(this.doc, this.doc.channel)}; ` }, this.grainRangeNum)), this._grainRangeSlider.container);
             this._granularContainerRow = div({ class: "", style: "display:flex; flex-direction:column;" }, this._granularRow, this._grainAmountsRow, this._grainSizeSliderRow, this._grainRangeSliderRow);
             this._echoSustainSlider = new Slider(input({ style: "margin: 0;", type: "range", min: "0", max: Config.echoSustainRange - 1, value: "0", step: "1" }), this.doc, (oldValue, newValue) => new ChangeEchoSustain(this.doc, oldValue, newValue), false);
             this._echoSustainRow = div({ class: "selectRow" }, span({ class: "tip", onclick: () => this._openPrompt("echoSustain") }, "Echo:"), this._echoSustainSlider.container);
@@ -48473,11 +48473,11 @@ You should be redirected to the song at:<br /><br />
             this._instrumentVolumeSlider = new Slider(input({ style: "margin: 0; position: sticky;", type: "range", min: Math.floor(-Config.volumeRange / 2), max: Math.floor(Config.volumeRange / 2), value: "0", step: "1" }), this.doc, (oldValue, newValue) => new ChangeVolume(this.doc, oldValue, newValue), true);
             this._instrumentVolumeSliderInputBox = input({ style: "width: 4em; font-size: 80%", id: "volumeSliderInputBox", type: "number", step: "1", min: Math.floor(-Config.volumeRange / 2), max: Math.floor(Config.volumeRange / 2), value: "0" });
             this._instrumentVolumeSliderTip = div({ class: "selectRow", style: "height: 1em" }, span({ class: "tip", style: "font-size: smaller;", onclick: () => this._openPrompt("instrumentVolume") }, "Volume: "));
-            this._instrumentVolumeSliderRow = div({ class: "selectRow" }, div({}, div({ style: `color: ${ColorConfig.secondaryText};` }, span({ class: "tip" }, this._instrumentVolumeSliderTip)), div({ style: `color: ${ColorConfig.secondaryText}; margin-top: -3px;` }, this._instrumentVolumeSliderInputBox)), this._instrumentVolumeSlider.container);
+            this._instrumentVolumeSliderRow = div({ class: "selectRow" }, div({}, div({ style: `color: ${getSecondaryNoteColor(this.doc, this.doc.channel)};` }, span({ class: "tip" }, this._instrumentVolumeSliderTip)), div({ style: `color: ${getSecondaryNoteColor(this.doc, this.doc.channel)}; margin-top: -3px;` }, this._instrumentVolumeSliderInputBox)), this._instrumentVolumeSlider.container);
             this._panSlider = new Slider(input({ style: "margin: 0; position: sticky;", type: "range", min: "0", max: Config.panMax, value: Config.panCenter, step: "1" }), this.doc, (oldValue, newValue) => new ChangePan(this.doc, oldValue, newValue), true);
             this._panDropdown = button({ style: "margin-left:0em; height:1.5em; width: 10px; padding: 0px; font-size: 8px;", onclick: () => this._toggleDropdownMenu(1) }, "▼");
             this._panSliderInputBox = input({ style: "width: 4em; font-size: 80%; ", id: "panSliderInputBox", type: "number", step: "1", min: "0", max: "100", value: "0" });
-            this._panSliderRow = div({ class: "selectRow" }, div({}, span({ class: "tip", tabindex: "0", style: "height:1em; font-size: smaller;", onclick: () => this._openPrompt("pan") }, "Pan: "), div({ style: "color: " + ColorConfig.secondaryText + "; margin-top: -3px;" }, this._panSliderInputBox)), this._panDropdown, this._panSlider.container);
+            this._panSliderRow = div({ class: "selectRow" }, div({}, span({ class: "tip", tabindex: "0", style: "height:1em; font-size: smaller;", onclick: () => this._openPrompt("pan") }, "Pan: "), div({ style: "color: " + getSecondaryNoteColor(this.doc, this.doc.channel) + "; margin-top: -3px;" }, this._panSliderInputBox)), this._panDropdown, this._panSlider.container);
             this._panDelaySlider = new Slider(input({ style: "margin: 0;", type: "range", min: "0", max: Config.modulators.dictionary["pan delay"].maxRawVol, value: "0", step: "1" }), this.doc, (oldValue, newValue) => new ChangePanDelay(this.doc, oldValue, newValue), false);
             this._panDelayRow = div({ class: "selectRow dropFader" }, span({ class: "tip", style: "margin-left:4px;", onclick: () => this._openPrompt("panDelay") }, "‣ Delay:"), this._panDelaySlider.container);
             this._panDropdownGroup = div({ class: "editor-controls", style: "display: none;" }, this._panDelayRow);
@@ -48539,7 +48539,7 @@ You should be redirected to the song at:<br /><br />
             this._pulseWidthSlider = new Slider(input({ style: "margin: 0;", type: "range", min: "1", max: Config.pulseWidthRange, value: "1", step: "1" }), this.doc, (oldValue, newValue) => new ChangePulseWidth(this.doc, oldValue, newValue), false);
             this._pulseWidthDropdown = button({ style: "margin-left:53px; position: absolute; margin-top: 15px; height:1.5em; width: 10px; padding: 0px; font-size: 8px;", onclick: () => this._toggleDropdownMenu(5) }, "▼");
             this._pwmSliderInputBox = input({ style: "width: 4em; font-size: 70%;", id: "pwmSliderInputBox", type: "number", step: "1", min: "1", max: Config.pulseWidthRange, value: "1" });
-            this._pulseWidthRow = div({ class: "selectRow" }, div({}, span({ class: "tip", tabindex: "0", style: "height:1em; font-size: smaller; white-space: nowrap;", onclick: () => this._openPrompt("pulseWidth") }, "Pulse Width:"), div({ style: `color: ${ColorConfig.secondaryText}; margin-top: -3px;` }, this._pwmSliderInputBox)), this._pulseWidthDropdown, this._pulseWidthSlider.container);
+            this._pulseWidthRow = div({ class: "selectRow" }, div({}, span({ class: "tip", tabindex: "0", style: "height:1em; font-size: smaller; white-space: nowrap;", onclick: () => this._openPrompt("pulseWidth") }, "Pulse Width:"), div({ style: `color: ${getSecondaryNoteColor(this.doc, this.doc.channel)}; margin-top: -3px;` }, this._pwmSliderInputBox)), this._pulseWidthDropdown, this._pulseWidthSlider.container);
             this._decimalOffsetSlider = new Slider(input({ style: "margin: 0;", type: "range", min: "0", max: "99", value: "0", step: "1" }), this.doc, (oldValue, newValue) => new ChangeDecimalOffset(this.doc, oldValue, 99 - newValue), false);
             this._decimalOffsetRow = div({ class: "selectRow dropFader" }, span({ class: "tip", style: "margin-left:10px;", onclick: () => this._openPrompt("decimalOffset") }, "‣ Offset:"), this._decimalOffsetSlider.container);
             this._pulseWidthDropdownGroup = div({ class: "editor-controls", style: "display: none;" }, this._decimalOffsetRow);
@@ -48550,7 +48550,7 @@ You should be redirected to the song at:<br /><br />
             this._pitchShiftRow = div({ class: "selectRow" }, span({ class: "tip", onclick: () => this._openPrompt("pitchShift") }, "Pitch Shift:"), this._pitchShiftMarkerContainer);
             this._detuneSlider = new Slider(input({ style: "margin: 0;", type: "range", min: Config.detuneMin - Config.detuneCenter, max: Config.detuneMax - Config.detuneCenter, value: 0, step: "4" }), this.doc, (oldValue, newValue) => new ChangeDetune(this.doc, oldValue, newValue), true);
             this._detuneSliderInputBox = input({ style: "width: 4em; font-size: 80%; ", id: "detuneSliderInputBox", type: "number", step: "1", min: Config.detuneMin - Config.detuneCenter, max: Config.detuneMax - Config.detuneCenter, value: 0 });
-            this._detuneSliderRow = div({ class: "selectRow" }, div({}, span({ class: "tip", style: "height:1em; font-size: smaller;", onclick: () => this._openPrompt("detune") }, "Detune: "), div({ style: `color: ${ColorConfig.secondaryText}; margin-top: -3px;` }, this._detuneSliderInputBox)), this._detuneSlider.container);
+            this._detuneSliderRow = div({ class: "selectRow" }, div({}, span({ class: "tip", style: "height:1em; font-size: smaller;", onclick: () => this._openPrompt("detune") }, "Detune: "), div({ style: `color: ${getSecondaryNoteColor(this.doc, this.doc.channel)}; margin-top: -3px;` }, this._detuneSliderInputBox)), this._detuneSlider.container);
             this._distortionSlider = new Slider(input({ style: "margin: 0; position: sticky;", type: "range", min: "0", max: Config.distortionRange - 1, value: "0", step: "1" }), this.doc, (oldValue, newValue) => new ChangeDistortion(this.doc, oldValue, newValue), false);
             this._distortionRow = div({ class: "selectRow" }, span({ class: "tip", onclick: () => this._openPrompt("distortion") }, "Distortion:"), this._distortionSlider.container);
             this._aliasingBox = input({ type: "checkbox", style: "width: 1em; padding: 0; margin-right: 4em;" });
@@ -48566,22 +48566,22 @@ You should be redirected to the song at:<br /><br />
             this._unisonSelect = buildOptions(select(), Config.unisons.map(unison => unison.name));
             this._unisonSelectRow = div({ class: "selectRow" }, span({ class: "tip", onclick: () => this._openPrompt("unison") }, "Unison:"), this._unisonDropdown, div({ class: "selectContainer", style: "width: 61.5%;" }, this._unisonSelect));
             this._unisonVoicesInputBox = input({ style: "width: 150%; height: 1.5em; font-size: 80%; margin-left: 0.4em; vertical-align: middle;", id: "unisonVoicesInputBox", type: "number", step: "1", min: Config.unisonVoicesMin, max: Config.unisonVoicesMax, value: 1 });
-            this._unisonVoicesRow = div({ class: "selectRow dropFader" }, div({}, span({ class: "tip", style: "height:1em; font-size: smaller;", onclick: () => this._openPrompt("unisonVoices") }, "‣ Voices: "), div({ style: "color: " + ColorConfig.secondaryText + "; margin-top: -3px;" }, this._unisonVoicesInputBox)));
+            this._unisonVoicesRow = div({ class: "selectRow dropFader" }, div({}, span({ class: "tip", style: "height:1em; font-size: smaller;", onclick: () => this._openPrompt("unisonVoices") }, "‣ Voices: "), div({ style: "color: " + getSecondaryNoteColor(this.doc, this.doc.channel) + "; margin-top: -3px;" }, this._unisonVoicesInputBox)));
             this._unisonSpreadInputBox = input({ style: "width: 150%; height: 1.5em; font-size: 80%; margin-left: 0.4em; vertical-align: middle;", id: "unisonSpreadInputBox", type: "number", step: "0.001", min: Config.unisonSpreadMin, max: Config.unisonSpreadMax, value: 0.0 });
-            this._unisonSpreadRow = div({ class: "selectRow dropFader" }, div({}, span({ class: "tip", style: "height:1em; font-size: smaller;", onclick: () => this._openPrompt("unisonSpread") }, "‣ Spread: "), div({ style: "color: " + ColorConfig.secondaryText + "; margin-top: -3px;" }, this._unisonSpreadInputBox)));
+            this._unisonSpreadRow = div({ class: "selectRow dropFader" }, div({}, span({ class: "tip", style: "height:1em; font-size: smaller;", onclick: () => this._openPrompt("unisonSpread") }, "‣ Spread: "), div({ style: "color: " + getSecondaryNoteColor(this.doc, this.doc.channel) + "; margin-top: -3px;" }, this._unisonSpreadInputBox)));
             this._unisonOffsetInputBox = input({ style: "width: 150%; height: 1.5em; font-size: 80%; margin-left: 0.4em; vertical-align: middle;", id: "unisonOffsetInputBox", type: "number", step: "0.001", min: Config.unisonOffsetMin, max: Config.unisonOffsetMax, value: 0.0 });
-            this._unisonOffsetRow = div({ class: "selectRow dropFader" }, div({}, span({ class: "tip", style: "height:1em; font-size: smaller;", onclick: () => this._openPrompt("unisonOffset") }, "‣ Offset: "), div({ style: "color: " + ColorConfig.secondaryText + "; margin-top: -3px;" }, this._unisonOffsetInputBox)));
+            this._unisonOffsetRow = div({ class: "selectRow dropFader" }, div({}, span({ class: "tip", style: "height:1em; font-size: smaller;", onclick: () => this._openPrompt("unisonOffset") }, "‣ Offset: "), div({ style: "color: " + getSecondaryNoteColor(this.doc, this.doc.channel) + "; margin-top: -3px;" }, this._unisonOffsetInputBox)));
             this._unisonExpressionInputBox = input({ style: "width: 150%; height: 1.5em; font-size: 80%; margin-left: 0.4em; vertical-align: middle;", id: "unisonExpressionInputBox", type: "number", step: "0.001", min: Config.unisonExpressionMin, max: Config.unisonExpressionMax, value: 1.4 });
-            this._unisonExpressionRow = div({ class: "selectRow dropFader" }, div({}, span({ class: "tip", style: "height:1em; font-size: smaller;", onclick: () => this._openPrompt("unisonExpression") }, "‣ Volume: "), div({ style: "color: " + ColorConfig.secondaryText + "; margin-top: -3px;" }, this._unisonExpressionInputBox)));
+            this._unisonExpressionRow = div({ class: "selectRow dropFader" }, div({}, span({ class: "tip", style: "height:1em; font-size: smaller;", onclick: () => this._openPrompt("unisonExpression") }, "‣ Volume: "), div({ style: "color: " + getSecondaryNoteColor(this.doc, this.doc.channel) + "; margin-top: -3px;" }, this._unisonExpressionInputBox)));
             this._unisonSignInputBox = input({ style: "width: 150%; height: 1.5em; font-size: 80%; margin-left: 0.4em; vertical-align: middle;", id: "unisonSignInputBox", type: "number", step: "0.001", min: Config.unisonSignMin, max: Config.unisonSignMax, value: 1.0 });
-            this._unisonSignRow = div({ class: "selectRow dropFader" }, div({}, span({ class: "tip", style: "height:1em; font-size: smaller;", onclick: () => this._openPrompt("unisonSign") }, "‣ Sign: "), div({ style: "color: " + ColorConfig.secondaryText + "; margin-top: -3px;" }, this._unisonSignInputBox)));
+            this._unisonSignRow = div({ class: "selectRow dropFader" }, div({}, span({ class: "tip", style: "height:1em; font-size: smaller;", onclick: () => this._openPrompt("unisonSign") }, "‣ Sign: "), div({ style: "color: " + getSecondaryNoteColor(this.doc, this.doc.channel) + "; margin-top: -3px;" }, this._unisonSignInputBox)));
             this._unisonDropdownGroup = div({ class: "editor-controls", style: "display: none; gap: 3px; margin-bottom: 0.5em;" }, this._unisonVoicesRow, this._unisonSpreadRow, this._unisonOffsetRow, this._unisonExpressionRow, this._unisonSignRow);
             this._chordSelect = buildOptions(select({ style: "flex-shrink: 100" }), Config.chords.map(chord => chord.name));
             this._chordDropdown = button({ style: "margin-left:0em; height:1.5em; width: 10px; padding: 0px; font-size: 8px;", onclick: () => this._toggleDropdownMenu(2) }, "▼");
             this._monophonicNoteInputBox = input({ style: "width: 2.35em; height: 1.5em; font-size: 80%; margin: 0.5em; vertical-align: middle;", id: "unisonSignInputBox", type: "number", step: "1", min: 1, max: Config.maxChordSize, value: 1.0 });
             this._chordSelectContainer = div({ class: "selectContainer", style: "width=100%" }, this._chordSelect);
             this._chordSelectRow = div({ class: "selectRow", style: "display: flex; flex-direction: row" }, span({ class: "tip", onclick: () => this._openPrompt("chords") }, "Chords:"), this._monophonicNoteInputBox, this._chordDropdown, this._chordSelectContainer);
-            this._arpeggioSpeedDisplay = span({ style: `color: ${ColorConfig.secondaryText}; font-size: smaller; text-overflow: clip;` }, "x1");
+            this._arpeggioSpeedDisplay = span({ style: `color: ${getSecondaryNoteColor(this.doc, this.doc.channel)}; font-size: smaller; text-overflow: clip;` }, "x1");
             this._arpeggioSpeedSlider = new Slider(input({ style: "margin: 0;", type: "range", min: "0", max: Config.modulators.dictionary["arp speed"].maxRawVol, value: "0", step: "1" }), this.doc, (oldValue, newValue) => new ChangeArpeggioSpeed(this.doc, oldValue, newValue), false);
             this._arpeggioSpeedRow = div({ class: "selectRow dropFader" }, span({ class: "tip", style: "margin-left:4px;", onclick: () => this._openPrompt("arpeggioSpeed") }, "‣ Spd:"), this._arpeggioSpeedDisplay, this._arpeggioSpeedSlider.container);
             this._twoNoteArpBox = input({ type: "checkbox", style: "width: 1em; padding: 0; margin-right: 4em;" });
@@ -48592,7 +48592,7 @@ You should be redirected to the song at:<br /><br />
             this._vibratoSelectRow = div({ class: "selectRow" }, span({ class: "tip", onclick: () => this._openPrompt("vibrato") }, "Vibrato:"), this._vibratoDropdown, div({ class: "selectContainer", style: "width: 61.5%;" }, this._vibratoSelect));
             this._vibratoDepthSlider = new Slider(input({ style: "margin: 0;", type: "range", min: "0", max: Config.modulators.dictionary["vibrato depth"].maxRawVol, value: "0", step: "1" }), this.doc, (oldValue, newValue) => new ChangeVibratoDepth(this.doc, oldValue, newValue), false);
             this._vibratoDepthRow = div({ class: "selectRow dropFader" }, span({ class: "tip", style: "margin-left:4px;", onclick: () => this._openPrompt("vibratoDepth") }, "‣ Depth:"), this._vibratoDepthSlider.container);
-            this._vibratoSpeedDisplay = span({ style: `color: ${ColorConfig.secondaryText}; font-size: smaller; text-overflow: clip;` }, "x1");
+            this._vibratoSpeedDisplay = span({ style: `color: ${getSecondaryNoteColor(this.doc, this.doc.channel)}; font-size: smaller; text-overflow: clip;` }, "x1");
             this._vibratoSpeedSlider = new Slider(input({ style: "margin: 0; text-overflow: clip;", type: "range", min: "0", max: Config.modulators.dictionary["vibrato speed"].maxRawVol, value: "0", step: "1" }), this.doc, (oldValue, newValue) => new ChangeVibratoSpeed(this.doc, oldValue, newValue), false);
             this._vibratoSpeedRow = div({ class: "selectRow dropFader" }, span({ class: "tip", style: "margin-left:4px;", onclick: () => this._openPrompt("vibratoSpeed") }, "‣ Spd:"), this._vibratoSpeedDisplay, this._vibratoSpeedSlider.container);
             this._vibratoDelaySlider = new Slider(input({ style: "margin: 0;", type: "range", min: "0", max: Config.modulators.dictionary["vibrato delay"].maxRawVol, value: "0", step: "1" }), this.doc, (oldValue, newValue) => new ChangeVibratoDelay(this.doc, oldValue, newValue), false);
@@ -48610,7 +48610,7 @@ You should be redirected to the song at:<br /><br />
             this._harmonicsZoom = button({ style: "padding-left:0.2em; height:1.5em; max-width: 12px;", onclick: () => this._openPrompt("harmonicsSettings") }, "+");
             this._harmonicsRow = div({ class: "selectRow" }, span({ class: "tip", onclick: () => this._openPrompt("harmonics"), style: "font-size: smaller" }, "Harmonics:"), this._harmonicsZoom, this._harmonicsEditor.container);
             this.envelopeEditor = new EnvelopeEditor(this.doc, (id, submenu, subtype) => this._toggleDropdownMenu(id, submenu, subtype), (name) => this._openPrompt(name));
-            this._envelopeSpeedDisplay = span({ style: `color: ${ColorConfig.secondaryText}; font-size: smaller; text-overflow: clip;` }, "x1");
+            this._envelopeSpeedDisplay = span({ style: `color: ${getSecondaryNoteColor(this.doc, this.doc.channel)}; font-size: smaller; text-overflow: clip;` }, "x1");
             this._envelopeSpeedSlider = new Slider(input({ style: "margin: 0;", type: "range", min: "0", max: Config.modulators.dictionary["envelope speed"].maxRawVol, value: "0", step: "1" }), this.doc, (oldValue, newValue) => new ChangeEnvelopeSpeed(this.doc, oldValue, newValue), false);
             this._envelopeSpeedRow = div({ class: "selectRow dropFader" }, span({ class: "tip", style: "margin-left:4px;", onclick: () => this._openPrompt("envelopeSpeed") }, "‣ Spd:"), this._envelopeSpeedDisplay, this._envelopeSpeedSlider.container);
             this._envelopeDropdownGroup = div({ class: "editor-controls", style: "display: none;" }, this._envelopeSpeedRow);
@@ -48665,7 +48665,7 @@ You should be redirected to the song at:<br /><br />
             this._customInstrumentSettingsGroup = div({ class: "editor-controls" }, this._panSliderRow, this._panDropdownGroup, this._chipWaveSelectRow, this._chipNoiseSelectRow, this._useChipWaveAdvancedLoopControlsRow, this._chipWaveLoopModeSelectRow, this._chipWaveLoopStartRow, this._chipWaveLoopEndRow, this._chipWaveStartOffsetRow, this._chipWavePlayBackwardsRow, this._customWaveDraw, this._eqFilterTypeRow, this._eqFilterRow, this._eqFilterSimpleCutRow, this._eqFilterSimplePeakRow, this._fadeInOutRow, this._algorithmSelectRow, this._algorithm6OpSelectRow, this._phaseModGroup, this._feedbackRow1, this._feedback6OpRow1, this._feedbackRow2, this._spectrumRow, this._harmonicsRow, this._drumsetGroup, this._supersawDynamismRow, this._supersawSpreadRow, this._supersawShapeRow, this._pulseWidthRow, this._pulseWidthDropdownGroup, this._stringSustainRow, this._unisonSelectRow, this._unisonDropdownGroup, div({ style: `padding: 2px 0; margin-left: 2em; display: flex; align-items: center;` }, span({ style: `flex-grow: 1; text-align: center;` }, span({ class: "tip", onclick: () => this._openPrompt("effects") }, "Effects")), div({ class: "effects-menu" }, this._effectsSelect)), this._transitionRow, this._transitionDropdownGroup, this._discreteSlideRow, this._chordSelectRow, this._chordDropdownGroup, this._pitchShiftRow, this._detuneSliderRow, this._vibratoSelectRow, this._vibratoDropdownGroup, this._noteFilterTypeRow, this._noteFilterRow, this._noteFilterSimpleCutRow, this._noteFilterSimplePeakRow, this._distortionRow, this._aliasingRow, this._bitcrusherQuantizationRow, this._bitcrusherFreqRow, this._chorusRow, this._echoSustainRow, this._echoDelayRow, this._reverbRow, this._ringModContainerRow, this._granularContainerRow, div({ style: `padding: 2px 0; margin-left: 2em; display: flex; align-items: center;` }, span({ style: `flex-grow: 1; text-align: center;` }, span({ class: "tip", onclick: () => this._openPrompt("envelopes") }, "Envelopes")), this._envelopeDropdown, this._addEnvelopeButton), this._envelopeDropdownGroup, this.envelopeEditor.container);
             this._instrumentCopyGroup = div({ class: "editor-controls" }, div({ class: "selectRow" }, this._instrumentCopyButton, this._instrumentPasteButton));
             this._instrumentExportGroup = div({ class: "editor-controls" }, div({ class: "selectRow" }, this._instrumentExportButton, this._instrumentImportButton));
-            this._instrumentSettingsTextRow = div({ id: "instrumentSettingsText", style: `padding: 3px 0; max-width: 15em; text-align: center; color: ${ColorConfig.secondaryText};` }, "Instrument Settings");
+            this._instrumentSettingsTextRow = div({ id: "instrumentSettingsText", style: `padding: 3px 0; max-width: 15em; text-align: center; color: ${getSecondaryNoteColor(this.doc, this.doc.channel)};` }, "Instrument Settings");
             this._instrumentTypeSelectRow = div({ class: "selectRow", id: "typeSelectRow" }, span({ class: "tip", onclick: () => this._openPrompt("instrumentType") }, "Type:"), div(div({ class: "pitchSelect" }, this._pitchedPresetSelect), div({ class: "drumSelect" }, this._drumPresetSelect)));
             this._instrumentSettingsGroup = div({ class: "editor-controls" }, this._instrumentSettingsTextRow, this._instrumentsButtonRow, this._instrumentTypeSelectRow, this._instrumentVolumeSliderRow, this._customInstrumentSettingsGroup);
             this._usedPatternIndicator = SVG.path({ d: "M -6 -6 H 6 V 6 H -6 V -6 M -2 -3 L -2 -3 L -1 -4 H 1 V 4 H -1 V -1.2 L -1.2 -1 H -2 V -3 z", fill: ColorConfig.indicatorSecondary, "fill-rule": "evenodd" });
@@ -48691,10 +48691,10 @@ You should be redirected to the song at:<br /><br />
             this._menuArea = div({ class: "menu-area" }, div({ class: "selectContainer menu file" }, this._fileMenu), div({ class: "selectContainer menu edit" }, this._editMenu), div({ class: "selectContainer menu preferences" }, this._optionsMenu));
             this._sampleLoadingBar = div({ style: `width: 0%; height: 100%; background-color: ${ColorConfig.indicatorPrimary};` });
             this._sampleLoadingBarContainer = div({ style: `width: 80%; height: 4px; overflow: hidden; margin-left: auto; margin-right: auto; margin-top: 0.5em; cursor: pointer; background-color: ${ColorConfig.indicatorSecondary};` }, this._sampleLoadingBar);
-            this._sampleLoadingStatusContainer = div({ style: "cursor: pointer;" }, div({ style: `margin-top: 0.5em; text-align: center; color: ${ColorConfig.secondaryText};` }, "Sample Loading Status"), div({ class: "selectRow", style: "height: 6px; margin-bottom: 0.5em;" }, this._sampleLoadingBarContainer));
-            this._songSettingsArea = div({ class: "song-settings-area" }, div({ class: "editor-controls" }, div({ class: "editor-song-settings" }, div({ style: "margin: 3px 0; position: relative; text-align: center; color: ${ColorConfig.secondaryText};" }, div({ class: "tip", style: "flex-shrink: 0; position:absolute; left: 0; top: 0; width: 12px; height: 12px", onclick: () => this._openPrompt("usedPattern") }, SVG.svg({ style: "flex-shrink: 0; position: absolute; left: 0; top: 0; pointer-events: none;", width: "12px", height: "12px", "margin-right": "0.5em", viewBox: "-6 -6 12 12" }, this._usedPatternIndicator)), div({ class: "tip", style: "flex-shrink: 0; position: absolute; left: 14px; top: 0; width: 12px; height: 12px", onclick: () => this._openPrompt("usedInstrument") }, SVG.svg({ style: "flex-shrink: 0; position: absolute; left: 0; top: 0; pointer-events: none;", width: "12px", height: "12px", "margin-right": "1em", viewBox: "-6 -6 12 12" }, this._usedInstrumentIndicator)), "Song Settings", div({ style: "width: 100%; left: 0; top: -1px; position:absolute; overflow-x:clip;" }, this._jumpToModIndicator))), div({ class: "selectRow" }, span({ class: "tip", onclick: () => this._openPrompt("scale") }, "Scale: "), div({ class: "selectContainer" }, this._scaleSelect)), div({ class: "selectRow" }, span({ class: "tip", onclick: () => this._openPrompt("key") }, "Key: "), div({ class: "selectContainer" }, this._keySelect)), div({ class: "selectRow" }, span({ class: "tip", onclick: () => this._openPrompt("key_octave") }, "Octave: "), this._octaveStepper), div({ class: "selectRow" }, span({ class: "tip", onclick: () => this._openPrompt("tempo") }, "Tempo: "), span({ style: "display: flex;" }, this._tempoSlider.container, this._tempoStepper)), div({ class: "selectRow" }, span({ class: "tip", onclick: () => this._openPrompt("rhythm") }, "Rhythm: "), div({ class: "selectContainer" }, this._rhythmSelect)), div({ class: "selectRow" }, span({ class: "tip", onclick: () => this._openPrompt("songeq") }, span("Song EQ:")), this._songEqFilterZoom, this._songEqFilterEditor.container), this._sampleLoadingStatusContainer));
+            this._sampleLoadingStatusContainer = div({ style: "cursor: pointer;" }, div({ style: `margin-top: 0.5em; text-align: center; color: ${getSecondaryNoteColor(this.doc, this.doc.channel)};` }, "Sample Loading Status"), div({ class: "selectRow", style: "height: 6px; margin-bottom: 0.5em;" }, this._sampleLoadingBarContainer));
+            this._songSettingsArea = div({ class: "song-settings-area" }, div({ class: "editor-controls" }, div({ class: "editor-song-settings" }, div({ style: "margin: 3px 0; position: relative; text-align: center; color: ${getSecondaryNoteColor(this.doc, this.doc.channel)};" }, div({ class: "tip", style: "flex-shrink: 0; position:absolute; left: 0; top: 0; width: 12px; height: 12px", onclick: () => this._openPrompt("usedPattern") }, SVG.svg({ style: "flex-shrink: 0; position: absolute; left: 0; top: 0; pointer-events: none;", width: "12px", height: "12px", "margin-right": "0.5em", viewBox: "-6 -6 12 12" }, this._usedPatternIndicator)), div({ class: "tip", style: "flex-shrink: 0; position: absolute; left: 14px; top: 0; width: 12px; height: 12px", onclick: () => this._openPrompt("usedInstrument") }, SVG.svg({ style: "flex-shrink: 0; position: absolute; left: 0; top: 0; pointer-events: none;", width: "12px", height: "12px", "margin-right": "1em", viewBox: "-6 -6 12 12" }, this._usedInstrumentIndicator)), "Song Settings", div({ style: "width: 100%; left: 0; top: -1px; position:absolute; overflow-x:clip;" }, this._jumpToModIndicator))), div({ class: "selectRow" }, span({ class: "tip", onclick: () => this._openPrompt("scale") }, "Scale: "), div({ class: "selectContainer" }, this._scaleSelect)), div({ class: "selectRow" }, span({ class: "tip", onclick: () => this._openPrompt("key") }, "Key: "), div({ class: "selectContainer" }, this._keySelect)), div({ class: "selectRow" }, span({ class: "tip", onclick: () => this._openPrompt("key_octave") }, "Octave: "), this._octaveStepper), div({ class: "selectRow" }, span({ class: "tip", onclick: () => this._openPrompt("tempo") }, "Tempo: "), span({ style: "display: flex;" }, this._tempoSlider.container, this._tempoStepper)), div({ class: "selectRow" }, span({ class: "tip", onclick: () => this._openPrompt("rhythm") }, "Rhythm: "), div({ class: "selectContainer" }, this._rhythmSelect)), div({ class: "selectRow" }, span({ class: "tip", onclick: () => this._openPrompt("songeq") }, span("Song EQ:")), this._songEqFilterZoom, this._songEqFilterEditor.container), this._sampleLoadingStatusContainer));
             this._instrumentSettingsArea = div({ class: "instrument-settings-area" }, this._instrumentSettingsGroup, this._modulatorGroup);
-            this._settingsArea = div({ class: "settings-area noSelection" }, div({ class: "version-area" }, div({ style: `text-align: center; margin: 3px 0; color: ${ColorConfig.secondaryText};` }, this._songTitleInputBox.input)), div({ class: "play-pause-area" }, this._volumeBarBox, div({ class: "playback-bar-controls" }, this._playButton, this._pauseButton, this._recordButton, this._stopButton, this._prevBarButton, this._nextBarButton), div({ class: "playback-volume-controls" }, span({ class: "volume-speaker" }), this._volumeSlider.container), this._globalOscscopeContainer), this._menuArea, this._songSettingsArea, this._instrumentSettingsArea);
+            this._settingsArea = div({ class: "settings-area noSelection" }, div({ class: "version-area" }, div({ style: `text-align: center; margin: 3px 0; color: ${getSecondaryNoteColor(this.doc, this.doc.channel)};` }, this._songTitleInputBox.input)), div({ class: "play-pause-area" }, this._volumeBarBox, div({ class: "playback-bar-controls" }, this._playButton, this._pauseButton, this._recordButton, this._stopButton, this._prevBarButton, this._nextBarButton), div({ class: "playback-volume-controls" }, span({ class: "volume-speaker" }), this._volumeSlider.container), this._globalOscscopeContainer), this._menuArea, this._songSettingsArea, this._instrumentSettingsArea);
             this.mainLayer = div({ class: "beepboxEditor", tabIndex: "0" }, this._patternArea, this._trackArea, this._settingsArea, this._promptContainer);
             this._wasPlaying = false;
             this._currentPromptName = null;
@@ -48899,8 +48899,8 @@ You should be redirected to the song at:<br /><br />
                 else {
                     this._songEqFilterEditor.render();
                 }
-                this._eqFilterTypeRow.style.setProperty("--text-color-lit", colors.primaryNote);
-                this._eqFilterTypeRow.style.setProperty("--text-color-dim", colors.secondaryNote);
+                this._eqFilterTypeRow.style.setProperty("--text-color-lit", getPrimaryNoteColor(this.doc, this.doc.channel));
+                this._eqFilterTypeRow.style.setProperty("--text-color-dim", getSecondaryNoteColor(this.doc, this.doc.channel));
                 this._eqFilterTypeRow.style.setProperty("--background-color-lit", colors.primaryChannel);
                 this._eqFilterTypeRow.style.setProperty("--background-color-dim", colors.secondaryChannel);
                 if (instrument.eqFilterType) {
@@ -49249,8 +49249,8 @@ You should be redirected to the song at:<br /><br />
                         this._vibratoSelectRow.style.display = "none";
                     }
                     if (effectsIncludeNoteFilter(instrument.effects)) {
-                        this._noteFilterTypeRow.style.setProperty("--text-color-lit", colors.primaryNote);
-                        this._noteFilterTypeRow.style.setProperty("--text-color-dim", colors.secondaryNote);
+                        this._noteFilterTypeRow.style.setProperty("--text-color-lit", getPrimaryNoteColor(this.doc, this.doc.channel));
+                        this._noteFilterTypeRow.style.setProperty("--text-color-dim", getSecondaryNoteColor(this.doc, this.doc.channel));
                         this._noteFilterTypeRow.style.setProperty("--background-color-lit", colors.primaryChannel);
                         this._noteFilterTypeRow.style.setProperty("--background-color-dim", colors.secondaryChannel);
                         this._noteFilterTypeRow.style.display = "";
@@ -49390,7 +49390,7 @@ You should be redirected to the song at:<br /><br />
                             option.removeAttribute("hidden");
                         }
                     }
-                    this._instrumentSettingsGroup.style.color = ColorConfig.getChannelColor(this.doc.song, this.doc.channel).primaryNote;
+                    this._instrumentSettingsGroup.style.color = getPrimaryNoteColor(this.doc, this.doc.channel);
                     setSelectedValue(this._transitionSelect, instrument.transition);
                     setSelectedValue(this._vibratoSelect, instrument.vibrato);
                     setSelectedValue(this._vibratoTypeSelect, instrument.vibratoType);
@@ -49485,7 +49485,7 @@ You should be redirected to the song at:<br /><br />
                     this._pulseWidthDropdownGroup.style.display = "none";
                     this._unisonDropdownGroup.style.display = "none";
                     this._modulatorGroup.style.display = "";
-                    this._modulatorGroup.style.color = ColorConfig.getChannelColor(this.doc.song, this.doc.channel).primaryNote;
+                    this._modulatorGroup.style.color = getPrimaryNoteColor(this.doc, this.doc.channel);
                     for (let mod = 0; mod < Config.modCount; mod++) {
                         let instrument = this.doc.song.channels[this.doc.channel].instruments[this.doc.getCurrentInstrument()];
                         let modChannelValue = instrument.modChannels[mod];
@@ -50020,13 +50020,13 @@ You should be redirected to the song at:<br /><br />
                     this._panDropdownGroup.style.display = "none";
                     this._instrumentVolumeSliderRow.style.display = "none";
                     this._instrumentTypeSelectRow.style.setProperty("display", "none");
-                    this._instrumentSettingsGroup.style.color = ColorConfig.getChannelColor(this.doc.song, this.doc.channel).primaryNote;
+                    this._instrumentSettingsGroup.style.color = getPrimaryNoteColor(this.doc, this.doc.channel);
                     if (this.doc.channel >= this.doc.song.pitchChannelCount + this.doc.song.noiseChannelCount) {
                         this._piano.forceRender();
                     }
                     this._renderInstrumentBar(channel, instrumentIndex, colors);
                 }
-                this._instrumentSettingsGroup.style.color = colors.primaryNote;
+                this._instrumentSettingsGroup.style.color = getPrimaryNoteColor(this.doc, this.doc.channel);
                 if (this.doc.synth.isFilterModActive(false, this.doc.channel, this.doc.getCurrentInstrument())) {
                     this._eqFilterEditor.render(true, this._ctrlHeld || this._shiftHeld);
                 }
@@ -51613,10 +51613,10 @@ You should be redirected to the song at:<br /><br />
                 this._showModSliders[i] = [];
                 this._modSliderValues[i] = [];
             }
-            this._phaseModGroup.appendChild(div({ class: "selectRow", style: `color: ${ColorConfig.secondaryText}; height: 1em; margin-top: 0.5em;` }, div({ style: "margin-right: .1em; visibility: hidden;" }, 1 + "."), div({ style: "width: 3em; margin-right: .3em;", class: "tip", onclick: () => this._openPrompt("operatorFrequency") }, "Freq:"), div({ class: "tip", onclick: () => this._openPrompt("operatorVolume") }, "Volume:")));
+            this._phaseModGroup.appendChild(div({ class: "selectRow", style: `color: ${getSecondaryNoteColor(this.doc, this.doc.channel)}; height: 1em; margin-top: 0.5em;` }, div({ style: "margin-right: .1em; visibility: hidden;" }, 1 + "."), div({ style: "width: 3em; margin-right: .3em;", class: "tip", onclick: () => this._openPrompt("operatorFrequency") }, "Freq:"), div({ class: "tip", onclick: () => this._openPrompt("operatorVolume") }, "Volume:")));
             for (let i = 0; i < Config.operatorCount + 2; i++) {
                 const operatorIndex = i;
-                const operatorNumber = div({ style: "margin-right: 0px; color: " + ColorConfig.secondaryText + ";" }, i + 1 + "");
+                const operatorNumber = div({ style: "margin-right: 0px; color: " + getSecondaryNoteColor(this.doc, this.doc.channel) + ";" }, i + 1 + "");
                 const frequencySelect = buildOptions(select({ style: "width: 100%;", title: "Frequency" }), Config.operatorFrequencies.map(freq => freq.name));
                 const amplitudeSlider = new Slider(input({ type: "range", min: "0", max: Config.operatorAmplitudeMax, value: "0", step: "1", title: "Volume" }), this.doc, (oldValue, newValue) => new ChangeOperatorAmplitude(this.doc, operatorIndex, oldValue, newValue), false);
                 const waveformSelect = buildOptions(select({ style: "width: 100%;", title: "Waveform" }), Config.operatorWaves.map(wave => wave.name));
@@ -51696,7 +51696,7 @@ You should be redirected to the song at:<br /><br />
                 this._modEnvelopeRows.push(modEnvelopeRow);
                 this._modEnvelopeBoxes.push(modEnvelopeBox);
                 this._modTargetIndicators.push(modTarget);
-                this._modulatorGroup.appendChild(div({ style: "margin: 3px 0; font-weight: bold; margin-bottom: 0.7em; text-align: center; color: " + ColorConfig.secondaryText + "; background: " + ColorConfig.uiWidgetBackground + ";" }, ["Modulator " + (mod + 1), modTarget]));
+                this._modulatorGroup.appendChild(div({ style: "margin: 3px 0; font-weight: bold; margin-bottom: 0.7em; text-align: center; color: currentColor;" }, ["Modulator " + (mod + 1), modTarget]));
                 this._modulatorGroup.appendChild(modNameRow);
                 this._modulatorGroup.appendChild(modSetRow);
                 this._modulatorGroup.appendChild(modFilterRow);
@@ -52298,8 +52298,8 @@ You should be redirected to the song at:<br /><br />
         _renderInstrumentBar(channel, instrumentIndex, colors) {
             if (this.doc.song.layeredInstruments || this.doc.song.patternInstruments) {
                 this._instrumentsButtonRow.style.display = "";
-                this._instrumentsButtonBar.style.setProperty("--text-color-lit", colors.primaryNote);
-                this._instrumentsButtonBar.style.setProperty("--text-color-dim", colors.secondaryNote);
+                this._instrumentsButtonBar.style.setProperty("--text-color-lit", getPrimaryNoteColor(this.doc, this.doc.channel));
+                this._instrumentsButtonBar.style.setProperty("--text-color-dim", getSecondaryNoteColor(this.doc, this.doc.channel));
                 this._instrumentsButtonBar.style.setProperty("--background-color-lit", colors.primaryChannel);
                 this._instrumentsButtonBar.style.setProperty("--background-color-dim", colors.secondaryChannel);
                 const maxInstrumentsPerChannel = this.doc.song.getMaxInstrumentsPerChannel();
