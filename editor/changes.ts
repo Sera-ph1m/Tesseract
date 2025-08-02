@@ -3099,8 +3099,19 @@ export class ChangeCreateChannelTag extends UndoableChange {
       endChannel: Math.max(startChannel, endChannel),
     };
 
-    this._didSomething();
-    this.redo();
+    // disallow any partial overlap (cross‐tag) with existing tags
+    const isCross = (existing: ChannelTag) =>
+      (this._tag.startChannel < existing.startChannel &&
+       this._tag.endChannel   > existing.startChannel &&
+       this._tag.endChannel   < existing.endChannel) ||
+      (existing.startChannel < this._tag.startChannel &&
+       existing.endChannel   > this._tag.startChannel &&
+       existing.endChannel   < this._tag.endChannel);
+    if (this._doc.song.channelTags.some(isCross)) {
+      alert('Cross tags are not allowed');
+      return;
+    }
+    this._didSomething(); this.redo();
   }
 
   private _generateUniqueTagId(): string {
@@ -3114,6 +3125,7 @@ export class ChangeCreateChannelTag extends UndoableChange {
   protected _doForwards(): void {
     this._doc.song.channelTags.push(this._tag);
     this._doc.notifier.changed();
+    this._doc.song.channelTags.sort((a, b) => b.endChannel - a.endChannel);
   }
 
   protected _doBackwards(): void {

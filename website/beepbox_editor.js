@@ -28821,6 +28821,16 @@ li.select2-results__option[role=group] > strong:hover {
                 startChannel: Math.min(startChannel, endChannel),
                 endChannel: Math.max(startChannel, endChannel),
             };
+            const isCross = (existing) => (this._tag.startChannel < existing.startChannel &&
+                this._tag.endChannel > existing.startChannel &&
+                this._tag.endChannel < existing.endChannel) ||
+                (existing.startChannel < this._tag.startChannel &&
+                    existing.endChannel > this._tag.startChannel &&
+                    existing.endChannel < this._tag.endChannel);
+            if (this._doc.song.channelTags.some(isCross)) {
+                alert('Cross tags are not allowed');
+                return;
+            }
             this._didSomething();
             this.redo();
         }
@@ -28834,6 +28844,7 @@ li.select2-results__option[role=group] > strong:hover {
         _doForwards() {
             this._doc.song.channelTags.push(this._tag);
             this._doc.notifier.changed();
+            this._doc.song.channelTags.sort((a, b) => b.endChannel - a.endChannel);
         }
         _doBackwards() {
             const index = this._doc.song.channelTags.findIndex((tag) => tag.id === this._tag.id);
