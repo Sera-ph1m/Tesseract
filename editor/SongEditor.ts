@@ -4115,7 +4115,7 @@ export class SongEditor {
         {
           style:
             "margin-right: 0px; color: " +
-            getSecondaryNoteColor(this.doc, this.doc.channel) +
+            "inherit" +
             ";",
         },
         i + 1 + ""

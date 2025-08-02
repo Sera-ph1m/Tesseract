@@ -295,6 +295,11 @@ export class MuteEditor {
 
     const ch = this._rowToChannel[rowIndex];
     if (ch == null) {
+      // If this row is a tag (no channel), open its context menu
+      const tagId = this._rowToTag[rowIndex];
+      if (tagId) {
+        this.openTagContextMenu(tagId, event);
+      }
       return;
     }
 
@@ -740,6 +745,9 @@ export class MuteEditor {
         action: "chnMute",
       },
       { label: "Solo Channel", action: "chnSolo" },
+      { label: "Insert Pitch Channel Below", action: "insertPitch" },
+      { label: "Insert Noise Channel Below", action: "insertNoise" },
+      { label: "Insert Mod Channel Below", action: "insertMod" },
       { label: "Insert Channel Below", action: "chnInsert" },
       { label: "Delete This Channel", action: "chnDelete" },
     ];
@@ -792,6 +800,73 @@ export class MuteEditor {
     const channel = this._doc.song.channels[ch];
     const tags = this._doc.song.channelTags;
     switch (action) {
+      // --- new explicit‐type insert handlers ---
+      case "insertPitch": {
+        const idx = ch;
+        const cg = new ChangeGroup();
+        for (const tag of this._doc.song.channelTags) {
+          if (tag.startChannel > idx) {
+            cg.append(new ChangeChannelTagRange(
+              this._doc, tag.id,
+              tag.startChannel + 1, tag.endChannel + 1
+            ));
+          } else if (tag.endChannel >= idx) {
+            cg.append(new ChangeChannelTagRange(
+              this._doc, tag.id,
+              tag.startChannel, tag.endChannel + 1
+            ));
+          }
+        }
+        cg.append(new ChangeAddChannel(
+          this._doc, ChannelType.Pitch, idx
+        ));
+        this._doc.record(cg);
+        break;
+      }
+      case "insertNoise": {
+        const idx = ch;
+        const cg = new ChangeGroup();
+        for (const tag of this._doc.song.channelTags) {
+          if (tag.startChannel > idx) {
+            cg.append(new ChangeChannelTagRange(
+              this._doc, tag.id,
+              tag.startChannel + 1, tag.endChannel + 1
+            ));
+          } else if (tag.endChannel >= idx) {
+            cg.append(new ChangeChannelTagRange(
+              this._doc, tag.id,
+              tag.startChannel, tag.endChannel + 1
+            ));
+          }
+        }
+        cg.append(new ChangeAddChannel(
+          this._doc, ChannelType.Noise, idx
+        ));
+        this._doc.record(cg);
+        break;
+      }
+      case "insertMod": {
+        const idx = ch;
+        const cg = new ChangeGroup();
+        for (const tag of this._doc.song.channelTags) {
+          if (tag.startChannel > idx) {
+            cg.append(new ChangeChannelTagRange(
+              this._doc, tag.id,
+              tag.startChannel + 1, tag.endChannel + 1
+            ));
+          } else if (tag.endChannel >= idx) {
+            cg.append(new ChangeChannelTagRange(
+              this._doc, tag.id,
+              tag.startChannel, tag.endChannel + 1
+            ));
+          }
+        }
+        cg.append(new ChangeAddChannel(
+          this._doc, ChannelType.Mod, idx
+        ));
+        this._doc.record(cg);
+        break;
+      }
       case "rename": {
         const oldName = channel.name;
         const newName = window.prompt("New channel name:", oldName);

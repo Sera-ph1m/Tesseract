@@ -41249,6 +41249,10 @@ You should be redirected to the song at:<br /><br />
                     return;
                 const ch = this._rowToChannel[rowIndex];
                 if (ch == null) {
+                    const tagId = this._rowToTag[rowIndex];
+                    if (tagId) {
+                        this.openTagContextMenu(tagId, event);
+                    }
                     return;
                 }
                 const xPos = event.clientX - container.getBoundingClientRect().left;
@@ -41416,6 +41420,51 @@ You should be redirected to the song at:<br /><br />
                 const channel = this._doc.song.channels[ch];
                 const tags = this._doc.song.channelTags;
                 switch (action) {
+                    case "insertPitch": {
+                        const idx = ch;
+                        const cg = new ChangeGroup();
+                        for (const tag of this._doc.song.channelTags) {
+                            if (tag.startChannel > idx) {
+                                cg.append(new ChangeChannelTagRange(this._doc, tag.id, tag.startChannel + 1, tag.endChannel + 1));
+                            }
+                            else if (tag.endChannel >= idx) {
+                                cg.append(new ChangeChannelTagRange(this._doc, tag.id, tag.startChannel, tag.endChannel + 1));
+                            }
+                        }
+                        cg.append(new ChangeAddChannel(this._doc, ChannelType.Pitch, idx));
+                        this._doc.record(cg);
+                        break;
+                    }
+                    case "insertNoise": {
+                        const idx = ch;
+                        const cg = new ChangeGroup();
+                        for (const tag of this._doc.song.channelTags) {
+                            if (tag.startChannel > idx) {
+                                cg.append(new ChangeChannelTagRange(this._doc, tag.id, tag.startChannel + 1, tag.endChannel + 1));
+                            }
+                            else if (tag.endChannel >= idx) {
+                                cg.append(new ChangeChannelTagRange(this._doc, tag.id, tag.startChannel, tag.endChannel + 1));
+                            }
+                        }
+                        cg.append(new ChangeAddChannel(this._doc, ChannelType.Noise, idx));
+                        this._doc.record(cg);
+                        break;
+                    }
+                    case "insertMod": {
+                        const idx = ch;
+                        const cg = new ChangeGroup();
+                        for (const tag of this._doc.song.channelTags) {
+                            if (tag.startChannel > idx) {
+                                cg.append(new ChangeChannelTagRange(this._doc, tag.id, tag.startChannel + 1, tag.endChannel + 1));
+                            }
+                            else if (tag.endChannel >= idx) {
+                                cg.append(new ChangeChannelTagRange(this._doc, tag.id, tag.startChannel, tag.endChannel + 1));
+                            }
+                        }
+                        cg.append(new ChangeAddChannel(this._doc, ChannelType.Mod, idx));
+                        this._doc.record(cg);
+                        break;
+                    }
                     case "rename": {
                         const oldName = channel.name;
                         const newName = window.prompt("New channel name:", oldName);
@@ -41774,6 +41823,9 @@ You should be redirected to the song at:<br /><br />
                     action: "chnMute",
                 },
                 { label: "Solo Channel", action: "chnSolo" },
+                { label: "Insert Pitch Channel Below", action: "insertPitch" },
+                { label: "Insert Noise Channel Below", action: "insertNoise" },
+                { label: "Insert Mod Channel Below", action: "insertMod" },
                 { label: "Insert Channel Below", action: "chnInsert" },
                 { label: "Delete This Channel", action: "chnDelete" },
             ];
@@ -53662,7 +53714,7 @@ You should be redirected to the song at:<br /><br />
                 const operatorIndex = i;
                 const operatorNumber = div({
                     style: "margin-right: 0px; color: " +
-                        getSecondaryNoteColor(this.doc, this.doc.channel) +
+                        "inherit" +
                         ";",
                 }, i + 1 + "");
                 const frequencySelect = buildOptions(select({ style: "width: 100%;", title: "Frequency" }), Config.operatorFrequencies.map((freq) => freq.name));
