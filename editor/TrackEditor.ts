@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2022 John Nesky and contributing authors, distributed under the MIT license, see accompanying the LICENSE.md file.
+
 
 import { ColorConfig } from "./ColorConfig";
 import { Config } from "../synth/SynthConfig";
@@ -10,7 +10,7 @@ import { ChangeRenameChannelTag } from "./changes";
 import { SongEditor } from "./SongEditor";
 import { HTML, SVG } from "imperative-html/dist/esm/elements-strict";
 
-// A small row that displays a ChannelTag’s name.
+
 class TagRow {
 	public readonly container: HTMLElement;
 	private readonly _label: HTMLElement;
@@ -52,14 +52,14 @@ class TagRow {
 }
 
 export class TrackEditor {
-	// Map tag.id → TagRow instance
+	
 	private readonly _tagRows = new Map<string, TagRow>();
-	// The single source of truth for channel colors, computed in render.
+	
 	private _channelColors: Map<
 		number,
 		{ primary: string; secondary: string }
 	> = new Map();
-	// Per-tag colors (so tags at the same startChannel can differ)
+	
 	private _tagColors: Map<string, { primary: string; secondary: string }> =
 		new Map();
 
@@ -248,7 +248,7 @@ export class TrackEditor {
 			{ primary: string; secondary: string }
 		>();
 
-		// First pass: Iterate through visual rows to determine base colors and tag colors
+		
 		for (let ch = 0; ch < channelCount; ch++) {
 			tags.filter((t) => t.startChannel === ch).forEach((tag) => {
 				const colorIndex = (pitchCounter % 10) + 1;
@@ -260,7 +260,7 @@ export class TrackEditor {
 				pitchCounter = (pitchCounter + 1) % 10;
 			});
 
-			// The channel itself
+			
 			if (song.getChannelIsMod(ch)) {
 				const colorIndex = (modCounter % 4) + 1;
 				baseChannelColors.set(ch, {
@@ -269,7 +269,7 @@ export class TrackEditor {
 				});
 				modCounter = (modCounter + 1) % 4;
 			} else {
-				// Pitch and Noise channels share the same color sequence
+				
 				const colorIndex = (pitchCounter % 10) + 1;
 				baseChannelColors.set(ch, {
 					primary: `var(--pitch${colorIndex}-primary-note)`,
@@ -279,17 +279,17 @@ export class TrackEditor {
 			}
 		}
 
-		// Save per-tag colors for TagRow rendering
+		
 		this._tagColors = tagColors;
-		// Second pass: Apply tag overrides to generate final color map
+		
 		for (let ch = 0; ch < channelCount; ch++) {
-			// find all tags covering this channel
+			
 			const covering = tags.filter(
 				(t) => t.startChannel <= ch && ch <= t.endChannel
 			);
 			let innermostTag = null;
 			if (covering.length > 0) {
-				// pick the smallest‐range tags
+				
 				const minRange = Math.min(
 					...covering.map((t) => t.endChannel - t.startChannel)
 				);
@@ -297,7 +297,7 @@ export class TrackEditor {
 					(t) => t.endChannel - t.startChannel === minRange
 				);
 				if (smallest.length > 1) {
-					// tie‐break by latest in original tags[] array
+					
 					innermostTag = smallest.reduce((latest, t) =>
 						tags.indexOf(t) > tags.indexOf(latest) ? t : latest,
 					smallest[0]
@@ -535,13 +535,13 @@ export class TrackEditor {
 
 		const tagRow = this._getTagRowAtY(this._mouseY);
 		if (tagRow) {
-			// On any non‐left click, bail *and* clear the pressed/dragging state:
+			
 			if (event.button !== 0) {
 				this._mousePressed = false;
 				this._mouseDragging = false;
 				return;
 			}
-			// Left‐click on tag → rename
+			
 			const tagId = tagRow.dataset.tagId;
 			if (tagId) {
 				const tag = this._doc.song.channelTags.find((t) => t.id === tagId);
@@ -554,7 +554,7 @@ export class TrackEditor {
 					);
 				}
 			}
-			// Prevent any further mouse‐up logic from firing on the svg
+			
 			this._mousePressed = false;
 			this._mouseDragging = false;
 			return;
@@ -646,7 +646,7 @@ export class TrackEditor {
 			this._downHighlight.style.visibility = "hidden";
 			return;
 		}
-		// === NEW: right‐click on a channel row ⇒ channel menu
+		
 		if (this._mouseY >= Config.barEditorHeight) {
 			const ch = this._mouseChannel;
 			document.dispatchEvent(
@@ -664,15 +664,15 @@ export class TrackEditor {
 	};
 
 	private _updatePreview(): void {
-		// First, handle special UI states when hovering over a tag row.
+		
 		if (this._mouseOver && this._getTagRowAtY(this._mouseY)) {
 			this._svg.style.cursor = "pointer";
 			this._boxHighlight.style.visibility = "hidden";
 			this._upHighlight.style.visibility = "hidden";
 			this._downHighlight.style.visibility = "hidden";
-			return; // Exit early, no other previews needed.
+			return; 
 		} else if (this._mouseOver) {
-			// Ensure cursor is default when not over a tag.
+			
 			this._svg.style.cursor = "default";
 		}
 
@@ -811,13 +811,13 @@ export class TrackEditor {
 	}
 
 	public render(): void {
-		// 1. Compute all channel and tag colors
+		
 		this._computeChannelColors();
 
-		// 2. Bar width
+		
 		this._barWidth = this._doc.getBarWidth();
 
-		// 3. Ensure ChannelRow objects exist
+		
 		const channelCount = this._doc.song.getChannelCount();
 		if (this._channels.length !== channelCount) {
 			for (let y = this._channels.length; y < channelCount; y++) {
@@ -827,12 +827,12 @@ export class TrackEditor {
 			this._mousePressed = false;
 		}
 
-		// 4. Render each channel's contents, passing in the computed colors
+		
 		for (let i = 0; i < channelCount; i++) {
 			this._channels[i].render(this._channelColors.get(i)!);
 		}
 
-		// 5. Sync, update & color TagRows
+		
 		const tags = this._doc.song.channelTags;
 		tags.forEach((tag) => {
 			if (!this._tagRows.has(tag.id)) {
@@ -841,28 +841,28 @@ export class TrackEditor {
 			const row = this._tagRows.get(tag.id)!;
 			row.container.dataset.tagId = tag.id;
 			row.update(tag);
-			// use the tag’s own color
+			
 			row.setColor(this._tagColors.get(tag.id)!.primary);
 		});
 		for (const id of Array.from(this._tagRows.keys())) {
 			if (!tags.find((t) => t.id === id)) this._tagRows.delete(id);
 		}
 
-		// 6. Rebuild the DOM in (tag→channel) order, handling collapsed tags
+		
 		this._channelRowContainer.innerHTML = "";
 		const collapsedTagIds = new Set(
 			tags.filter((t) => t.name.endsWith("...")).map((t) => t.id)
 		);
 
 		for (let ch = 0; ch < channelCount; ch++) {
-			// Add any tags that start at this channel index, drawing larger tags underneath smaller ones
+			
 			const startTags = tags
 				.filter((t) => t.startChannel === ch)
 				.sort((a, b) => {
 					const lenA = a.endChannel - a.startChannel;
 					const lenB = b.endChannel - b.startChannel;
-					if (lenA !== lenB) return lenB - lenA; // larger spans first
-					return tags.indexOf(a) - tags.indexOf(b); // if equal span, older first
+					if (lenA !== lenB) return lenB - lenA; 
+					return tags.indexOf(a) - tags.indexOf(b); 
 				});
 			startTags.forEach((tag) => {
 				const tagRow = this._tagRows.get(tag.id)!.container;
@@ -877,7 +877,7 @@ export class TrackEditor {
 				this._channelRowContainer.appendChild(tagRow);
 			});
 
-			// Add the channel row itself
+			
 			const channelRow = this._channels[ch].container;
 			const parentTag = tags.find(
 				(t) =>
@@ -889,7 +889,7 @@ export class TrackEditor {
 			this._channelRowContainer.appendChild(channelRow);
 		}
 
-		// 7. Update dimensions and bar numbers
+		
 		const editorWidth: number = this._barWidth * this._doc.song.barCount;
 		if (this._renderedEditorWidth != editorWidth) {
 			this._renderedEditorWidth = editorWidth;
@@ -953,26 +953,26 @@ export class TrackEditor {
 			}
 		}
 
-		// 8. Draw tag borders
+		
 		Array.from(this.container.querySelectorAll(".tagBorder")).forEach((el) =>
 			el.remove()
 		);
 		tags.forEach((tag) => {
 			const color = this._channelColors.get(tag.startChannel)!.primary;
-			// order tags ending on this row by span (largest first), tie→original array order
+			
 			const sameEnd = tags
 				.filter((t) => t.endChannel === tag.endChannel)
 				.sort((a, b) => {
 					const spanA = a.endChannel - a.startChannel;
 					const spanB = b.endChannel - b.startChannel;
-					if (spanA !== spanB) return spanB - spanA; // larger spans first
-					return tags.indexOf(a) - tags.indexOf(b); // if equal, older first
+					if (spanA !== spanB) return spanB - spanA; 
+					return tags.indexOf(a) - tags.indexOf(b); 
 				});
 			const idx = sameEnd.findIndex((t) => t.id === tag.id);
 			const tagRowElem = this._tagRows.get(tag.id)!.container;
 			const isCollapsed = collapsedTagIds.has(tag.id);
 
-			// Top border between tagRow & channelRows (only if expanded)
+			
 			if (!isCollapsed) {
 				const top = HTML.div({
 					class: "tagBorder",
@@ -984,9 +984,9 @@ export class TrackEditor {
 				tagRowElem.appendChild(top);
 			}
 
-			// Bottom border: always draw.
-			// Attach to the channelRow if it's visible; otherwise to
-			// the innermost visible tagRow that covers endChannel.
+			
+			
+			
 			let attachElem: HTMLElement | null = null;
 			const channelRow = this._channelRowContainer.querySelector(
 				`[data-channel-index='${tag.endChannel}']`
@@ -994,7 +994,7 @@ export class TrackEditor {
 			if (channelRow && channelRow.style.display !== "none") {
 				attachElem = channelRow;
 			} else {
-				// find all visible tagRows covering endChannel
+				
 				const candidates = tags
 					.map((t2) => this._tagRows.get(t2.id)!.container)
 					.filter((el) => el.style.display !== "none")
@@ -1004,7 +1004,7 @@ export class TrackEditor {
 						return start <= tag.endChannel && tag.endChannel <= t2.endChannel;
 					});
 				if (candidates.length) {
-					// pick the innermost: largest startChannel
+					
 					attachElem = candidates.reduce((best, cur) => {
 						return parseInt(cur.dataset.startChannel!) >
 							parseInt(best.dataset.startChannel!)
@@ -1025,7 +1025,7 @@ export class TrackEditor {
 			}
 		});
 
-		// 9. Update overall editor height
+		
 		const editorHeightVisual = Array.from(
 			this._channelRowContainer.children
 		).reduce(
@@ -1046,7 +1046,7 @@ export class TrackEditor {
 				editorHeightVisual + Config.barEditorHeight + "px";
 		}
 
-		// 10. Draw selection rectangle
+		
 		if (this._doc.selection.boxSelectionActive) {
 			const startCh = this._doc.selection.boxSelectionChannel;
 			const endCh = startCh + this._doc.selection.boxSelectionHeight - 1;
@@ -1079,7 +1079,7 @@ export class TrackEditor {
 			this._selectionRect.setAttribute("visibility", "hidden");
 		}
 
-		// 11. Update preview elements
+		
 		this._select.style.display = this._touchMode ? "" : "none";
 		this._updatePreview();
 	}

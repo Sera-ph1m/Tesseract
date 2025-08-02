@@ -1,6 +1,6 @@
-// Copyright (c) 2012-2022 John Nesky and contributing authors, distributed under the MIT license, see accompanying the LICENSE.md file.
 
-//import {Layout} from "./Layout";
+
+
 import {
 	sampleLoadEvents,
 	SampleLoadedEvent,
@@ -38,7 +38,7 @@ import { InstrumentImportPrompt } from "./InstrumentImportPrompt";
 import { EditorConfig, isMobile, prettyNumber, Preset, PresetCategory } from "./EditorConfig";
 import { EuclideanRhythmPrompt } from "./EuclidgenRhythmPrompt";
 import { ExportPrompt } from "./ExportPrompt";
-import "./Layout"; // Imported here for the sake of ensuring this code is transpiled early.
+import "./Layout"; 
 import { Instrument, Channel, Synth, ChannelType, ChannelTag } from "../synth/synth";
 import { HTML, SVG } from "imperative-html/dist/esm/elements-strict";
 import { Preferences } from "./Preferences";
@@ -187,8 +187,8 @@ function buildOptions(menu: HTMLSelectElement, items: ReadonlyArray<string | num
     return menu;
 }
 
-// Similar to the above, but adds a non-interactive header to the list.
-// @jummbus: Honestly not necessary with new HTML options interface, but not exactly necessary to change either!
+
+
 
 function buildHeaderedOptions(header: string, menu: HTMLSelectElement, items: ReadonlyArray<string | number>): HTMLSelectElement {
     menu.appendChild(option({ selected: true, disabled: true, value: header }, header));
@@ -203,8 +203,8 @@ function buildPresetOptions(isNoise: boolean, idSet: string): HTMLSelectElement 
     const menu: HTMLSelectElement = select({ id: idSet, class: "presetSelect"});
 
 
-    // Show the "spectrum" custom type in both pitched and noise channels.
-    //const customTypeGroup: HTMLElement = optgroup({label: EditorConfig.presetCategories[0].name});
+    
+    
     if (isNoise) {
         menu.appendChild(option({ value: InstrumentType.noise }, EditorConfig.valueToPreset(InstrumentType.noise)!.name));
         menu.appendChild(option({ value: InstrumentType.spectrum }, EditorConfig.valueToPreset(InstrumentType.spectrum)!.name));
@@ -222,9 +222,9 @@ function buildPresetOptions(isNoise: boolean, idSet: string): HTMLSelectElement 
         menu.appendChild(option({ value: InstrumentType.noise }, EditorConfig.valueToPreset(InstrumentType.noise)!.name));
     }
 
-    // TODO - When you port over the Dogebox2 import/export buttons be sure to uncomment these
+    
     const randomGroup: HTMLElement = optgroup({ label: "Randomize ▾" });
-    // const randomGroup: HTMLElement = optgroup({ label: "▾ Randomize" });
+    
     randomGroup.appendChild(option({ value: "randomPreset" }, "Random Preset"));
     randomGroup.appendChild(option({ value: "randomGenerated" }, "Random Generated"));
     menu.appendChild(randomGroup);
@@ -235,7 +235,7 @@ function buildPresetOptions(isNoise: boolean, idSet: string): HTMLSelectElement 
     for (let categoryIndex: number = 1; categoryIndex < EditorConfig.presetCategories.length; categoryIndex++) {
         const category: PresetCategory = EditorConfig.presetCategories[categoryIndex];
         const group: HTMLElement = optgroup({ label: category.name + " ▾" });
-        // const group: HTMLElement = optgroup({ label: "▾ " + category.name });
+        
         let foundAny: boolean = false;
         for (let presetIndex: number = 0; presetIndex < category.presets.length; presetIndex++) {
             const preset: Preset = category.presets[presetIndex];
@@ -251,24 +251,24 @@ function buildPresetOptions(isNoise: boolean, idSet: string): HTMLSelectElement 
             customSampleCategoryGroup = group;
         }
 
-        // Need to re-sort some elements for readability. Can't just do this in the menu, because indices are saved in URLs and would get broken if the ordering actually changed.
+        
         if (category.name == "String Presets" && foundAny) {
 
-            // Put violin 2 after violin 1
+            
             let moveViolin2 = group.removeChild(group.children[11]);
             group.insertBefore(moveViolin2, group.children[1]);
         }
 
         if (category.name == "Flute Presets" && foundAny) {
 
-            // Put flute 2 after flute 1
+            
             let moveFlute2 = group.removeChild(group.children[11]);
             group.insertBefore(moveFlute2, group.children[1]);
         }
 
         if (category.name == "Keyboard Presets" && foundAny) {
 
-            // Put grand piano 2 and 3 after grand piano 1
+            
             let moveGrandPiano2 = group.removeChild(group.children[9]);
             let moveGrandPiano3 = group.removeChild(group.children[9]);
             group.insertBefore(moveGrandPiano3, group.children[1]);
@@ -279,7 +279,7 @@ function buildPresetOptions(isNoise: boolean, idSet: string): HTMLSelectElement 
     }
 
     if (firstCategoryGroup != null && customSampleCategoryGroup != null) {
-        // Put the custom sample presets at the top.
+        
         const parent: HTMLSelectElement = <HTMLSelectElement>customSampleCategoryGroup.parentNode;
         parent.removeChild(customSampleCategoryGroup);
         parent.insertBefore(customSampleCategoryGroup, firstCategoryGroup);
@@ -293,7 +293,7 @@ function setSelectedValue(menu: HTMLSelectElement, value: number, isSelect2: boo
     if (menu.value != stringValue) {
         menu.value = stringValue;
 
-        // Change select2 value, if this select is a member of that class.
+        
         if (isSelect2) {
             $(menu).val(value).trigger('change.select2');
         }
@@ -326,7 +326,7 @@ class CustomChipCanvas {
         this.renderedArray = new Float32Array(64);
         this.renderedColor = "";
 
-        // Init waveform
+        
         this.redrawCanvas();
 
     }
@@ -335,7 +335,7 @@ class CustomChipCanvas {
         const chipData: Float32Array = this._doc.song.channels[this._doc.channel].instruments[this._doc.getCurrentInstrument()].customChipWave;
         const renderColor: string = ColorConfig.getComputedChannelColor(this._doc.song, this._doc.channel).primaryNote;
 
-        // Check if the data has changed from the last render.
+        
         let needsRedraw: boolean = false;
         if (renderColor != this.renderedColor) {
             needsRedraw = true;
@@ -353,20 +353,20 @@ class CustomChipCanvas {
 
         var ctx = this.canvas.getContext("2d") as CanvasRenderingContext2D;
 
-        // Black BG
+        
         ctx.fillStyle = ColorConfig.getComputed("--editor-background");
         ctx.fillRect(0, 0, 128, 52);
 
-        // Mid-bar
+        
         ctx.fillStyle = ColorConfig.getComputed("--ui-widget-background");
         ctx.fillRect(0, 25, 128, 2);
 
-        // 25-75 bars
+        
         ctx.fillStyle = ColorConfig.getComputed("--track-editor-bg-pitch-dim");
         ctx.fillRect(0, 13, 128, 1);
         ctx.fillRect(0, 39, 128, 1);
 
-        // Waveform
+        
         ctx.fillStyle = renderColor;
 
         for (let x: number = 0; x < 64; x++) {
@@ -410,7 +410,7 @@ class CustomChipCanvas {
                     ctx.fillStyle = ColorConfig.getComputedChannelColor(this._doc.song, this._doc.channel).primaryNote;
                     ctx.fillRect(Math.floor(i / 2) * 2, j - 2, 2, 4);
 
-                    // Actually update current instrument's custom waveform
+                    
                     this.newArray[Math.floor(i / 2)] = (j - 26);
                 }
 
@@ -427,7 +427,7 @@ class CustomChipCanvas {
                 ctx.fillStyle = ColorConfig.getComputedChannelColor(this._doc.song, this._doc.channel).primaryNote;
                 ctx.fillRect(Math.floor(x / 2) * 2, y - 2, 2, 4);
 
-                // Actually update current instrument's custom waveform
+                
                 this.newArray[Math.floor(x / 2)] = (y - 26);
 
             }
@@ -436,7 +436,7 @@ class CustomChipCanvas {
             this.lastX = x;
             this.lastY = y;
 
-            // Preview - update integral used for sound synthesis based on new array, not actual stored array. When mouse is released, real update will happen.
+            
             let instrument: Instrument = this._doc.song.channels[this._doc.channel].instruments[this._doc.getCurrentInstrument()];
 
             let sum: number = 0.0;
@@ -445,7 +445,7 @@ class CustomChipCanvas {
             }
             const average: number = sum / this.newArray.length;
 
-            // Perform the integral on the wave. The chipSynth will perform the derivative to get the original wave back but with antialiasing.
+            
             let cumulative: number = 0;
             let wavePrev: number = 0;
             for (let i: number = 0; i < this.newArray.length; i++) {
@@ -462,7 +462,7 @@ class CustomChipCanvas {
     private _onMouseDown = (event: MouseEvent): void => {
         this.mouseDown = true;
 
-        // Allow single-click edit
+        
         this._onMouseMove(event);
     }
     private _onMouseUp = (): void => {
@@ -485,9 +485,9 @@ class CustomChipCanvas {
 
 class CustomAlgorythmCanvas {
     private mouseDown: boolean;
-    //private continuousEdit: boolean;
-    //private lastX: number;
-    //private lastY: number;
+    
+    
+    
     public newMods: number[][];
     public lookUpArray: number[][];
     public selected: number;
@@ -501,17 +501,17 @@ class CustomAlgorythmCanvas {
     private _change: Change | null = null;
 
     constructor(public readonly canvas: HTMLCanvasElement, private readonly _doc: SongDocument, private readonly _getChange: (newArray: number[][], carry: number, mode: string) => Change) {
-        //canvas.addEventListener("input", this._whenInput);
-        //canvas.addEventListener("change", this._whenChange);
+        
+        
         canvas.addEventListener("mousemove", this._onMouseMove);
         canvas.addEventListener("mousedown", this._onMouseDown);
         canvas.addEventListener("mouseup", this._onMouseUp);
         canvas.addEventListener("mouseleave", this._onMouseUp);
 
         this.mouseDown = false;
-        //this.continuousEdit = false;
-        //this.lastX = 0;
-        //this.lastY = 0;
+        
+        
+        
         this.drawArray = [[], [], [], [], [], []];
         this.lookUpArray = [[], [], [], [], [], []];
         this.carriers = 1;
@@ -709,7 +709,7 @@ class CustomAlgorythmCanvas {
         this.fillDrawArray(noReset);
         var ctx = this.canvas.getContext("2d") as CanvasRenderingContext2D;
 
-        // Black BG
+        
         ctx.fillStyle = ColorConfig.getComputed("--editor-background");
         ctx.fillRect(0, 0, 144, 144);
 
@@ -743,7 +743,7 @@ class CustomAlgorythmCanvas {
     }
 
     private _onMouseMove = (event: MouseEvent): void => {
-        if (this.mouseDown) {//todo rework to handle draging and single clicks differently
+        if (this.mouseDown) {
 
             var x = (event.clientX || event.pageX) - this.canvas.getBoundingClientRect().left;
             var y = Math.floor((event.clientY || event.pageY) - this.canvas.getBoundingClientRect().top);
@@ -789,7 +789,7 @@ class CustomAlgorythmCanvas {
                             }
                         } else {
                             const newmod = this.drawArray[yindex][xindex]
-                            if (this.selected > newmod) { //todo try to rebalence then do this in algorithm mode otherwise input as needed
+                            if (this.selected > newmod) { 
                                 let check = this.newMods[newmod - 1].indexOf(this.selected);
                                 if (check != -1) {
                                     this.newMods[newmod - 1].splice(check, 1);
@@ -824,12 +824,12 @@ class CustomAlgorythmCanvas {
     private _onMouseDown = (event: MouseEvent): void => {
         this.mouseDown = true;
 
-        // Allow single-click edit
+        
         this._onMouseMove(event);
     }
     private _onMouseUp = (): void => {
         this.mouseDown = false;
-        //this.continuousEdit = false;
+        
 
         this._whenChange();
     }
@@ -883,7 +883,7 @@ export class SongEditor {
         this._volumeBarContainer,
     );
     private readonly _fileMenu: HTMLSelectElement = select({ style: "width: 100%;" },
-        option({ selected: true, disabled: true, hidden: false }, "File"), // todo: "hidden" should be true but looks wrong on mac chrome, adds checkmark next to first visible option even though it's not selected. :(
+        option({ selected: true, disabled: true, hidden: false }, "File"), 
         option({ value: "new" }, "+ New Blank Song (⇧`)"),
         option({ value: "import" }, "↑ Import Song... (" + EditorConfig.ctrlSymbol + "O)"),
         option({ value: "export" }, "↓ Export Song... (" + EditorConfig.ctrlSymbol + "S)"),
@@ -896,7 +896,7 @@ export class SongEditor {
         option({ value: "songRecovery" }, "⚠ Recover Recent Song... (`)"),
     );
     private readonly _editMenu: HTMLSelectElement = select({ style: "width: 100%;" },
-        option({ selected: true, disabled: true, hidden: false }, "Edit"), // todo: "hidden" should be true but looks wrong on mac chrome, adds checkmark next to first visible option even though it's not selected. :(
+        option({ selected: true, disabled: true, hidden: false }, "Edit"), 
         option({ value: "undo" }, "Undo (Z)"),
         option({ value: "redo" }, "Redo (Y)"),
         option({ value: "copy" }, "Copy Pattern (C)"),
@@ -920,7 +920,7 @@ export class SongEditor {
         option({ value: "addExternal" }, "Add Custom Samples... (⇧Q)"),
     );
     private readonly _optionsMenu: HTMLSelectElement = select({ style: "width: 100%;" },
-        option({ selected: true, disabled: true, hidden: false }, "Preferences"), // todo: "hidden" should be true but looks wrong on mac chrome, adds checkmark next to first visible option even though it's not selected. :(
+        option({ selected: true, disabled: true, hidden: false }, "Preferences"), 
         optgroup({ label: "Technical" },
             option({ value: "autoPlay" }, "Auto Play on Load"),
             option({ value: "autoFollow" }, "Auto Follow Playhead"),
@@ -979,7 +979,7 @@ export class SongEditor {
     private readonly _ringModContainerRow: HTMLDivElement = div({ class: "", style: "display:flex; flex-direction:column;" },
         this._ringModRow,
         this._ringModHzSliderRow,
-        // this._rmOffsetHzSliderRow,
+        
         this._ringModWaveSelectRow);
     private readonly _granularSlider: Slider = new Slider(input({ style: "margin: 0;", type: "range", min: "0", max: Config.granularRange, value: "0", step: "1" }), this.doc, (oldValue: number, newValue: number) => new ChangeGranular(this.doc, oldValue, newValue), false);
     private readonly _granularRow: HTMLDivElement = div({ class: "selectRow" }, span({ class: "tip", onclick: () => this._openPrompt("granular") }, "Granular:"), this._granularSlider.container);
@@ -1036,8 +1036,8 @@ export class SongEditor {
     private readonly _panDropdownGroup: HTMLElement = div({ class: "editor-controls", style: "display: none;" }, this._panDelayRow);
     private readonly _chipWaveSelect: HTMLSelectElement = buildOptions(select(), Config.chipWaves.map(wave => wave.name));
     private readonly _chipNoiseSelect: HTMLSelectElement = buildOptions(select(), Config.chipNoises.map(wave => wave.name));
-    // advloop addition
-    // @TODO: Add a dropdown for these. Or maybe this checkbox is fine?
+    
+    
     private readonly _useChipWaveAdvancedLoopControlsBox = input({ type: "checkbox", style: "width: 1em; padding: 0; margin-left: 0.4em; margin-right: 4em;" });
     private readonly _chipWaveLoopModeSelect = buildOptions(select(), ["Loop", "Ping-Pong", "Play Once", "Play Loop Once"]);
     private readonly _chipWaveLoopStartStepper = input({ type: "number", min: "0", step: "1", value: "0", style: "width: 100%; height: 1.5em; font-size: 80%; margin-left: 0.4em; vertical-align: middle;" });
@@ -1045,7 +1045,7 @@ export class SongEditor {
     private readonly _setChipWaveLoopEndToEndButton = button({ type: "button", style: "width: 1.5em; height: 1.5em; padding: 0; margin-left: 0.5em;" }, SVG.svg({ width: "16", height: "16", viewBox: "-13 -14 26 26", "pointer-events": "none", style: "width: 100%; height: 100%;" }, SVG.rect({ x: "4", y: "-6", width: "2", height: "12", fill: ColorConfig.primaryText }), SVG.path({ d: "M -6 -6 L -6 6 L 3 0 z", fill: ColorConfig.primaryText })));
     private readonly _chipWaveStartOffsetStepper = input({ type: "number", min: "0", step: "1", value: "0", style: "width: 100%; height: 1.5em; font-size: 80%; margin-left: 0.4em; vertical-align: middle;" });
     private readonly _chipWavePlayBackwardsBox = input({ type: "checkbox", style: "width: 1em; padding: 0; margin-left: 0.4em; margin-right: 4em;" });
-    // advloop addition
+    
     private readonly _chipWaveSelectRow: HTMLDivElement = div({ class: "selectRow" }, span({ class: "tip", onclick: () => this._openPrompt("chipWave") }, "Wave: "), div({ class: "selectContainer" }, this._chipWaveSelect));
     private readonly _chipNoiseSelectRow: HTMLDivElement = div({ class: "selectRow" }, span({ class: "tip", onclick: () => this._openPrompt("chipNoise") }, "Noise: "), div({ class: "selectContainer" }, this._chipNoiseSelect));
     private readonly _visualLoopControlsButton: HTMLButtonElement = button({ style: "margin-left: 0em; padding-left: 0.2em; height: 1.5em; max-width: 12px;", onclick: () => this._openPrompt("visualLoopControls") }, "+");
@@ -1066,7 +1066,7 @@ export class SongEditor {
     private readonly _discreteSlideSelect: HTMLSelectElement = buildOptions(select(), Config.discreteSlideTypes.map(type => type.name));
     private readonly _discreteSlideRow: HTMLDivElement = div({ class: "selectRow" }, span({ class: "tip", onclick: () => this._openPrompt("discreteSlide") }, "Discrete Slide:"), div({ class: "selectContainer" }, this._discreteSlideSelect));
 
-    private readonly _effectsSelect: HTMLSelectElement = select(option({ selected: true, disabled: true, hidden: false })); // todo: "hidden" should be true but looks wrong on mac chrome, adds checkmark next to first visible option even though it's not selected. :(
+    private readonly _effectsSelect: HTMLSelectElement = select(option({ selected: true, disabled: true, hidden: false })); 
     private readonly _eqFilterSimpleButton: HTMLButtonElement = button({ style: "font-size: x-small; width: 50%; height: 40%", class: "no-underline", onclick: () => this._switchEQFilterType(true) }, "simple");
     private readonly _eqFilterAdvancedButton: HTMLButtonElement = button({ style: "font-size: x-small; width: 50%; height: 40%", class: "last-button no-underline", onclick: () => this._switchEQFilterType(false) }, "advanced");
     private readonly _eqFilterTypeRow: HTMLElement = div({ class: "selectRow", style: "padding-top: 4px; margin-bottom: 0px;" }, span({ style: "font-size: x-small;", class: "tip", onclick: () => this._openPrompt("filterType") }, "EQ Filt.Type:"), div({ class: "instrument-bar" }, this._eqFilterSimpleButton, this._eqFilterAdvancedButton));
@@ -1103,7 +1103,7 @@ export class SongEditor {
         span({ class: "tip", tabindex: "0", style: "height:1em; font-size: smaller; white-space: nowrap;", onclick: () => this._openPrompt("pulseWidth") }, "Pulse Width:"),
         div({ style: `color: ${getSecondaryNoteColor(this.doc, this.doc.channel)}; margin-top: -3px;` }, this._pwmSliderInputBox)
     ), this._pulseWidthDropdown, this._pulseWidthSlider.container);
-    //private readonly _pulseWidthRow: HTMLDivElement = div({ class: "selectRow" }, span({ class: "tip", onclick: () => this._openPrompt("pulseWidth") }, "Pulse Width:"), this._pulseWidthDropdown, this._pulseWidthSlider.container);
+    
     private readonly _decimalOffsetSlider: Slider = new Slider(input({ style: "margin: 0;", type: "range", min: "0", max: "99", value: "0", step: "1" }), this.doc, (oldValue: number, newValue: number) => new ChangeDecimalOffset(this.doc, oldValue, 99 - newValue), false);
     private readonly _decimalOffsetRow: HTMLDivElement = div({ class: "selectRow dropFader" }, span({ class: "tip", style: "margin-left:10px;", onclick: () => this._openPrompt("decimalOffset") }, "‣ Offset:"), this._decimalOffsetSlider.container);
     private readonly _pulseWidthDropdownGroup: HTMLElement = div({ class: "editor-controls", style: "display: none;" }, this._decimalOffsetRow);
@@ -1201,7 +1201,7 @@ export class SongEditor {
     private readonly _harmonicsZoom: HTMLButtonElement = button({ style: "padding-left:0.2em; height:1.5em; max-width: 12px;", onclick: () => this._openPrompt("harmonicsSettings") }, "+");
     private readonly _harmonicsRow: HTMLElement = div({ class: "selectRow" }, span({ class: "tip", onclick: () => this._openPrompt("harmonics"), style: "font-size: smaller"}, "Harmonics:"), this._harmonicsZoom, this._harmonicsEditor.container);
 
-    //SongEditor.ts
+    
     readonly envelopeEditor: EnvelopeEditor = new EnvelopeEditor(this.doc, (id: number, submenu: number, subtype: string) => this._toggleDropdownMenu(id, submenu, subtype), (name: string) => this._openPrompt(name));
     private readonly _envelopeSpeedDisplay: HTMLSpanElement = span({ style: `color: ${getSecondaryNoteColor(this.doc, this.doc.channel)}; font-size: smaller; text-overflow: clip;` }, "x1");
     private readonly _envelopeSpeedSlider: Slider = new Slider(input({ style: "margin: 0;", type: "range", min: "0", max: Config.modulators.dictionary["envelope speed"].maxRawVol, value: "0", step: "1" }), this.doc, (oldValue: number, newValue: number) => new ChangeEnvelopeSpeed(this.doc, oldValue, newValue), false);
@@ -1230,18 +1230,18 @@ export class SongEditor {
     private readonly _customAlgorithmCanvas: CustomAlgorythmCanvas = new CustomAlgorythmCanvas(canvas({ width: 144, height: 144, style: "border:2px solid " + ColorConfig.uiWidgetBackground, id: "customAlgorithmCanvas" }), this.doc, (newArray: number[][], carry: number, mode: string) => new ChangeCustomAlgorythmorFeedback(this.doc, newArray, carry, mode));
     private readonly _algorithm6OpSelect: HTMLSelectElement = buildOptions(select(), Config.algorithms6Op.map(algorithm => algorithm.name));
     private readonly _algorithm6OpSelectRow: HTMLDivElement = div(div({ class: "selectRow" }, span({ class: "tip", onclick: () => this._openPrompt("algorithm") }, "Algorithm: "), div({ class: "selectContainer" }, this._algorithm6OpSelect))
-        , div({ style: "height:144px; display:flex; flex-direction: row; align-items:center; justify-content:center;" }, div({ style: "display:block; width:10px; margin-right: 0.2em" }, this._algorithmCanvasSwitch), div({ style: "width:144px; height:144px;" }, this._customAlgorithmCanvas.canvas)));//temp
+        , div({ style: "height:144px; display:flex; flex-direction: row; align-items:center; justify-content:center;" }, div({ style: "display:block; width:10px; margin-right: 0.2em" }, this._algorithmCanvasSwitch), div({ style: "width:144px; height:144px;" }, this._customAlgorithmCanvas.canvas)));
 
     private readonly _instrumentCopyButton: HTMLButtonElement = button({ style: "max-width:86px; width: 86px;", class: "copyButton", title: "Copy Instrument (⇧C)" }, [
         "Copy",
-        // Copy icon:
+        
         SVG.svg({ style: "flex-shrink: 0; position: absolute; left: 0; top: 50%; margin-top: -1em; pointer-events: none;", width: "2em", height: "2em", viewBox: "-5 -21 26 26" }, [
             SVG.path({ d: "M 0 -15 L 1 -15 L 1 0 L 13 0 L 13 1 L 0 1 L 0 -15 z M 2 -1 L 2 -17 L 10 -17 L 14 -13 L 14 -1 z M 3 -2 L 13 -2 L 13 -12 L 9 -12 L 9 -16 L 3 -16 z", fill: "currentColor" }),
         ]),
     ]);
     private readonly _instrumentPasteButton: HTMLButtonElement = button({ style: "max-width:86px;", class: "pasteButton", title: "Paste Instrument (⇧V)" }, [
         "Paste",
-        // Paste icon:
+        
         SVG.svg({ style: "flex-shrink: 0; position: absolute; left: 0; top: 50%; margin-top: -1em; pointer-events: none;", width: "2em", height: "2em", viewBox: "0 0 26 26" }, [
             SVG.path({ d: "M 8 18 L 6 18 L 6 5 L 17 5 L 17 7 M 9 8 L 16 8 L 20 12 L 20 22 L 9 22 z", stroke: "currentColor", fill: "none" }),
             SVG.path({ d: "M 9 3 L 14 3 L 14 6 L 9 6 L 9 3 z M 16 8 L 20 12 L 16 12 L 16 8 z", fill: "currentColor", }),
@@ -1250,14 +1250,14 @@ export class SongEditor {
 
     private readonly _instrumentExportButton: HTMLButtonElement = button({ style: "max-width:86px; width: 86px;", class: "exportInstrumentButton" }, [
         "Export",
-        // Export icon:
+        
         SVG.svg({ style: "flex-shrink: 0; position: absolute; left: 0; top: 50%; margin-top: -1em; pointer-events: none;", width: "2em", height: "2em", viewBox: "0 -960 960 960" }, [
             SVG.path({ d: "M200-120v-40h560v40H200Zm279.231-150.769L254.615-568.462h130.769V-840h188.462v271.538h130.77L479.231-270.769Zm0-65.385 142.923-191.538h-88.308V-800H425.385v272.308h-88.308l142.154 191.538ZM480-527.692Z", fill: "currentColor" }),
         ]),
     ]);
     private readonly _instrumentImportButton: HTMLButtonElement = button({ style: "max-width:86px;", class: "importInstrumentButton" }, [
         "Import",
-        // Import icon:
+        
         SVG.svg({ style: "flex-shrink: 0; position: absolute; left: 0; top: 50%; margin-top: -1em; pointer-events: none;", width: "2em", height: "2em", viewBox: "0 -960 960 960" }, [
             SVG.path({ d: "M200-120v-40h560v40H200Zm185.384-150.769v-271.539H254.615L480-840l224.616 297.692h-130.77v271.539H385.384Zm40.001-40h108.461v-272.308h88.308L480-774.615 337.077-583.077h88.308v272.308ZM480-583.077Z", fill: "currentColor" }),
         ]),
@@ -1283,14 +1283,7 @@ export class SongEditor {
 
     private readonly _feedbackAmplitudeSlider: Slider = new Slider(input({ type: "range", min: "0", max: Config.operatorAmplitudeMax, value: "0", step: "1", title: "Feedback Amplitude" }), this.doc, (oldValue: number, newValue: number) => new ChangeFeedbackAmplitude(this.doc, oldValue, newValue), false);
     private readonly _feedbackRow2: HTMLDivElement = div({ class: "selectRow" }, span({ class: "tip", onclick: () => this._openPrompt("feedbackVolume") }, "Fdback Vol:"), this._feedbackAmplitudeSlider.container);
-    /*
-     * @jummbus - my very real, valid reason for cutting this button: I don't like it.
-     * 
-    private readonly _customizeInstrumentButton: HTMLButtonElement = button({type: "button", style: "margin: 2px 0"},
-
-        "Customize Instrument",
-    );
-    */
+   
     private readonly _addEnvelopeButton: HTMLButtonElement = button({ type: "button", class: "add-envelope" });
     private readonly _customInstrumentSettingsGroup: HTMLDivElement = div({ class: "editor-controls" },
         this._panSliderRow,
@@ -1322,7 +1315,7 @@ export class SongEditor {
         this._supersawSpreadRow,
         this._supersawShapeRow,
         this._pulseWidthRow,
-        // this._decimalOffsetRow,
+        
         this._pulseWidthDropdownGroup,
         this._stringSustainRow,
         this._unisonSelectRow,
@@ -1344,8 +1337,8 @@ export class SongEditor {
         this._noteFilterRow,
         this._noteFilterSimpleCutRow,
         this._noteFilterSimplePeakRow,
-        // this._corruptionRow,
-        // this._corruptionTypeRow,
+        
+        
         this._distortionRow,
         this._aliasingRow,
         this._bitcrusherQuantizationRow,
@@ -1389,12 +1382,12 @@ export class SongEditor {
     private readonly _instrumentSettingsGroup: HTMLDivElement = div({ class: "editor-controls" },
         this._instrumentSettingsTextRow,
         this._instrumentsButtonRow,
-        // these could've been put into _instrumentSettingsGroup as well but I decided not to
-        // this._instrumentCopyGroup,
-        // this._instrumentExportGroup,
+        
+        
+        
         this._instrumentTypeSelectRow,
         this._instrumentVolumeSliderRow,
-        //this._customizeInstrumentButton,
+        
         this._customInstrumentSettingsGroup,
     );
     private readonly _usedPatternIndicator: SVGElement = SVG.path({ d: "M -6 -6 H 6 V 6 H -6 V -6 M -2 -3 L -2 -3 L -1 -4 H 1 V 4 H -1 V -1.2 L -1.2 -1 H -2 V -3 z", fill: ColorConfig.indicatorSecondary, "fill-rule": "evenodd" });
@@ -1613,13 +1606,13 @@ export class SongEditor {
 
         this._vibratoSelect.appendChild(option({ hidden: true, value: 5 }, "custom"));
 
-        //this._unisonSelect.appendChild(option({ hidden: true, value: 28 }, "custom"));
+        
 
         this._unisonSelect.appendChild(option({ hidden: true, value: Config.unisons.length }, "custom"));
 
         this._showModSliders = new Array<boolean[]>(Config.modulators.length);
         this._modSliderValues = new Array<number[]>(Config.modulators.length);
-        //set default values
+        
         for (let i = 0; i < Config.modulators.length; i++) {
             this._newShowModSliders[i] = [];
             this._showModSliders[i] = [];
@@ -1727,7 +1720,7 @@ export class SongEditor {
             let modEnvelopeRow: HTMLDivElement = div({ class: "selectRow", id: "modEnvelopeText" + mod, style: "margin-bottom: 0.9em; color: currentColor;" }, span({ class: "tip", onclick: () => this._openPrompt("modEnvelope") }, "Envelope: "), div({ class: "selectContainer" }, modEnvelopeBox));
 
 
-            // @jummbus: I could template this up above and simply create from the template, especially since I also reuse it in song settings, but unsure how to do that with imperative-html :P
+            
             let modTarget: SVGElement = SVG.svg({ style: "transform: translate(0px, 1px);", width: "1.5em", height: "1em", viewBox: "0 0 200 200" }, [
                 SVG.path({ d: "M90 155 l0 -45 -45 0 c-25 0 -45 -4 -45 -10 0 -5 20 -10 45 -10 l45 0 0 -45 c0 -25 5 -45 10 -45 6 0 10 20 10 45 l0 45 45 0 c25 0 45 5 45 10 0 6 -20 10 -45 10 l -45 0 0 45 c0 25 -4 45 -10 45 -5 0 -10 -20 -10 -45z" }),
                 SVG.path({ d: "M42 158 c-15 -15 -16 -38 -2 -38 6 0 10 7 10 15 0 8 7 15 15 15 8 0 15 5 15 10 0 14 -23 13 -38 -2z" }),
@@ -1754,7 +1747,7 @@ export class SongEditor {
 
         }
 
-        // @jummbus - Unsure why this hack is needed for alignment, but I've never been a css wiz...
+        
         this._pitchShiftSlider.container.style.setProperty("transform", "translate(0px, 3px)");
         this._pitchShiftSlider.container.style.setProperty("width", "100%");
 
@@ -1767,17 +1760,17 @@ export class SongEditor {
         this._keySelect.addEventListener("change", this._whenSetKey);
         this._octaveStepper.addEventListener("change", this._whenSetOctave);
         this._rhythmSelect.addEventListener("change", this._whenSetRhythm);
-        //this._pitchedPresetSelect.addEventListener("change", this._whenSetPitchedPreset);
-        //this._drumPresetSelect.addEventListener("change", this._whenSetDrumPreset);
+        
+        
         this._algorithmSelect.addEventListener("change", this._whenSetAlgorithm);
         this._instrumentsButtonBar.addEventListener("click", this._whenSelectInstrument);
-        //this._customizeInstrumentButton.addEventListener("click", this._whenCustomizePressed);
+        
         this._feedbackTypeSelect.addEventListener("change", this._whenSetFeedbackType);
         this._algorithm6OpSelect.addEventListener("change", this._whenSet6OpAlgorithm);
         this._feedback6OpTypeSelect.addEventListener("change", this._whenSet6OpFeedbackType);
         this._chipWaveSelect.addEventListener("change", this._whenSetChipWave);
         this._ringModWaveSelect.addEventListener("change", this._whenSetRingModChipWave);
-        // advloop addition
+        
         this._useChipWaveAdvancedLoopControlsBox.addEventListener("input", this._whenSetUseChipWaveAdvancedLoopControls);
         this._chipWaveLoopModeSelect.addEventListener("change", this._whenSetChipWaveLoopMode);
         this._chipWaveLoopStartStepper.addEventListener("change", this._whenSetChipWaveLoopStart);
@@ -1785,7 +1778,7 @@ export class SongEditor {
         this._setChipWaveLoopEndToEndButton.addEventListener("click", this._whenSetChipWaveLoopEndToEnd);
         this._chipWaveStartOffsetStepper.addEventListener("change", this._whenSetChipWaveStartOffset);
         this._chipWavePlayBackwardsBox.addEventListener("input", this._whenSetChipWavePlayBackwards);
-        // advloop addition
+        
         this._sampleLoadingStatusContainer.addEventListener("click", this._whenSampleLoadingStatusClicked);
         this._chipNoiseSelect.addEventListener("change", this._whenSetNoiseWave);
         this._transitionSelect.addEventListener("change", this._whenSetTransition);
@@ -1800,7 +1793,7 @@ export class SongEditor {
         this._pauseButton.addEventListener("click", this.togglePlay);
         this._recordButton.addEventListener("click", this._toggleRecord);
         this._stopButton.addEventListener("click", this._toggleRecord);
-        // Start recording instead of opening context menu when control-clicking the record button on a Mac.
+        
         this._recordButton.addEventListener("contextmenu", (event: MouseEvent) => {
             if (event.ctrlKey) {
                 event.preventDefault();
@@ -1821,14 +1814,14 @@ export class SongEditor {
         this._patternArea.addEventListener("mousedown", this._refocusStageNotEditing);
         this._trackArea.addEventListener("mousedown", this.refocusStage);
 
-        // The song volume slider is styled slightly different than the class' default.
+        
         this._volumeSlider.container.style.setProperty("flex-grow", "1");
         this._volumeSlider.container.style.setProperty("display", "flex");
 
         this._volumeBarContainer.style.setProperty("flex-grow", "1");
         this._volumeBarContainer.style.setProperty("display", "flex");
 
-        // Also, any slider with a multiplicative effect instead of a replacement effect gets a different mod color, and a round slider.
+        
         this._volumeSlider.container.style.setProperty("--mod-color", ColorConfig.multiplicativeModSlider);
         this._volumeSlider.container.style.setProperty("--mod-border-radius", "50%");
         this._instrumentVolumeSlider.container.style.setProperty("--mod-color", ColorConfig.multiplicativeModSlider);
@@ -1898,8 +1891,8 @@ export class SongEditor {
             }
         });
 
-        // Sorry, bypassing typescript type safety on this function because I want to use the new "passive" option.
-        //this._trackAndMuteContainer.addEventListener("scroll", this._onTrackAreaScroll, {capture: false, passive: true});
+        
+        
         (<Function>this._trackAndMuteContainer.addEventListener)("scroll", this._onTrackAreaScroll, { capture: false, passive: true });
 
         if (isMobile) {
@@ -1908,8 +1901,8 @@ export class SongEditor {
             autoPlayOption.setAttribute("hidden", "");
         }
 
-        // Beepbox uses availHeight too, but I have a display that fails the check even when one of the other layouts would look better on it. -jummbus
-        if (window.screen.availWidth < 710 /*|| window.screen.availHeight < 710*/) {
+        
+        if (window.screen.availWidth < 710) {
             const layoutOption: HTMLOptionElement = <HTMLOptionElement>this._optionsMenu.querySelector("[value=layout]");
             layoutOption.disabled = true;
             layoutOption.setAttribute("hidden", "");
@@ -1921,7 +1914,7 @@ export class SongEditor {
     }
 
     private _updateSampleLoadingBar(_e: Event): void {
-        // @TODO: Avoid this cast and type EventTarget/Event properly.
+        
         const e: SampleLoadedEvent = <SampleLoadedEvent>_e;
         const percent: number = (
             e.totalSamples === 0
@@ -1999,21 +1992,21 @@ export class SongEditor {
             target.textContent = "▲";
             if (dropdown == DropdownID.EnvelopeSettings) {
                 group.style.display = "flex";
-                // if (subtype == "pitch") { 
-                //     this.envelopeEditor.extraPitchSettingsGroups[submenu].style.display = "flex";
-                //     this.envelopeEditor.perEnvelopeSpeedGroups[submenu].style.display = "none";
-                // } else {
-                //     this.envelopeEditor.extraPitchSettingsGroups[submenu].style.display = "none";
-                //     if (subtype == "notesize" || subtype == "none" || subtype == "punch") {
-                //         this.envelopeEditor.perEnvelopeSpeedGroups[submenu].style.display = "none";
-                //     } else {
-                //         this.envelopeEditor.perEnvelopeSpeedGroups[submenu].style.display = "flex";
-                //     }
-                // }
+                
+                
+                
+                
+                
+                
+                
+                
+                
+                
+                
                 this.envelopeEditor.rerenderExtraSettings();
             } else if (group != this._chordDropdownGroup) {
                 group.style.display = "";
-            } // Only show arpeggio dropdown if chord arpeggiates
+            } 
             else if (instrument.chord == Config.chords.dictionary["arpeggio"].index) {
                 group.style.display = "";
                 if (instrument.chord == Config.chords.dictionary["arpeggio"].index) {
@@ -2024,7 +2017,7 @@ export class SongEditor {
             }
 
             for (let i: number = 0; i < group.children.length; i++) {
-                // A timeout is needed so that the previous 0s, 0 opacity settings can be applied. They're not done until the group is visible again because display: none prunes animation steps.
+                
                 setTimeout(() => {
                     (group.children[i] as HTMLElement).style.animationDelay = '0.17s';
                     (group.children[i] as HTMLElement).style.opacity = '1';
@@ -2068,7 +2061,7 @@ export class SongEditor {
             let instrument: number = this.doc.getCurrentInstrument();
             const anyModActive: boolean = this.doc.synth.isAnyModActive(this.doc.channel, instrument);
 
-            // Check and update mod values on sliders
+            
             if (anyModActive) {
 
                 let instrument: number = this.doc.getCurrentInstrument();
@@ -2076,7 +2069,7 @@ export class SongEditor {
                 function updateModSlider(editor: SongEditor, slider: Slider, setting: number, channel: number, instrument: number, index: number): boolean {
                     if (editor.doc.synth.isModActive(setting, channel, instrument)) {
                         if (Config.modulators[setting].maxIndex > 0) {
-                            //detect that the mod actually does need updating for the specific index
+                            
                             const envelope = editor.doc.synth.song!.channels[channel].instruments[instrument].envelopes[index];
                             switch (setting) {
                                 case Config.modulators.dictionary["individual envelope speed"].index: {
@@ -2114,13 +2107,13 @@ export class SongEditor {
                     return false;
                 }
 
-                // Set mod sliders to present values
+                
                 for (let setting: number = 0; setting < Config.modulators.length; setting++) {
                     for (let index: number = 0; index <= Config.modulators[setting].maxIndex; index++) {
-                        // Set to last value
+                        
                         this._newShowModSliders[setting][index] = Boolean(this._showModSliders[setting][index]);
 
-                        // Check for newer value
+                        
                         let slider: Slider | null = this.getSliderForModSetting(setting, index);
 
                         if (slider != null) {
@@ -2131,7 +2124,7 @@ export class SongEditor {
 
             }
             else if (this._hasActiveModSliders) {
-                // Zero out show-mod-slider settings (since none are active) to kill active mod slider flag
+                
                 for (let setting: number = 0; setting < Config.modulators.length; setting++) {
                     for (let index: number = 0; index <= Config.modulators[setting].maxIndex; index++) {
                         this._newShowModSliders[setting][index] = false;
@@ -2139,7 +2132,7 @@ export class SongEditor {
                 }
             }
 
-            // Class or unclass mod sliders based on present status
+            
             if (anyModActive || this._hasActiveModSliders) {
 
                 let anySliderActive: boolean = false;
@@ -2201,8 +2194,8 @@ export class SongEditor {
             case Config.modulators.dictionary["distortion"].index:
                 return this._distortionSlider;
             case Config.modulators.dictionary["note volume"].index:
-                // So, this should technically not affect this slider, but it will look better as legacy songs used this mod as 'volume'.
-                // In the case that mix volume is used as well, they'd fight for the display, so just don't use this.
+                
+                
                 if (!this._showModSliders[Config.modulators.dictionary["mix volume"].index][index])
                     return this._instrumentVolumeSlider;
                 return null;
@@ -2353,10 +2346,10 @@ export class SongEditor {
                     this.prompt = new RecordingSetupPrompt(this.doc);
                     break;
                 case "exportInstrument":
-                    this.prompt = new InstrumentExportPrompt(this.doc);//, this);
+                    this.prompt = new InstrumentExportPrompt(this.doc);
                     break;
                 case "importInstrument":
-                    this.prompt = new InstrumentImportPrompt(this.doc);//, this);
+                    this.prompt = new InstrumentImportPrompt(this.doc);
                     break;
                 case "stringSustain":
                     this.prompt = new SustainPrompt(this.doc);
@@ -2423,13 +2416,13 @@ export class SongEditor {
 
     private _onFocusIn = (event: Event): void => {
         if (this.doc.synth.recording && event.target != this.mainLayer && event.target != this._stopButton && event.target != this._volumeSlider.input) {
-            // Don't allow using tab to focus on the song settings while recording,
-            // since interacting with them while recording would mess up the recording.
+            
+            
             this.refocusStage();
         }
     }
 
-    // Refocus stage if a sub-element that needs focus isn't being edited.
+    
     private _refocusStageNotEditing = (): void => {
         if (!this._patternEditor.editingModLabel)
             this.mainLayer.focus({ preventScroll: true });
@@ -2517,9 +2510,9 @@ export class SongEditor {
         }
         this._patternEditor.render();
 
-        // make the names of these two variables as short as possible for readability
-        // also, these two variables are used for the effects tab as well, should they be renamed?
-        // the theme variables are named "icon" to prevent people getting confused and thinking they're svg
+        
+        
+        
         const textOnIcon: string = ColorConfig.getComputed("--text-enabled-icon");
         const textOffIcon: string = ColorConfig.getComputed("--text-disabled-icon");
         const textSpacingIcon: string = ColorConfig.getComputed("--text-spacing-icon");
@@ -2554,7 +2547,7 @@ export class SongEditor {
             textSpacingIcon + "Set Theme...",
 	        textSpacingIcon + "Custom Theme...",
         ];
-        // Technical dropdown
+        
         const technicalOptionGroup: HTMLOptGroupElement = <HTMLOptGroupElement>this._optionsMenu.children[1];
 
         for (let i: number = 0; i < technicalOptionGroup.children.length; i++) {
@@ -2562,7 +2555,7 @@ export class SongEditor {
             if (option.textContent != optionCommands[i + 1]) option.textContent = optionCommands[i + 1];
         }
 
-        // Appearance dropdown
+        
         const appearanceOptionGroup: HTMLOptGroupElement = <HTMLOptGroupElement>this._optionsMenu.children[2];
 
         for (let i: number = 0; i < appearanceOptionGroup.children.length; i++) {
@@ -2656,15 +2649,15 @@ export class SongEditor {
 
             this._modulatorGroup.style.display = "none";
 
-            // Check if current viewed pattern on channel is used anywhere
-            // + Check if current instrument on channel is used anywhere
-            // + Check if a mod targets this
+            
+            
+            
             this._usageCheck(this.doc.channel, instrumentIndex);
 
             if (this.doc.song.getChannelIsNoise(this.doc.channel)) {
                 this._pitchedPresetSelect.style.display = "none";
                 this._drumPresetSelect.style.display = "";
-                // Also hide select2
+                
                 $("#pitchPresetSelect").parent().hide();
                 $("#drumPresetSelect").parent().show();
 
@@ -2673,7 +2666,7 @@ export class SongEditor {
                 this._pitchedPresetSelect.style.display = "";
                 this._drumPresetSelect.style.display = "none";
 
-                // Also hide select2
+                
                 $("#pitchPresetSelect").parent().show();
                 $("#drumPresetSelect").parent().hide();
 
@@ -2682,14 +2675,14 @@ export class SongEditor {
 
             if (instrument.type == InstrumentType.noise) {
                 this._chipWaveSelectRow.style.display = "none";
-                // advloop addition
+                
                 this._useChipWaveAdvancedLoopControlsRow.style.display = "none";
                 this._chipWaveLoopModeSelectRow.style.display = "none";
                 this._chipWaveLoopStartRow.style.display = "none";
                 this._chipWaveLoopEndRow.style.display = "none";
                 this._chipWaveStartOffsetRow.style.display = "none";
                 this._chipWavePlayBackwardsRow.style.display = "none";
-                // advloop addition
+                
                 this._chipNoiseSelectRow.style.display = "";
                 setSelectedValue(this._chipNoiseSelect, instrument.chipNoise, true);
             } else {
@@ -2697,14 +2690,14 @@ export class SongEditor {
             }
             if (instrument.type == InstrumentType.spectrum) {
                 this._chipWaveSelectRow.style.display = "none";
-                // advloop addition
+                
                 this._useChipWaveAdvancedLoopControlsRow.style.display = "none";
                 this._chipWaveLoopModeSelectRow.style.display = "none";
                 this._chipWaveLoopStartRow.style.display = "none";
                 this._chipWaveLoopEndRow.style.display = "none";
                 this._chipWaveStartOffsetRow.style.display = "none";
                 this._chipWavePlayBackwardsRow.style.display = "none";
-                // advloop addition
+                
                 this._spectrumRow.style.display = "";
                 this._spectrumEditor.render();
             } else {
@@ -2712,14 +2705,14 @@ export class SongEditor {
             }
             if (instrument.type == InstrumentType.harmonics || instrument.type == InstrumentType.pickedString) {
                 this._chipWaveSelectRow.style.display = "none";
-                // advloop addition
+                
                 this._useChipWaveAdvancedLoopControlsRow.style.display = "none";
                 this._chipWaveLoopModeSelectRow.style.display = "none";
                 this._chipWaveLoopStartRow.style.display = "none";
                 this._chipWaveLoopEndRow.style.display = "none";
                 this._chipWaveStartOffsetRow.style.display = "none";
                 this._chipWavePlayBackwardsRow.style.display = "none";
-                // advloop addition
+                
                 this._harmonicsRow.style.display = "flex";
                 this._harmonicsEditor.render();
             } else {
@@ -2727,14 +2720,14 @@ export class SongEditor {
             }
             if (instrument.type == InstrumentType.pickedString) {
                 this._chipWaveSelectRow.style.display = "none";
-                // advloop addition
+                
                 this._useChipWaveAdvancedLoopControlsRow.style.display = "none";
                 this._chipWaveLoopModeSelectRow.style.display = "none";
                 this._chipWaveLoopStartRow.style.display = "none";
                 this._chipWaveLoopEndRow.style.display = "none";
                 this._chipWaveStartOffsetRow.style.display = "none";
                 this._chipWavePlayBackwardsRow.style.display = "none";
-                // advloop addition
+                
                 this._stringSustainRow.style.display = "";
                 this._stringSustainSlider.updateValue(instrument.stringSustain);
                 this._stringSustainLabel.textContent = Config.enableAcousticSustain ? "Sustain (" + Config.sustainTypeNames[instrument.stringSustainType].substring(0, 1).toUpperCase() + "):" : "Sustain:";
@@ -2744,14 +2737,14 @@ export class SongEditor {
             if (instrument.type == InstrumentType.drumset) {
                 this._drumsetGroup.style.display = "";
                 this._chipWaveSelectRow.style.display = "none";
-                // advloop addition
+                
                 this._useChipWaveAdvancedLoopControlsRow.style.display = "none";
                 this._chipWaveLoopModeSelectRow.style.display = "none";
                 this._chipWaveLoopStartRow.style.display = "none";
                 this._chipWaveLoopEndRow.style.display = "none";
                 this._chipWaveStartOffsetRow.style.display = "none";
                 this._chipWavePlayBackwardsRow.style.display = "none";
-                // advloop addition
+                
                 this._fadeInOutRow.style.display = "none";
                 for (let i: number = 0; i < Config.drumCount; i++) {
                     setSelectedValue(this._drumsetEnvelopeSelects[i], instrument.drumsetEnvelopes[i]);
@@ -2765,7 +2758,7 @@ export class SongEditor {
 
             if (instrument.type == InstrumentType.chip) {
                 this._chipWaveSelectRow.style.display = "";
-                // advloop addition
+                
                 this._useChipWaveAdvancedLoopControlsRow.style.display = "";
                 if (instrument.isUsingAdvancedLoopControls) {
                     this._chipWaveLoopModeSelectRow.style.display = "";
@@ -2780,32 +2773,32 @@ export class SongEditor {
                     this._chipWaveStartOffsetRow.style.display = "none";
                     this._chipWavePlayBackwardsRow.style.display = "none";
                 }
-                // advloop addition
+                
                 setSelectedValue(this._chipWaveSelect, instrument.chipWave);
-                // advloop addition
+                
                 this._useChipWaveAdvancedLoopControlsBox.checked = instrument.isUsingAdvancedLoopControls ? true : false;
                 setSelectedValue(this._chipWaveLoopModeSelect, instrument.chipWaveLoopMode);
                 this._chipWaveLoopStartStepper.value = instrument.chipWaveLoopStart + "";
-                // this._chipWaveLoopStartStepper.max = (chipWaveLength - 1) + "";
+                
                 this._chipWaveLoopEndStepper.value = instrument.chipWaveLoopEnd + "";
-                // this._chipWaveLoopEndStepper.max = (chipWaveLength - 1) + "";
+                
                 this._chipWaveStartOffsetStepper.value = instrument.chipWaveStartOffset + "";
-                // this._chipWaveStartOffsetStepper.max = (chipWaveLength - 1) + "";
+                
                 this._chipWavePlayBackwardsBox.checked = instrument.chipWavePlayBackwards ? true : false;
-                // advloop addition
+                
             }
 
             if (instrument.type == InstrumentType.customChipWave) {
                 this._customWaveDraw.style.display = "";
                 this._chipWaveSelectRow.style.display = "none";
-                // advloop addition
+                
                 this._useChipWaveAdvancedLoopControlsRow.style.display = "none";
                 this._chipWaveLoopModeSelectRow.style.display = "none";
                 this._chipWaveLoopStartRow.style.display = "none";
                 this._chipWaveLoopEndRow.style.display = "none";
                 this._chipWaveStartOffsetRow.style.display = "none";
                 this._chipWavePlayBackwardsRow.style.display = "none";
-                // advloop addition
+                
             }
             else {
                 this._customWaveDraw.style.display = "none";
@@ -2825,27 +2818,27 @@ export class SongEditor {
             }
             if (instrument.type == InstrumentType.pwm || instrument.type == InstrumentType.supersaw) {
                 this._chipWaveSelectRow.style.display = "none";
-                // advloop addition
+                
                 this._useChipWaveAdvancedLoopControlsRow.style.display = "none";
                 this._chipWaveLoopModeSelectRow.style.display = "none";
                 this._chipWaveLoopStartRow.style.display = "none";
                 this._chipWaveLoopEndRow.style.display = "none";
                 this._chipWaveStartOffsetRow.style.display = "none";
                 this._chipWavePlayBackwardsRow.style.display = "none";
-                // advloop addition
+                
                 this._pulseWidthRow.style.display = "";
                 this._pulseWidthSlider.input.title = prettyNumber(instrument.pulseWidth) + "%";
                 this._pulseWidthSlider.updateValue(instrument.pulseWidth);
 
-                // this._decimalOffsetRow.style.display = "";
+                
                 this._decimalOffsetSlider.input.title = instrument.decimalOffset / 100 <= 0 ? "none" : "-" + prettyNumber(instrument.decimalOffset / 100) + "%";
                 this._decimalOffsetSlider.updateValue(99 - instrument.decimalOffset);
 
-                // this._pulseWidthDropdownGroup.style.display = "";
+                
                 this._pulseWidthDropdownGroup.style.display = (this._openPulseWidthDropdown ? "" : "none");
             } else {
                 this._pulseWidthRow.style.display = "none";
-                // this._decimalOffsetRow.style.display = "none";
+                
                 this._pulseWidthDropdownGroup.style.display = "none";
             }
 
@@ -2854,14 +2847,14 @@ export class SongEditor {
                 this._phaseModGroup.style.display = "";
                 this._feedbackRow2.style.display = "";
                 this._chipWaveSelectRow.style.display = "none";
-                // advloop addition
+                
                 this._useChipWaveAdvancedLoopControlsRow.style.display = "none";
                 this._chipWaveLoopModeSelectRow.style.display = "none";
                 this._chipWaveLoopStartRow.style.display = "none";
                 this._chipWaveLoopEndRow.style.display = "none";
                 this._chipWaveStartOffsetRow.style.display = "none";
                 this._chipWavePlayBackwardsRow.style.display = "none";
-                // advloop addition
+                
                 setSelectedValue(this._algorithmSelect, instrument.algorithm);
                 setSelectedValue(this._feedbackTypeSelect, instrument.feedbackType);
                 this._feedbackAmplitudeSlider.updateValue(instrument.feedbackAmplitude);
@@ -3189,7 +3182,7 @@ export class SongEditor {
             }
 
             this._renderInstrumentBar(channel, instrumentIndex, colors);
-        } // Options for mod channel
+        } 
         else {
             this._usageCheck(this.doc.channel, instrumentIndex);
 
@@ -3216,22 +3209,22 @@ export class SongEditor {
 
             this._chipNoiseSelectRow.style.display = "none";
             this._chipWaveSelectRow.style.display = "none";
-            // advloop addition
+            
             this._useChipWaveAdvancedLoopControlsRow.style.display = "none";
             this._chipWaveLoopModeSelectRow.style.display = "none";
             this._chipWaveLoopStartRow.style.display = "none";
             this._chipWaveLoopEndRow.style.display = "none";
             this._chipWaveStartOffsetRow.style.display = "none";
             this._chipWavePlayBackwardsRow.style.display = "none";
-            // advloop addition
+            
             this._spectrumRow.style.display = "none";
             this._harmonicsRow.style.display = "none";
             this._transitionRow.style.display = "none";
             this._chordSelectRow.style.display = "none";
             this._chordDropdownGroup.style.display = "none";
-            //this._filterCutoffRow.style.display = "none";
-            //this._filterResonanceRow.style.display = "none";
-            //this._filterEnvelopeRow.style.display = "none";
+            
+            
+            
             this._drumsetGroup.style.display = "none";
             this._customWaveDraw.style.display = "none";
             this._supersawDynamismRow.style.display = "none";
@@ -3241,13 +3234,13 @@ export class SongEditor {
             this._phaseModGroup.style.display = "none";
             this._feedbackRow1.style.display = "none";
             this._feedbackRow2.style.display = "none";
-            //this._pulseEnvelopeRow.style.display = "none";
+            
             this._pulseWidthRow.style.display = "none";
-            // this._decimalOffsetRow.style.display = "none";
+            
             this._vibratoSelectRow.style.display = "none";
             this._vibratoDropdownGroup.style.display = "none";
             this._envelopeDropdownGroup.style.display = "none";
-            //this._intervalSelectRow.style.display = "none";
+            
             this._detuneSliderRow.style.display = "none";
             this._panSliderRow.style.display = "none";
             this._panDropdownGroup.style.display = "none";
@@ -3264,7 +3257,7 @@ export class SongEditor {
                 let modChannel: number = Math.max(0, modChannelValue);
                 let modInstrument: number = instrument.modInstruments[mod];
 
-                // Boundary checking
+                
                 if (modChannelValue >= 0) {
                     if (modInstrument >= this.doc.song.channels[modChannel].instruments.length + 2 || (modInstrument > 0 && this.doc.song.channels[modChannel].instruments.length <= 1)) {
                         modInstrument = 0;
@@ -3276,7 +3269,7 @@ export class SongEditor {
                     }
                 }
 
-                // Build options for modulator channels (make sure it has the right number).
+                
                 const playableChannelCount = this.doc.song.pitchChannelCount + this.doc.song.noiseChannelCount;
                 if (this.doc.recalcChannelNames || (this._modChannelBoxes[mod].children.length != 2 + playableChannelCount)) {
                     while (this._modChannelBoxes[mod].firstChild) this._modChannelBoxes[mod].remove(0);
@@ -3304,13 +3297,13 @@ export class SongEditor {
                     buildOptions(this._modChannelBoxes[mod], channelList);
                 }
 
-                // Set selected index based on channel info.
+                
 
                 let selectedIndex = 0;
                 if (instrument.modChannels[mod] == -2) {
-                    selectedIndex = 0; // "none"
+                    selectedIndex = 0; 
                 } else if (instrument.modChannels[mod] == -1) {
-                    selectedIndex = 1; // "song"
+                    selectedIndex = 1; 
                 } else {
                     let playableChannelCounter = 0;
                     for (let i = 0; i < this.doc.song.channels.length; i++) {
@@ -3328,7 +3321,7 @@ export class SongEditor {
 
                 let channel: Channel = this.doc.song.channels[modChannel];
 
-                // Build options for modulator instruments (make sure it has the right number).
+                
                 if (this._modInstrumentBoxes[mod].children.length != channel.instruments.length + 2) {
                     while (this._modInstrumentBoxes[mod].firstChild) this._modInstrumentBoxes[mod].remove(0);
                     const instrumentList: string[] = [];
@@ -3340,7 +3333,7 @@ export class SongEditor {
                     buildOptions(this._modInstrumentBoxes[mod], instrumentList);
                 }
 
-                // If non-zero pattern, point to which instrument(s) is/are the current
+                
                 if (channel.bars[this.doc.bar] > 0) {
 
                     let usedInstruments: number[] = channel.patterns[channel.bars[this.doc.bar] - 1].instruments;
@@ -3361,21 +3354,21 @@ export class SongEditor {
                     }
                 }
 
-                // Set selected index based on instrument info.
+                
                 this._modInstrumentBoxes[mod].selectedIndex = instrument.modInstruments[mod];
 
-                // Build options for modulator settings (based on channel settings)
+                
 
                 if (instrument.modChannels[mod] != -2) {
                     while (this._modSetBoxes[mod].firstChild) this._modSetBoxes[mod].remove(0);
                     const settingList: string[] = [];
                     const unusedSettingList: string[] = [];
 
-                    // Make sure these names match the names declared for modulators in SynthConfig.ts.
+                    
 
                     settingList.push("none");
 
-                    // Populate mod setting options for the song scope.
+                    
                     if (instrument.modChannels[mod] == -1) {
                         settingList.push("song volume");
                         settingList.push("tempo");
@@ -3384,14 +3377,14 @@ export class SongEditor {
                         settingList.push("song detune");
                         settingList.push("song eq");
                     }
-                    // Populate mod setting options for instrument scope.
+                    
                     else {
 
                         settingList.push("note volume");
                         settingList.push("mix volume");
 
-                        // Build a list of target instrument indices, types and other info. It will be a single type for a single instrument, but with "all" and "active" it could be more.
-                        // All or active are included together. Active allows any to be set, just in case the user fiddles with which are active later.
+                        
+                        
                         let tgtInstrumentTypes: InstrumentType[] = [];
                         let anyInstrumentAdvancedEQ: boolean = false,
                             anyInstrumentSimpleEQ: boolean = false,
@@ -3626,7 +3619,7 @@ export class SongEditor {
                         }
                         if (anyInstrumentEchoes) {
                             settingList.push("echo");
-                            // Still need to look into this...
+                            
                             settingList.push("echo delay");
                         }
                         if (!allInstrumentEchoes) {
@@ -3678,7 +3671,7 @@ export class SongEditor {
 
                     let setIndex: number = settingList.indexOf(Config.modulators[instrument.modulators[mod]].name);
 
-                    // Catch instances where invalid set forced setting to "none"
+                    
                     if (setIndex == -1) {
                         this._modSetBoxes[mod].insertBefore(option({ value: Config.modulators[instrument.modulators[mod]].name, style: "color: red;" }, Config.modulators[instrument.modulators[mod]].name), this._modSetBoxes[mod].children[0]);
                         this._modSetBoxes[mod].selectedIndex = 0;
@@ -3695,14 +3688,14 @@ export class SongEditor {
                     this._whenSetModSetting(mod);
                 }
 
-                //Hide instrument select if channel is "none" or "song"
-                //Hopefully the !. don't ruin something...
+                
+                
                 if (instrument.modChannels[mod] < 0) {
                     ((this._modInstrumentBoxes[mod].parentElement) as HTMLDivElement).style.display = "none";
                     $("#modInstrumentText" + mod).get(0)!.style.display = "none";
                     $("#modChannelText" + mod).get(0)!.innerText = "Channel:";
 
-                    //Hide setting select if channel is "none"
+                    
                     if (instrument.modChannels[mod] == -2) {
                         $("#modSettingText" + mod).get(0)!.style.display = "none";
                         ((this._modSetBoxes[mod].parentElement) as HTMLDivElement).style.display = "none";
@@ -3737,7 +3730,7 @@ export class SongEditor {
                     let modChannel: Channel = this.doc.song.channels[Math.max(0, instrument.modChannels[mod])];
                     let tmpCount: number = -1;
                     if (useInstrument >= modChannel.instruments.length) {
-                        // Use greatest number of dots among all instruments if setting is 'all' or 'active'. If it won't have an effect on one, no worry.
+                        
                         for (let i: number = 0; i < modChannel.instruments.length; i++) {
                             if (filterType == "eq filter") {
                                 if (modChannel.instruments[i].eqFilter.controlPointCount > tmpCount) {
@@ -3753,7 +3746,7 @@ export class SongEditor {
                         }
                     }
 
-                    // Build options for modulator filters (make sure it has the right number of filter dots).
+                    
                     let dotCount: number = (filterType == "eq filter")
                         ? channel.instruments[useInstrument].getLargestControlPointCount(false)
                         : channel.instruments[useInstrument].getLargestControlPointCount(true);
@@ -3820,14 +3813,14 @@ export class SongEditor {
 
                     let modChannel: Channel = this.doc.song.channels[Math.max(0, instrument.modChannels[mod])];
                     let envCount: number = -1;
-                    // Use greatest envelope count among all instruments if setting is 'all' or 'active'. If it won't have an effect on one, no worry.
+                    
                     for (let i: number = 0; i < modChannel.instruments.length; i++) {
                         if (modChannel.instruments[i].envelopeCount > envCount) {
                             envCount = modChannel.instruments[i].envelopeCount;
                         }
                     }
 
-                    // Build options for modulator envelopes (make sure it has the right number of envelopes).
+                    
                     while (this._modEnvelopeBoxes[mod].firstChild) this._modEnvelopeBoxes[mod].remove(0);
                     const envelopeList: string[] = [];
                     for (let i: number = 0; i < envCount; i++) {
@@ -3870,7 +3863,7 @@ export class SongEditor {
 
             }
 
-            //this._instrumentSelectRow.style.display = "none";
+            
 
             this._customInstrumentSettingsGroup.style.display = "none";
             this._panSliderRow.style.display = "none";
@@ -3880,7 +3873,7 @@ export class SongEditor {
 
             this._instrumentSettingsGroup.style.color = getPrimaryNoteColor(this.doc, this.doc.channel);
 
-            // Force piano to re-show, if channel is modulator
+            
             if (this.doc.channel >= this.doc.song.pitchChannelCount + this.doc.song.noiseChannelCount) {
                 this._piano.forceRender();
             }
@@ -3910,8 +3903,8 @@ export class SongEditor {
 
         this._volumeSlider.updateValue(prefs.volume);
 
-        // If an interface element was selected, but becomes invisible (e.g. an instrument
-        // select menu) just select the editor container so keyboard commands still work.
+        
+        
         if (wasActive && activeElement != null && activeElement.clientWidth == 0) {
             this.refocusStage();
         }
@@ -3922,8 +3915,8 @@ export class SongEditor {
             this.doc.synth.goToBar(this.doc.bar);
         }
 
-        // When adding effects or envelopes to an instrument in fullscreen modes,
-        // auto-scroll the settings areas to ensure the new settings are visible.
+        
+        
         if (this.doc.addedEffect) {
             const envButtonRect: DOMRect = this._addEnvelopeButton.getBoundingClientRect();
             const instSettingsRect: DOMRect = this._instrumentSettingsArea.getBoundingClientRect();
@@ -3946,7 +3939,7 @@ export class SongEditor {
             this._ringModWaveText.style.display = "";
         }
 
-        // Writeback to mods if control key is held while moving a slider.
+        
         this.handleModRecording();
 
     }
@@ -3966,7 +3959,7 @@ export class SongEditor {
         }
         else if (this.doc.recordingModulators) {
             this.doc.recordingModulators = false;
-            // A dummy change that pushes history state.
+            
             this.doc.record(new ChangeHoldingModRecording(this.doc, null, null, null));
         }
     }
@@ -4024,7 +4017,7 @@ export class SongEditor {
             }
 
             if (this.doc.song.layeredInstruments && this.doc.song.patternInstruments && (this.doc.channel < this.doc.song.pitchChannelCount + this.doc.song.noiseChannelCount)) {
-                //const pattern: Pattern | null = this._doc.getCurrentPattern();
+                
                 for (let i: number = 0; i < channel.instruments.length; i++) {
                     if (this.doc.recentPatternInstruments[this.doc.channel].indexOf(i) != -1) {
                         this._instrumentButtons[i].classList.remove("deactivated");
@@ -4064,7 +4057,7 @@ export class SongEditor {
             this._renderedCtrlHeld = this._ctrlHeld;
 
             if (document.activeElement == this._playButton || document.activeElement == this._pauseButton || document.activeElement == this._recordButton || document.activeElement == this._stopButton) {
-                // When a focused element is hidden, focus is transferred to the document, so let's refocus the editor instead to make sure we can still capture keyboard input.
+                
                 this.refocusStage();
             }
 
@@ -4122,13 +4115,13 @@ export class SongEditor {
     private _onTrackAreaScroll = (event: Event): void => {
         this.doc.barScrollPos = (this._trackAndMuteContainer.scrollLeft / this.doc.getBarWidth());
         this.doc.channelScrollPos = (this._trackAndMuteContainer.scrollTop / ChannelRow.patternHeight);
-        //this._doc.notifier.changed();
+        
     }
 
     private _disableCtrlContextMenu = (event: MouseEvent): boolean => {
-        // On a Mac, clicking while holding control opens the right-click context menu.
-        // But in the pattern and track editors I'd rather prevent that and instead allow
-        // custom behaviors such as setting the volume of a note.
+        
+        
+        
         if (event.ctrlKey) {
             event.preventDefault();
             return false;
@@ -4165,7 +4158,7 @@ export class SongEditor {
 
         if (channel.bars[this.doc.bar] != 0) {
             for (let i: number = 0; i < this.doc.song.barCount; i++) {
-                // Check for this exact bar in another place, but only count it if it's not within the selection
+                
                 if (channel.bars[i] == channel.bars[this.doc.bar] && i != this.doc.bar &&
                     (i < lowestSelX || i > highestSelX || this.doc.channel < lowestSelY || this.doc.channel > highestSelY)) {
 
@@ -4176,7 +4169,7 @@ export class SongEditor {
         }
 
         for (let i: number = 0; i < this.doc.song.barCount; i++) {
-            // Check for this exact instrument in another place, but only count it if it's not within the selection
+            
             if (channel.bars[i] != 0 && channel.bars[i] != channel.bars[this.doc.bar] &&
                 channel.patterns[channel.bars[i] - 1].instruments.includes(instrumentIndex) && i != this.doc.bar &&
                 (i < lowestSelX || i > highestSelX || this.doc.channel < lowestSelY || this.doc.channel > highestSelY)) {
@@ -4216,25 +4209,25 @@ export class SongEditor {
     }
 
     private _tempoStepperCaptureNumberKeys = (event: KeyboardEvent): void => {
-        // When the number input is in focus, allow some keyboard events to
-        // edit the input without accidentally editing the song otherwise.
+        
+        
         switch (event.keyCode) {
-            case 8: // backspace/delete
-            case 13: // enter/return
-            case 38: // up
-            case 40: // down
-            case 37: // left
-            case 39: // right
-            case 48: // 0
-            case 49: // 1
-            case 50: // 2
-            case 51: // 3
-            case 52: // 4
-            case 53: // 5
-            case 54: // 6
-            case 55: // 7
-            case 56: // 8
-            case 57: // 9
+            case 8: 
+            case 13: 
+            case 38: 
+            case 40: 
+            case 37: 
+            case 39: 
+            case 48: 
+            case 49: 
+            case 50: 
+            case 51: 
+            case 52: 
+            case 53: 
+            case 54: 
+            case 55: 
+            case 56: 
+            case 57: 
                 event.stopPropagation();
                 break;
         }
@@ -4248,16 +4241,16 @@ export class SongEditor {
             if (this.prompt instanceof CustomChipPrompt || this.prompt instanceof LimiterPrompt || this.prompt instanceof CustomScalePrompt || this.prompt instanceof CustomFilterPrompt) {
                 this.prompt.whenKeyPressed(event);
             }
-            if (event.keyCode == 27) { // ESC key
-                // close prompt.
+            if (event.keyCode == 27) { 
+                
                 this.doc.undo();
             }
             return;
         }
 
-        // Defer to actively editing song title, channel name, or mod label
+        
         if (document.activeElement == this._songTitleInputBox.input || this._patternEditor.editingModLabel || document.activeElement == this._muteEditor._channelNameInput.input) {
-            // Enter/esc returns focus to form
+            
             if (event.keyCode == 13 || event.keyCode == 27) {
                 this.mainLayer.focus();
                 this._patternEditor.stopEditingModLabel(event.keyCode == 27);
@@ -4266,17 +4259,17 @@ export class SongEditor {
             return;
         }
 
-        // Defer to actively editing volume/pan rows
+        
         if (
             document.activeElement == this._panSliderInputBox
             || document.activeElement == this._pwmSliderInputBox
             || document.activeElement == this._detuneSliderInputBox
             || document.activeElement == this._instrumentVolumeSliderInputBox
-            // advloop addition
+            
             || document.activeElement == this._chipWaveLoopStartStepper
             || document.activeElement == this._chipWaveLoopEndStepper
             || document.activeElement == this._chipWaveStartOffsetStepper
-            // advloop addition
+            
             || document.activeElement == this._octaveStepper
             || document.activeElement == this._unisonVoicesInputBox
             || document.activeElement == this._unisonSpreadInputBox
@@ -4293,7 +4286,7 @@ export class SongEditor {
             || this.envelopeEditor.LFOStepsBoxes.find((element) => element == document.activeElement)
 
         ) {
-            // Enter/esc returns focus to form
+            
             if (event.keyCode == 13 || event.keyCode == 27) {
                 this.mainLayer.focus();
             }
@@ -4302,15 +4295,15 @@ export class SongEditor {
         }
 
         if (this.doc.synth.recording) {
-            // The only valid keyboard interactions when recording are playing notes or pressing space OR P to stop.
+            
             if (!event.ctrlKey && !event.metaKey) {
                 this._keyboardLayout.handleKeyEvent(event, true);
             }
-            if (event.keyCode == 32) { // space
+            if (event.keyCode == 32) { 
                 this._toggleRecord();
                 event.preventDefault();
                 this.refocusStage();
-            } else if (event.keyCode == 80 && (event.ctrlKey || event.metaKey)) { // p
+            } else if (event.keyCode == 80 && (event.ctrlKey || event.metaKey)) { 
                 this._toggleRecord();
                 event.preventDefault();
                 this.refocusStage();
@@ -4322,25 +4315,25 @@ export class SongEditor {
         const canPlayNotes: boolean = (!event.ctrlKey && !event.metaKey && needControlForShortcuts);
         if (canPlayNotes) this._keyboardLayout.handleKeyEvent(event, true);
 
-        //this._trackEditor.onKeyPressed(event);
+        
         switch (event.keyCode) {
-            case 27: // ESC key
+            case 27: 
                 if (!event.ctrlKey && !event.metaKey) {
                     new ChangePatternSelection(this.doc, 0, 0);
                     this.doc.selection.resetBoxSelection();
                 }
                 break;
-            case 16: // Shift
+            case 16: 
                 this._patternEditor.shiftMode = true;
                 break;
-            case 17: // Ctrl
+            case 17: 
                 this._patternEditor.controlMode = true;
                 break;
-            case 32: // space
+            case 32: 
                 if (event.ctrlKey) {
                     this._toggleRecord();
                 } else if (event.shiftKey) {
-                    // Jump to mouse
+                    
                     if (this._trackEditor.movePlayheadToMouse() || this._patternEditor.movePlayheadToMouse()) {
                         if (!this.doc.synth.playing) this.doc.performance.play();
                     }
@@ -4355,7 +4348,7 @@ export class SongEditor {
                 event.preventDefault();
                 this.refocusStage();
                 break;
-            case 80: // p
+            case 80: 
                 if (canPlayNotes) break;
                 if (event.ctrlKey || event.metaKey) {
                     this._toggleRecord();
@@ -4371,7 +4364,7 @@ export class SongEditor {
                     event.preventDefault();
                 }
                 break;
-            case 192: // `/~
+            case 192: 
                 if (canPlayNotes) break;
                 if (event.shiftKey) {
                     this.doc.goBackToStart();
@@ -4388,7 +4381,7 @@ export class SongEditor {
                 }
                 event.preventDefault();
                 break;
-            case 90: // z
+            case 90: 
                 if (canPlayNotes) break;
                 if (event.shiftKey) {
                     this.doc.redo();
@@ -4397,17 +4390,17 @@ export class SongEditor {
                 }
                 event.preventDefault();
                 break;
-            case 88: // x
+            case 88: 
                 if (canPlayNotes) break;
                 this.doc.selection.cutNotes();
                 event.preventDefault();
                 break;
-            case 89: // y
+            case 89: 
                 if (canPlayNotes) break;
                 this.doc.redo();
                 event.preventDefault();
                 break;
-            case 66: // b
+            case 66: 
                 if (canPlayNotes) break;
 
                 if (needControlForShortcuts == (event.ctrlKey || event.metaKey)) {
@@ -4432,7 +4425,7 @@ export class SongEditor {
                             this.doc.synth.loopBarEnd = -1;
                         }
 
-                        // Pressed while viewing a different bar than the current synth playhead.
+                        
                         if (this.doc.bar != Math.floor(this.doc.synth.playhead) && this.doc.synth.loopBarStart != -1) {
 
                             this.doc.synth.goToBar(this.doc.bar);
@@ -4451,7 +4444,7 @@ export class SongEditor {
                 }
                 event.preventDefault();
                 break;
-            case 67: // c
+            case 67: 
                 if (canPlayNotes) break;
                 if (event.shiftKey) {
                     this._copyInstrument();
@@ -4462,9 +4455,9 @@ export class SongEditor {
                 }
                 event.preventDefault();
                 break;
-            case 13: // enter/return
+            case 13: 
                 if ((event.ctrlKey || event.metaKey) && !event.shiftKey) {
-                    // ==== ADD CHANNEL + SHIFT TAGS ====
+                    
                     const idx = this.doc.channel;
                     let type: ChannelType = this.doc.song.getChannelIsMod(idx)
                         ? ChannelType.Mod
@@ -4474,14 +4467,14 @@ export class SongEditor {
                     const cg = new ChangeGroup();
                     for (const tag of this.doc.song.channelTags) {
                         if (tag.startChannel >= idx) {
-                            // entirely below insertion → shift both start+end
+                            
                             cg.append(new ChangeChannelTagRange(
                                 this.doc, tag.id,
                                 tag.startChannel + 1,
                                 tag.endChannel + 1
                             ));
                         } else if (tag.endChannel >= idx) {
-                            // spans insertion → shift end only
+                            
                             cg.append(new ChangeChannelTagRange(
                                 this.doc, tag.id,
                                 tag.startChannel,
@@ -4501,7 +4494,7 @@ export class SongEditor {
                 }
                 event.preventDefault();
                 break;
-            case 8: // backspace/delete
+            case 8: 
                 this.doc.synth.loopBarStart = -1;
                 this.doc.synth.loopBarEnd = -1;
                 this._loopEditor.setLoopAt(this.doc.synth.loopBarStart, this.doc.synth.loopBarEnd);
@@ -4515,14 +4508,14 @@ export class SongEditor {
                 this._barScrollBar.animatePlayhead();
                 event.preventDefault();
                 break;
-            case 84: // t
-                // Plain T: tag selected channels
+            case 84: 
+                
                 if (!event.ctrlKey && !event.metaKey && this.doc.selection.boxSelectionActive) {
                     this.doc.selection.createChannelTag();
                     event.preventDefault();
                 }
                 break;
-            case 65: // a
+            case 65: 
                 if (canPlayNotes) break;
                 if (event.shiftKey) {
                     this.doc.selection.selectChannel();
@@ -4531,23 +4524,23 @@ export class SongEditor {
                 }
                 event.preventDefault();
                 break;
-            case 68: // d
+            case 68: 
                 if (canPlayNotes) break;
                 if (needControlForShortcuts == (event.ctrlKey || event.metaKey)) {
-                    //shift d replaces old d functionality, while d will duplicate replacing an unused pattern
-                    //This is for consistency with n (n uses ctrl instead of shift, but this will have to do for now)
+                    
+                    
                     this.doc.selection.duplicatePatterns(event.shiftKey ? false : true); 
                     event.preventDefault();
                 }
                 break;
-            case 69: // e (+shift: eq filter settings)
+            case 69: 
                 if (canPlayNotes) break;
                 if (event.shiftKey) {
                     const instrument: Instrument = this.doc.song.channels[this.doc.channel].instruments[this.doc.getCurrentInstrument()];
                     if (!instrument.eqFilterType && this.doc.channel < this.doc.song.pitchChannelCount + this.doc.song.noiseChannelCount)
                         this._openPrompt("customEQFilterSettings");
                 } else if (event.altKey) {
-                    //open / close all envelope dropdowns
+                    
                     const instrument: Instrument = this.doc.song.channels[this.doc.channel].instruments[this.doc.getCurrentInstrument()];
                     const isAllOpen: boolean = this.envelopeEditor.openExtraSettingsDropdowns.every((x) => { return x == true })
                     for (let i = 0; i < instrument.envelopeCount; i++) {
@@ -4557,7 +4550,7 @@ export class SongEditor {
                     this.envelopeEditor.rerenderExtraSettings();
                     event.preventDefault();
                 } else if (event.ctrlKey) {
-                    // EUCLEDIAN RHYTHM SHORTCUT (E)
+                    
                     this._openPrompt("generateEuclideanRhythm");
                     event.preventDefault();
                     break;
@@ -4565,9 +4558,9 @@ export class SongEditor {
                     this._openPrompt("customSongEQFilterSettings");
                 }
                 break;
-            case 70: // f
+            case 70: 
                 if (canPlayNotes) break;
-                if (event.shiftKey) { // if shift+f, move to start of loop bar instead 
+                if (event.shiftKey) { 
                     
                     this.doc.synth.loopBarStart = -1;
                     this.doc.synth.loopBarEnd = -1;
@@ -4582,7 +4575,7 @@ export class SongEditor {
                     }
                     event.preventDefault();
                 } else if (event.altKey) {
-                    //open / close all fm dropdowns
+                    
                     const instrument: Instrument = this.doc.song.channels[this.doc.channel].instruments[this.doc.getCurrentInstrument()];
                     const operatorCount: number = instrument.type == InstrumentType.fm ? 4 : 6;
                     let isAllOpen: boolean = true;
@@ -4609,7 +4602,7 @@ export class SongEditor {
                     event.preventDefault();
                 } 
                 break;
-            case 72: // h
+            case 72: 
                 if (canPlayNotes) break;
 
                 if (needControlForShortcuts == (event.ctrlKey || event.metaKey)) {
@@ -4631,9 +4624,9 @@ export class SongEditor {
                     event.preventDefault();
                 }
                 break;
-            case 74: // j
+            case 74: 
                 if (canPlayNotes) break;
-                // Ctrl Alt Shift J: Jummbify - set all prefs to my preferred ones lol
+                
                 if (event.shiftKey && event.ctrlKey && event.altKey) {
                     this.doc.prefs.autoPlay = false;
                     this.doc.prefs.autoFollow = false;
@@ -4655,7 +4648,7 @@ export class SongEditor {
                     location.reload();
                 }
                 break;
-            case 76: // l
+            case 76: 
                 if (canPlayNotes) break;
                 if (event.shiftKey) {
                     this._openPrompt("limiterSettings");
@@ -4664,7 +4657,7 @@ export class SongEditor {
                     this._openPrompt("barCount");
                 }
                 break;
-            case 77: // m
+            case 77: 
                 if (canPlayNotes) break;
                 if (needControlForShortcuts == (event.ctrlKey || event.metaKey)) {
                     if (this.doc.prefs.enableChannelMuting) {
@@ -4673,11 +4666,11 @@ export class SongEditor {
                     }
                 }
                 break;
-            case 78: // n
+            case 78: 
                 if (canPlayNotes) break;
-                // Find lowest-index unused pattern for current channel
-                // Ctrl+n - lowest-index completely empty pattern
-                // Shift+n - note filter settings
+                
+                
+                
 
                 const group: ChangeGroup = new ChangeGroup();
 
@@ -4692,21 +4685,21 @@ export class SongEditor {
                     while (nextEmpty < this.doc.song.patternsPerChannel && this.doc.song.channels[this.doc.channel].patterns[nextEmpty].notes.length > 0)
                         nextEmpty++;
 
-                    nextEmpty++; // The next empty pattern is actually the one after the found one
+                    nextEmpty++; 
 
-                    // Can't set anything if we're at the absolute limit.
+                    
                     if (nextEmpty <= Config.barCountMax) {
 
                         if (nextEmpty > this.doc.song.patternsPerChannel) {
 
-                            // Add extra empty pattern, if all the rest have something in them.
+                            
                             group.append(new ChangePatternsPerChannel(this.doc, nextEmpty));
                         }
 
-                        // Change pattern number to lowest-index unused
+                        
                         group.append(new ChangePatternNumbers(this.doc, nextEmpty, this.doc.bar, this.doc.channel, 1, 1));
 
-                        // Auto set the used instruments to the ones you were most recently viewing.
+                        
                         if (this.doc.channel >= this.doc.song.pitchChannelCount + this.doc.song.noiseChannelCount) {
                             this.doc.viewedInstrument[this.doc.channel] = this.doc.recentPatternInstruments[this.doc.channel][0];
                         }
@@ -4720,19 +4713,19 @@ export class SongEditor {
                         && nextUnused <= this.doc.song.patternsPerChannel)
                         nextUnused++;
 
-                    // Can't set anything if we're at the absolute limit.
+                    
                     if (nextUnused <= Config.barCountMax) {
 
                         if (nextUnused > this.doc.song.patternsPerChannel) {
 
-                            // Add extra empty pattern, if all the rest are used.
+                            
                             group.append(new ChangePatternsPerChannel(this.doc, nextUnused));
                         }
 
-                        // Change pattern number to lowest-index unused
+                        
                         group.append(new ChangePatternNumbers(this.doc, nextUnused, this.doc.bar, this.doc.channel, 1, 1));
 
-                        // Auto set the used instruments to the ones you were most recently viewing.
+                        
                         if (this.doc.channel >= this.doc.song.pitchChannelCount + this.doc.song.noiseChannelCount) {
                             this.doc.viewedInstrument[this.doc.channel] = this.doc.recentPatternInstruments[this.doc.channel][0];
                         }
@@ -4745,7 +4738,7 @@ export class SongEditor {
 
                 event.preventDefault();
                 break;
-            case 81: // q
+            case 81: 
                 if (canPlayNotes) break;
                 if (needControlForShortcuts == (event.ctrlKey || event.metaKey)) {
                     if (event.shiftKey) {
@@ -4760,10 +4753,10 @@ export class SongEditor {
                     }
                 }
                 break;
-            case 83: // s
+            case 83: 
                 if (canPlayNotes) break;
                 if (event.shiftKey && event.ctrlKey && event.altKey) {
-                    // Ctrl Alt Shift S: Slarmooify - set all prefs to my preferred ones lol
+                    
                     this.doc.prefs.autoPlay = false;
                     this.doc.prefs.autoFollow = true;
                     this.doc.prefs.enableNotePreview = true;
@@ -4794,9 +4787,9 @@ export class SongEditor {
                     this._openPrompt("export");
                     event.preventDefault();
                 } else if (this.doc.prefs.enableChannelMuting) {
-                    // JummBox deviation: I like shift+s as just another mute toggle personally.
-                    // Easier to reach than M and the shift+s invert functionality I am overwriting could be 
-                    // obtained with M anyway. Useability-wise you very often want to 'add' channels on to a solo as you work.
+                    
+                    
+                    
                     if (event.shiftKey) {
                         this.doc.selection.muteChannels(false);
                     } else {
@@ -4805,14 +4798,14 @@ export class SongEditor {
                     event.preventDefault();
                 }
                 break;
-            case 79: // o
+            case 79: 
                 if (canPlayNotes) break;
                 if (event.ctrlKey || event.metaKey) {
                     this._openPrompt("import");
                     event.preventDefault();
                 }
                 break;
-            case 86: // v
+            case 86: 
                 if (canPlayNotes) break;
                 if ((event.ctrlKey || event.metaKey) && event.shiftKey && !needControlForShortcuts) {
                     this.doc.selection.pasteNumbers();
@@ -4823,25 +4816,25 @@ export class SongEditor {
                 }
                 event.preventDefault();
                 break;
-            case 87: // w
+            case 87: 
                 if (canPlayNotes) break;
                 this._openPrompt("moveNotesSideways");
                 break;
-            case 73: // i
+            case 73: 
                 if (canPlayNotes) break;
                 if (needControlForShortcuts == (event.ctrlKey || event.metaKey) && event.shiftKey) {
-                    // Copy the current instrument as a preset to the clipboard.
+                    
                     const instrument: Instrument = this.doc.song.channels[this.doc.channel].instruments[this.doc.getCurrentInstrument()];
                     const instrumentObject: any = instrument.toJsonObject();
                     delete instrumentObject["preset"];
-                    // Volume and the panning effect are not included in presets.
+                    
                     delete instrumentObject["volume"];
                     delete instrumentObject["pan"];
                     const panningEffectIndex: number = instrumentObject["effects"].indexOf(Config.effectNames[EffectType.panning]);
                     if (panningEffectIndex != -1) instrumentObject["effects"].splice(panningEffectIndex, 1);
                     for (let i: number = 0; i < instrumentObject["envelopes"].length; i++) {
                         const envelope: any = instrumentObject["envelopes"][i];
-                        // If there are any envelopes targeting panning or none, remove those too.
+                        
                         if (envelope["target"] == "panning" || envelope["target"] == "none" || envelope["envelope"] == "none") {
                             instrumentObject["envelopes"].splice(i, 1);
                             i--;
@@ -4851,7 +4844,7 @@ export class SongEditor {
                     event.preventDefault();
                 }
                 break;
-            case 82: // r
+            case 82: 
                 if (canPlayNotes) break;
                 if (needControlForShortcuts == (event.ctrlKey || event.metaKey)) {
                     if (event.shiftKey) {
@@ -4864,7 +4857,7 @@ export class SongEditor {
                     event.preventDefault();
                 }
                 break;
-            case 219: // left brace
+            case 219: 
                 if (canPlayNotes) break;
                 if (needControlForShortcuts == (event.ctrlKey || event.metaKey)) {
                     this.doc.synth.goToPrevBar();
@@ -4882,7 +4875,7 @@ export class SongEditor {
                     event.preventDefault();
                 }
                 break;
-            case 221: // right brace
+            case 221: 
                 if (canPlayNotes) break;
                 if (needControlForShortcuts == (event.ctrlKey || event.metaKey)) {
                     this.doc.synth.goToNextBar();
@@ -4900,38 +4893,38 @@ export class SongEditor {
                     event.preventDefault();
                 }
                 break;
-            case 189: // -
-            case 173: // Firefox -
+            case 189: 
+            case 173: 
                 if (canPlayNotes) break;
                 if (needControlForShortcuts == (event.ctrlKey || event.metaKey)) {
                     this.doc.selection.transpose(false, event.shiftKey);
                     event.preventDefault();
                 }
                 break;
-            case 187: // +
-            case 61: // Firefox +
-            case 171: // Some users have this as +? Hmm.
+            case 187: 
+            case 61: 
+            case 171: 
                 if (canPlayNotes) break;
                 if (needControlForShortcuts == (event.ctrlKey || event.metaKey)) {
                     this.doc.selection.transpose(true, event.shiftKey);
                     event.preventDefault();
                 }
                 break;
-                case 38: // Up
+                case 38: 
                 if (event.ctrlKey || event.metaKey) {
                     const ch   = this.doc.channel;
                     const tags = this.doc.song.channelTags;
 
-                    // 1) Outermost tag ending at ch-1 → expand downward (favor larger spans, tie=older)
+                    
                     const endTags = tags.filter(t => t.endChannel === ch - 1);
                     if (endTags.length > 0) {
                         const outer = endTags.reduce(
                             (best: ChannelTag, t: ChannelTag) => {
                                 const spanBest = best.endChannel - best.startChannel;
                                 const spanT    = t.endChannel   - t.startChannel;
-                                if (spanT > spanBest) return t;     // larger=outer
+                                if (spanT > spanBest) return t;     
                                 if (spanT < spanBest) return best;
-                                // tie: pick older
+                                
                                 return tags.indexOf(t) < tags.indexOf(best)
                                     ? t
                                     : best;
@@ -4944,16 +4937,16 @@ export class SongEditor {
                         ));
                     }
                     else {
-                        // 2) Innermost tag starting at ch → shrink upward (or delete if single-channel)
+                        
                         const startTags = tags.filter(t => t.startChannel === ch);
                         if (startTags.length > 0) {
                             const inner = startTags.reduce(
                                 (best: ChannelTag, t: ChannelTag) => {
                                     const spanBest = best.endChannel - best.startChannel;
                                     const spanT    = t.endChannel   - t.startChannel;
-                                    if (spanT < spanBest) return t;         // smaller=inner
+                                    if (spanT < spanBest) return t;         
                                     if (spanT > spanBest) return best;
-                                    // tie: pick newer
+                                    
                                     return tags.indexOf(t) > tags.indexOf(best)
                                         ? t
                                         : best;
@@ -4975,7 +4968,7 @@ export class SongEditor {
                                 );
                             }
                         }
-                        // 3) Otherwise normal swap up
+                        
                         else if (ch > 0) {
                             this.doc.record(new ChangeChannelOrder(this.doc, ch, ch, -1));
                             this.doc.song.updateDefaultChannelNames();
@@ -4991,26 +4984,26 @@ export class SongEditor {
                 } else {
                     this.doc.selection.setChannelBar((this.doc.channel - 1 + this.doc.song.getChannelCount()) % this.doc.song.getChannelCount(), this.doc.bar);
                     this.doc.selection.resetBoxSelection();
-                    //envelopes aren't rerendering when channels are changed so...
+                    
                     this.envelopeEditor.rerenderExtraSettings();
 
                 }
                 event.preventDefault();
                 break;
-                case 40: // down
+                case 40: 
                 if (event.ctrlKey || event.metaKey) {
                     const ch   = this.doc.channel;
                     const tags = this.doc.song.channelTags;
-                    // 1) Innermost tag ending at ch → shrink upward (or delete if single-channel)
+                    
                     const endTagsDown = tags.filter(t => t.endChannel === ch);
                     if (endTagsDown.length > 0) {
                         const inner = endTagsDown.reduce(
                             (best: ChannelTag, t: ChannelTag) => {
                                 const spanBest = best.endChannel - best.startChannel;
                                 const spanT    = t.endChannel   - t.startChannel;
-                                if (spanT < spanBest) return t;     // smaller=inner
+                                if (spanT < spanBest) return t;     
                                 if (spanT > spanBest) return best;
-                                // tie: pick newer
+                                
                                 return tags.indexOf(t) > tags.indexOf(best)
                                     ? t
                                     : best;
@@ -5033,16 +5026,16 @@ export class SongEditor {
                         }
                     }
                     else {
-                        // 2) Innermost tag starting at ch+1 → expand its start downward (favor larger spans, tie=older)
+                        
                         const startTagsDown = tags.filter(t => t.startChannel === ch + 1);
                         if (startTagsDown.length > 0) {
                             const outer = startTagsDown.reduce(
                                 (best: ChannelTag, t: ChannelTag) => {
                                     const spanBest = best.endChannel - best.startChannel;
                                     const spanT    = t.endChannel   - t.startChannel;
-                                    if (spanT > spanBest) return t;     // larger=outer
+                                    if (spanT > spanBest) return t;     
                                     if (spanT < spanBest) return best;
-                                    // tie: pick older
+                                    
                                     return tags.indexOf(t) < tags.indexOf(best)
                                         ? t
                                         : best;
@@ -5054,7 +5047,7 @@ export class SongEditor {
                                 ch, outer.endChannel
                             ));
                         }
-                        // 3) Otherwise normal swap down
+                        
                         else if (ch < this.doc.song.getChannelCount() - 1) {
                             this.doc.record(new ChangeChannelOrder(this.doc, ch, ch, 1));
                             this.doc.song.updateDefaultChannelNames();
@@ -5074,7 +5067,7 @@ export class SongEditor {
                 }
                 event.preventDefault();
                 break;
-            case 37: // left
+            case 37: 
                 if (event.shiftKey) {
                     this.doc.selection.boxSelectionX1 = Math.max(0, this.doc.selection.boxSelectionX1 - 1);
                     this.doc.selection.scrollToEndOfSelection();
@@ -5085,7 +5078,7 @@ export class SongEditor {
                 }
                 event.preventDefault();
                 break;
-            case 39: // right
+            case 39: 
                 if (event.shiftKey) {
                     this.doc.selection.boxSelectionX1 = Math.min(this.doc.song.barCount - 1, this.doc.selection.boxSelectionX1 + 1);
                     this.doc.selection.scrollToEndOfSelection();
@@ -5096,65 +5089,65 @@ export class SongEditor {
                 }
                 event.preventDefault();
                 break;
-            case 46: // Delete
+            case 46: 
                 this.doc.selection.digits = "";
                 this.doc.selection.nextDigit("0", false, false);
                 break;
-            case 48: // 0
+            case 48: 
                 if (canPlayNotes) break;
                 this.doc.selection.nextDigit("0", needControlForShortcuts != (event.shiftKey || event.ctrlKey || event.metaKey), event.altKey);
                 this._renderInstrumentBar(this.doc.song.channels[this.doc.channel], this.doc.getCurrentInstrument(), ColorConfig.getChannelColor(this.doc.song, this.doc.channel));
                 event.preventDefault();
                 break;
-            case 49: // 1
+            case 49: 
                 if (canPlayNotes) break;
                 this.doc.selection.nextDigit("1", needControlForShortcuts != (event.shiftKey || event.ctrlKey || event.metaKey), event.altKey);
                 this._renderInstrumentBar(this.doc.song.channels[this.doc.channel], this.doc.getCurrentInstrument(), ColorConfig.getChannelColor(this.doc.song, this.doc.channel));
                 event.preventDefault();
                 break;
-            case 50: // 2
+            case 50: 
                 if (canPlayNotes) break;
                 this.doc.selection.nextDigit("2", needControlForShortcuts != (event.shiftKey || event.ctrlKey || event.metaKey), event.altKey);
                 this._renderInstrumentBar(this.doc.song.channels[this.doc.channel], this.doc.getCurrentInstrument(), ColorConfig.getChannelColor(this.doc.song, this.doc.channel));
                 event.preventDefault();
                 break;
-            case 51: // 3
+            case 51: 
                 if (canPlayNotes) break;
                 this.doc.selection.nextDigit("3", needControlForShortcuts != (event.shiftKey || event.ctrlKey || event.metaKey), event.altKey);
                 this._renderInstrumentBar(this.doc.song.channels[this.doc.channel], this.doc.getCurrentInstrument(), ColorConfig.getChannelColor(this.doc.song, this.doc.channel));
                 event.preventDefault();
                 break;
-            case 52: // 4
+            case 52: 
                 if (canPlayNotes) break;
                 this.doc.selection.nextDigit("4", needControlForShortcuts != (event.shiftKey || event.ctrlKey || event.metaKey), event.altKey);
                 this._renderInstrumentBar(this.doc.song.channels[this.doc.channel], this.doc.getCurrentInstrument(), ColorConfig.getChannelColor(this.doc.song, this.doc.channel));
                 event.preventDefault();
                 break;
-            case 53: // 5
+            case 53: 
                 if (canPlayNotes) break;
                 this.doc.selection.nextDigit("5", needControlForShortcuts != (event.shiftKey || event.ctrlKey || event.metaKey), event.altKey);
                 this._renderInstrumentBar(this.doc.song.channels[this.doc.channel], this.doc.getCurrentInstrument(), ColorConfig.getChannelColor(this.doc.song, this.doc.channel));
                 event.preventDefault();
                 break;
-            case 54: // 6
+            case 54: 
                 if (canPlayNotes) break;
                 this.doc.selection.nextDigit("6", needControlForShortcuts != (event.shiftKey || event.ctrlKey || event.metaKey), event.altKey);
                 this._renderInstrumentBar(this.doc.song.channels[this.doc.channel], this.doc.getCurrentInstrument(), ColorConfig.getChannelColor(this.doc.song, this.doc.channel));
                 event.preventDefault();
                 break;
-            case 55: // 7
+            case 55: 
                 if (canPlayNotes) break;
                 this.doc.selection.nextDigit("7", needControlForShortcuts != (event.shiftKey || event.ctrlKey || event.metaKey), event.altKey);
                 this._renderInstrumentBar(this.doc.song.channels[this.doc.channel], this.doc.getCurrentInstrument(), ColorConfig.getChannelColor(this.doc.song, this.doc.channel));
                 event.preventDefault();
                 break;
-            case 56: // 8
+            case 56: 
                 if (canPlayNotes) break;
                 this.doc.selection.nextDigit("8", needControlForShortcuts != (event.shiftKey || event.ctrlKey || event.metaKey), event.altKey);
                 this._renderInstrumentBar(this.doc.song.channels[this.doc.channel], this.doc.getCurrentInstrument(), ColorConfig.getChannelColor(this.doc.song, this.doc.channel));
                 event.preventDefault();
                 break;
-            case 57: // 9
+            case 57: 
                 if (canPlayNotes) break;
                 this.doc.selection.nextDigit("9", needControlForShortcuts != (event.shiftKey || event.ctrlKey || event.metaKey), event.altKey);
                 this._renderInstrumentBar(this.doc.song.channels[this.doc.channel], this.doc.getCurrentInstrument(), ColorConfig.getChannelColor(this.doc.song, this.doc.channel));
@@ -5175,21 +5168,21 @@ export class SongEditor {
 
     private _whenKeyReleased = (event: KeyboardEvent): void => {
         this._muteEditor.onKeyUp(event);
-        if (!event.ctrlKey) { // Ctrl
+        if (!event.ctrlKey) { 
             this._patternEditor.controlMode = false;
         }
-        if (!event.shiftKey) { // Shift
+        if (!event.shiftKey) { 
             this._patternEditor.shiftMode = false;
         }
 
         this._ctrlHeld = event.ctrlKey;
         this._shiftHeld = event.shiftKey;
-        // Release live pitches regardless of control or caps lock so that any pitches played before will get released even if the modifier keys changed.
+        
         this._keyboardLayout.handleKeyEvent(event, false);
     }
 
     private _copyTextToClipboard(text: string): void {
-        // Set as any to allow compilation without clipboard types (since, uh, I didn't write this bit and don't know the proper types library) -jummbus
+        
         let nav: any;
         nav = navigator;
 
@@ -5248,15 +5241,15 @@ export class SongEditor {
     }
 
     public _animate = (): void => {
-        // Need to update mods once more to clear the slider display
+        
         this._modSliderUpdate();
-        // Same for volume display
+        
         if (this.doc.prefs.displayVolumeBar) {
             this._volumeUpdate();
         }
-        // ...and barscrollbar playhead
+        
         this._barScrollBar.animatePlayhead();
-        // ...and filters
+        
         if (this.doc.synth.isFilterModActive(false, this.doc.channel, this.doc.getCurrentInstrument())) {
             this._eqFilterEditor.render(true, this._ctrlHeld || this._shiftHeld);
         }
@@ -5293,10 +5286,10 @@ export class SongEditor {
     }
 
     private _setVolumeSlider = (): void => {
-        // Song volume slider doesn't use a change, but it can still be modulated.
+        
         if ((this._ctrlHeld || this._shiftHeld) && this.doc.synth.playing) {
             const prevVol = this.doc.prefs.volume;
-            // The slider only goes to 75, but the mod is 0-100 and in this instance we're using the value for a mod set.
+            
             this.doc.prefs.volume = Math.round(Number(this._volumeSlider.input.value) * 4 / 3);
             const changedPatterns = this._patternEditor.setModSettingsForChange(null, this);
             const useVol: number = this.doc.prefs.volume;
@@ -5314,17 +5307,17 @@ export class SongEditor {
             this.doc.setVolume(Number(this._volumeSlider.input.value));
             if (this.doc.recordingModulators) {
                 this.doc.recordingModulators = false;
-                // A dummy change that pushes history state.
+                
                 this.doc.record(new ChangeHoldingModRecording(this.doc, null, null, null));
             }
         }
     }
 
     private _recordVolumeSlider(useVol: number): void {
-        // Song volume slider doesn't use a change, but it can still be modulated.
+        
         if ((this._ctrlHeld || this._shiftHeld) && this.doc.synth.playing) {
             const prevVol = this.doc.prefs.volume;
-            // The slider only goes to 75, but the mod is 0-100 and in this instance we're using the value for a mod set.
+            
             this.doc.prefs.volume = useVol;
             this._patternEditor.setModSettingsForChange(null, this);
             window.clearTimeout(this._modRecTimeout);
@@ -5338,7 +5331,7 @@ export class SongEditor {
             this.doc.setVolume(Number(this._volumeSlider.input.value));
             if (this.doc.recordingModulators) {
                 this.doc.recordingModulators = false;
-                // A dummy change that pushes history state.
+                
                 this.doc.record(new ChangeHoldingModRecording(this.doc, null, null, null));
             }
         }
@@ -5450,7 +5443,7 @@ export class SongEditor {
     }
 
     public _refocus = (): void => {
-        // Waits a bit because select2 "steals" back focus even after the close event fires.
+        
         var selfRef = this;
         setTimeout(function () { selfRef.mainLayer.focus(); }, 20);
     }
@@ -5513,7 +5506,7 @@ export class SongEditor {
             if (index != -1) {
                 this.doc.selection.selectInstrument(index);
             }
-            // Force piano to re-show, if channel is modulator
+            
             if (this.doc.channel >= this.doc.song.pitchChannelCount + this.doc.song.noiseChannelCount) {
                 this._piano.forceRender();
             }
@@ -5525,9 +5518,9 @@ export class SongEditor {
 
     private _whenSetModChannel = (mod: number): void => {
         const selectedDropdownIndex = this._modChannelBoxes[mod].selectedIndex;
-        let selectedChannelIndex = -2; // default to "none"
+        let selectedChannelIndex = -2; 
         if (selectedDropdownIndex == 1) {
-            selectedChannelIndex = -1; // "song"
+            selectedChannelIndex = -1; 
         } else if (selectedDropdownIndex > 1) {
             let playableChannelCounter = 0;
             for (let i = 0; i < this.doc.song.channels.length; i++) {
@@ -5549,21 +5542,21 @@ export class SongEditor {
 
         const modChannel: number = Math.max(0, selectedChannelIndex);
 
-        // Check if setting was 'song' or 'none' and is changing to a channel number, in which case suggested instrument to mod will auto-set to the current one.
+        
         if (this.doc.song.channels[modChannel].instruments.length > 1 && previouslyUnset && selectedChannelIndex >= 0) {
             if (this.doc.song.channels[modChannel].bars[this.doc.bar] > 0) {
                 this.doc.selection.setModInstrument(mod, this.doc.song.channels[modChannel].patterns[this.doc.song.channels[modChannel].bars[this.doc.bar] - 1].instruments[0]);
             }
         }
 
-        // Force piano to re-show
+        
         this._piano.forceRender();
     }
 
     private _whenSetModInstrument = (mod: number): void => {
         this.doc.selection.setModInstrument(mod, this._modInstrumentBoxes[mod].selectedIndex);
 
-        // Force piano to re-show
+        
         this._piano.forceRender();
     }
 
@@ -5573,7 +5566,7 @@ export class SongEditor {
             text = this._modSetBoxes[mod].children[this._modSetBoxes[mod].selectedIndex].textContent as string;
 
             if (invalidIndex) {
-                // A setting is invalid (not in instrument's effects). It will be the first index. Allow it, but mark it as red.
+                
                 this._modSetBoxes[mod].selectedOptions.item(0)!.style.setProperty("color", "red");
                 this._modSetBoxes[mod].classList.add("invalidSetting");
                 this.doc.song.channels[this.doc.channel].instruments[this.doc.getCurrentInstrument()].invalidModulators[mod] = true;
@@ -5582,10 +5575,10 @@ export class SongEditor {
                 this.doc.song.channels[this.doc.channel].instruments[this.doc.getCurrentInstrument()].invalidModulators[mod] = false;
             }
         }
-        if (!invalidIndex) // Invalid index means a set is actually not occurring, just the same index and a warning.
+        if (!invalidIndex) 
             this.doc.selection.setModSetting(mod, text);
 
-        // Force piano to re-show if channel is modulator, as text shown on it needs to update
+        
         this._piano.forceRender();
 
     }
@@ -5633,7 +5626,7 @@ export class SongEditor {
         this.doc.record(new ChangeRingModChipWave(this.doc, this._ringModWaveSelect.selectedIndex));
     }
 
-    // advloop addition
+    
     private _whenSetUseChipWaveAdvancedLoopControls = (): void => {
         this.doc.record(new ChangeChipWaveUseAdvancedLoopControls(this.doc, this._useChipWaveAdvancedLoopControlsBox.checked ? true : false));
     }
@@ -5641,11 +5634,11 @@ export class SongEditor {
         this.doc.record(new ChangeChipWaveLoopMode(this.doc, this._chipWaveLoopModeSelect.selectedIndex));
     }
     private _whenSetChipWaveLoopStart = (): void => {
-        // this._doc.record(new ChangeChipWaveLoopStart(this._doc, Math.max(0, Math.min(chipWaveLoopEnd - 1, parseInt(this._chipWaveLoopStartStepper.value)))));
+        
         this.doc.record(new ChangeChipWaveLoopStart(this.doc, parseInt(this._chipWaveLoopStartStepper.value) | 0));
     }
     private _whenSetChipWaveLoopEnd = (): void => {
-        // this._doc.record(new ChangeChipWaveLoopEnd(this._doc, Math.max(0, Math.min(chipWaveLength - 1, parseInt(this._chipWaveLoopEndStepper.value)))));
+        
         this.doc.record(new ChangeChipWaveLoopEnd(this.doc, parseInt(this._chipWaveLoopEndStepper.value) | 0));
     }
     private _whenSetChipWaveLoopEndToEnd = (): void => {
@@ -5656,13 +5649,13 @@ export class SongEditor {
         this.doc.record(new ChangeChipWaveLoopEnd(this.doc, chipWaveLength - 1));
     }
     private _whenSetChipWaveStartOffset = (): void => {
-        // this._doc.record(new ChangeChipWaveStartOffset(this._doc, Math.max(0, Math.min(chipWaveLength - 1, parseInt(this._chipWaveStartOffsetStepper.value)))));
+        
         this.doc.record(new ChangeChipWaveStartOffset(this.doc, parseInt(this._chipWaveStartOffsetStepper.value) | 0));
     }
     private _whenSetChipWavePlayBackwards = (): void => {
         this.doc.record(new ChangeChipWavePlayBackwards(this.doc, this._chipWavePlayBackwardsBox.checked));
     }
-    // advloop addition
+    
 
     private _whenSetNoiseWave = (): void => {
         this.doc.record(new ChangeNoiseWave(this.doc, this._chipNoiseSelect.selectedIndex));
@@ -5753,11 +5746,11 @@ export class SongEditor {
                 (<any>navigator).share({ url: new URL("#" + this.doc.song.toBase64String(), location.href).href });
                 break;
             case "shortenUrl":
-                let shortenerStrategy: string = "https://tinyurl.com/api-create.php?url=";
+                let shortenerStrategy: string = "https:
                 const localShortenerStrategy: string | null = window.localStorage.getItem("shortenerStrategySelect");
 
-                // if (localShortenerStrategy == "beepboxnet") shortenerStrategy = "https://www.beepbox.net/api-create.php?url=";
-                if (localShortenerStrategy == "isgd") shortenerStrategy = "https://is.gd/create.php?format=simple&url=";
+                
+                if (localShortenerStrategy == "isgd") shortenerStrategy = "https:
 
                 window.open(shortenerStrategy + encodeURIComponent(new URL("#" + this.doc.song.toBase64String(), location.href).href));
                 break;
@@ -5947,7 +5940,7 @@ export class SongEditor {
 
     private _customWavePresetHandler = (event: Event): void => {
 
-        // Update custom wave value
+        
         let customWaveArray: Float32Array = new Float32Array(64);
         let index: number = this._customWavePresetDrop.selectedIndex - 1;
         let maxValue: number = Number.MIN_VALUE;
@@ -5956,7 +5949,7 @@ export class SongEditor {
         let arrayStep: number = (Config.chipWaves[index].samples.length - 1) / 64.0;
 
         for (let i: number = 0; i < 64; i++) {
-            // Compute derivative to get original wave.
+            
             customWaveArray[i] = (Config.chipWaves[index].samples[Math.floor(arrayPoint)] - Config.chipWaves[index].samples[(Math.floor(arrayPoint) + 1)]) / arrayStep;
 
             if (customWaveArray[i] < minValue)
@@ -5965,27 +5958,27 @@ export class SongEditor {
             if (customWaveArray[i] > maxValue)
                 maxValue = customWaveArray[i];
 
-            // Scale an any-size array to 64 elements
+            
             arrayPoint += arrayStep;
         }
 
         for (let i: number = 0; i < 64; i++) {
-            // Change array range from Min~Max to 0~(Max-Min)
+            
             customWaveArray[i] -= minValue;
-            // Divide by (Max-Min) to get a range of 0~1,
+            
             customWaveArray[i] /= (maxValue - minValue);
-            //then multiply by 48 to get 0~48,
+            
             customWaveArray[i] *= 48.0;
-            //then subtract 24 to get - 24~24
+            
             customWaveArray[i] -= 24.0;
-            //need to force integers
+            
             customWaveArray[i] = Math.ceil(customWaveArray[i]);
 
-            // Copy back data to canvas
+            
             this._customWaveDrawCanvas.newArray[i] = customWaveArray[i];
         }
 
-        //this._instrumentVolumeSlider.input.value = "" + Math.round(Config.waveVolumes[index] * 50.0 - 50.0);
+        
 
         this.doc.record(new ChangeCustomWave(this.doc, customWaveArray))
         if (+this._instrumentVolumeSlider.input.value != -Config.volumeRange/2) {

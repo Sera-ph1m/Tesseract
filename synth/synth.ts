@@ -3448,7 +3448,7 @@ export class Song {
             tag.endChannel = Math.max(startChannel, endChannel);
             return true;
         }
-        
+        this.channelTags.sort((a, b) => b.endChannel - a.endChannel);
         return false;
     }
 
@@ -3459,6 +3459,7 @@ export class Song {
             tag.endChannel = Math.max(startChannel, endChannel);
             return true;
         }
+        this.channelTags.sort((a, b) => b.endChannel - a.endChannel);
         return false;
     }
 
@@ -3477,6 +3478,7 @@ export class Song {
             tag.name = newName;
             return true;
         }
+        this.channelTags.sort((a, b) => b.endChannel - a.endChannel);
         return false;
     }
 
@@ -3491,6 +3493,7 @@ export class Song {
             tag.name = newName;
             return true;
         }
+        this.channelTags.sort((a, b) => b.endChannel - a.endChannel);
         return false;
     }
     public getNewNoteVolume = (isMod: boolean, modChannel?: number, modInstrument?: number, modCount?: number): number => {
