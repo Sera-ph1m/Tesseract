@@ -4473,7 +4473,7 @@ export class SongEditor {
                             : ChannelType.Pitch;
                     const cg = new ChangeGroup();
                     for (const tag of this.doc.song.channelTags) {
-                        if (tag.startChannel >= idx) {
+                        if (tag.startChannel > idx) {
                             // entirely below insertion → shift both start+end
                             cg.append(new ChangeChannelTagRange(
                                 this.doc, tag.id,

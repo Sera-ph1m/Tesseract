@@ -879,7 +879,7 @@ export class MuteEditor {
           : ChannelType.Pitch;
         const cg = new ChangeGroup();
         for (const tag of this._doc.song.channelTags) {
-          if (tag.startChannel >= idx) {
+          if (tag.startChannel > idx) {
             cg.append(
               new ChangeChannelTagRange(
                 this._doc,

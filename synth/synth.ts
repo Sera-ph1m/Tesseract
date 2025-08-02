@@ -12785,70 +12785,19 @@ export class Synth {
             const tickTimeEnd: number = tickTimeStart + 1.0;
             const noteTicksPassedTickStart: number = tickTimeStart - noteStartTick;
             const noteTicksPassedTickEnd: number = tickTimeEnd - noteStartTick;
-            
-            
-            // DISCRETE SLIDES STUFF
-
-            let discreteSlideType = -1;
-            if (effectsIncludeDiscreteSlide(instrument.effects)) {
-                discreteSlideType = instrument.discreteSlide;
-            }
 
             const tickTimeStartReal: number = currentPart * Config.ticksPerPart + this.tick;
             const tickTimeEndReal: number = tickTimeStartReal + (roundedSamplesPerTick / samplesPerTick);
 
+            // PREVIOUS POSITIONING OF DISCRETE SLIDES (now changed cause i wanted vibrato to be calculated in there too)
+            let discreteSlideType = -1;
             if (discreteSlideType === -1) {
                 // Default smooth slide logic.
                 const pinRatioStart: number = Math.max(0.0, Math.min(1.0, (tickTimeStartReal - pinStart) / (pinEnd - pinStart)));
                 const pinRatioEnd: number = Math.max(0.0, Math.min(1.0, (tickTimeEndReal - pinStart) / (pinEnd - pinStart)));
                 intervalStart = startPin.interval + (endPin.interval - startPin.interval) * pinRatioStart;
                 intervalEnd = startPin.interval + (endPin.interval - startPin.interval) * pinRatioEnd;
-            } else {
-                // Discrete slide logic.
-                const snapToPitch = (discreteSlideType === 0 || discreteSlideType === 3 || discreteSlideType === 4);
-                const snapTime = (discreteSlideType === 1 || discreteSlideType === 3) ? 1 : (discreteSlideType === 2 || discreteSlideType === 4) ? 2 : 0; // parts per step
-
-                if (snapTime > 0) {
-                    // Logic for snapping to time steps.
-                    const ticksPerStep = snapTime * Config.ticksPerPart;
-                    
-                    const ticksIntoNote = tickTimeStartReal - noteStartTick;
-                    const currentStep = Math.floor(ticksIntoNote / ticksPerStep);
-                    const tickAtStepStart = noteStartTick + currentStep * ticksPerStep;
-
-                    let discretePinIndex = 0;
-                    while (discretePinIndex < note.pins.length - 1 && (note.start + note.pins[discretePinIndex].time) * Config.ticksPerPart <= tickAtStepStart) {
-                        discretePinIndex++;
-                    }
-                    const discreteStartPin = note.pins[discretePinIndex - 1];
-                    const discreteEndPin = note.pins[discretePinIndex];
-                    const discretePinStartTick = (note.start + discreteStartPin.time) * Config.ticksPerPart;
-                    const discretePinEndTick = (note.start + discreteEndPin.time) * Config.ticksPerPart;
-
-                    const discretePinRatio = Math.max(0.0, Math.min(1.0, (tickAtStepStart - discretePinStartTick) / (discretePinEndTick - discretePinStartTick)));
-                    let finalInterval = discreteStartPin.interval + (discreteEndPin.interval - discreteStartPin.interval) * discretePinRatio;
-
-                    if (snapToPitch) {
-                        finalInterval = Math.round(finalInterval);
-                    }
-
-                    intervalStart = finalInterval;
-                    intervalEnd = finalInterval;
-                } else {
-                    // Logic for snapping to pitch only (time is continuous).
-                    const pinRatioStart: number = Math.max(0.0, Math.min(1.0, (tickTimeStartReal - pinStart) / (pinEnd - pinStart)));
-                    const pinRatioEnd: number = Math.max(0.0, Math.min(1.0, (tickTimeEndReal - pinStart) / (pinEnd - pinStart)));
-                    intervalStart = startPin.interval + (endPin.interval - startPin.interval) * pinRatioStart;
-                    intervalEnd = startPin.interval + (endPin.interval - startPin.interval) * pinRatioEnd;
-
-                    if (snapToPitch) {
-                        intervalStart = Math.round(intervalStart);
-                        intervalEnd = Math.round(intervalEnd);
-                    }
-                }
             }
-            
-            // END OF DISCRETE SLIDES STUFF
 
             fadeExpressionStart = 1.0;
             fadeExpressionEnd = 1.0;
@@ -12940,6 +12889,7 @@ export class Synth {
             instrumentState.envelopeComputer.reset();
         }
 
+
         if (tone.note != null && transition.slides) {
             // Slide interval and chordExpression at the start and/or end of the note if necessary.
             const prevNote: Note | null = tone.prevNote;
@@ -12965,7 +12915,143 @@ export class Synth {
                 }
             }
         }
+        if (tone.note != null) {
+                const note: Note = tone.note;
 
+                const noteStartPart: number = tone.noteStartPart;
+
+
+                const endPinIndex: number = note.getEndPinIndex(currentPart);
+                const startPin: NotePin = note.pins[endPinIndex - 1];
+                const endPin: NotePin = note.pins[endPinIndex];
+                const noteStartTick: number = noteStartPart * Config.ticksPerPart;
+                const pinStart: number = (note.start + startPin.time) * Config.ticksPerPart;
+                const pinEnd: number = (note.start + endPin.time) * Config.ticksPerPart;
+
+        if (effectsIncludeDiscreteSlide(instrument.effects) || effectsIncludeVibrato(instrument.effects)) {
+                let vibratoStart: number = 0.0;
+                let vibratoEnd: number = 0.0;
+        
+                if (effectsIncludeVibrato(instrument.effects)) {
+                    let delayTicks: number;
+                    let vibratoAmplitudeStart: number;
+                    let vibratoAmplitudeEnd: number;
+                    if (instrument.vibrato == Config.vibratos.length) {
+                        delayTicks = instrument.vibratoDelay * 2; // Delay was changed from parts to ticks in BB v9
+                        if (instrument.vibratoDelay == Config.modulators.dictionary["vibrato delay"].maxRawVol)
+                            delayTicks = Number.POSITIVE_INFINITY;
+                        vibratoAmplitudeStart = instrument.vibratoDepth;
+                        vibratoAmplitudeEnd = vibratoAmplitudeStart;
+                    } else {
+                        delayTicks = Config.vibratos[instrument.vibrato].delayTicks;
+                        vibratoAmplitudeStart = Config.vibratos[instrument.vibrato].amplitude;
+                        vibratoAmplitudeEnd = vibratoAmplitudeStart;
+                    }
+                
+                    if (this.isModActive(Config.modulators.dictionary["vibrato delay"].index, channelIndex, tone.instrumentIndex)) {
+                        delayTicks = this.getModValue(Config.modulators.dictionary["vibrato delay"].index, channelIndex, tone.instrumentIndex, false) * 2; // Delay was changed from parts to ticks in BB v9
+                        if (delayTicks == Config.modulators.dictionary["vibrato delay"].maxRawVol * 2)
+                            delayTicks = Number.POSITIVE_INFINITY;
+                    
+                    }
+                
+                    if (this.isModActive(Config.modulators.dictionary["vibrato depth"].index, channelIndex, tone.instrumentIndex)) {
+                        vibratoAmplitudeStart = this.getModValue(Config.modulators.dictionary["vibrato depth"].index, channelIndex, tone.instrumentIndex, false) / 25;
+                        vibratoAmplitudeEnd = this.getModValue(Config.modulators.dictionary["vibrato depth"].index, channelIndex, tone.instrumentIndex, true) / 25;
+                    }
+                
+                    if (tone.prevVibrato != null) {
+                        vibratoStart = tone.prevVibrato;
+                    } else {
+                        let vibratoLfoStart: number = Synth.getLFOAmplitude(instrument, secondsPerPart * instrumentState.vibratoTime);
+                        const vibratoDepthEnvelopeStart: number = envelopeStarts[EnvelopeComputeIndex.vibratoDepth];
+                        vibratoStart = vibratoAmplitudeStart * vibratoLfoStart * vibratoDepthEnvelopeStart;
+                        if (delayTicks > 0.0) {
+                            const ticksUntilVibratoStart: number = delayTicks - envelopeComputer.noteTicksStart;
+                            vibratoStart *= Math.max(0.0, Math.min(1.0, 1.0 - ticksUntilVibratoStart / 2.0));
+                        }
+                    }
+                
+                    let vibratoLfoEnd: number = Synth.getLFOAmplitude(instrument, secondsPerPart * instrumentState.nextVibratoTime);
+                    const vibratoDepthEnvelopeEnd: number = envelopeEnds[EnvelopeComputeIndex.vibratoDepth];
+                    if (instrument.type != InstrumentType.mod) {
+                        vibratoEnd = vibratoAmplitudeEnd * vibratoLfoEnd * vibratoDepthEnvelopeEnd;
+                        if (delayTicks > 0.0) {
+                            const ticksUntilVibratoEnd: number = delayTicks - envelopeComputer.noteTicksEnd;
+                            vibratoEnd *= Math.max(0.0, Math.min(1.0, 1.0 - ticksUntilVibratoEnd / 2.0));
+                        }
+                        tone.prevVibrato = vibratoEnd;
+                    }
+                }
+                tone.ticksSinceReleased = 0;
+
+                let discreteSlideType = -1;
+                if (effectsIncludeDiscreteSlide(instrument.effects)) {
+                    discreteSlideType = instrument.discreteSlide;
+                }
+                if (discreteSlideType) { };
+            
+            
+                const tickTimeStartReal: number = currentPart * Config.ticksPerPart + this.tick;
+                const tickTimeEndReal: number = tickTimeStartReal + (roundedSamplesPerTick / samplesPerTick);
+            
+                if (discreteSlideType === -1) {
+                    const pinRatioStart: number = Math.max(0.0, Math.min(1.0, (tickTimeStartReal - pinStart) / (pinEnd - pinStart)));
+                    const pinRatioEnd: number = Math.max(0.0, Math.min(1.0, (tickTimeEndReal - pinStart) / (pinEnd - pinStart)));
+                    intervalStart = startPin.interval + (endPin.interval - startPin.interval) * pinRatioStart;
+                    intervalEnd = startPin.interval + (endPin.interval - startPin.interval) * pinRatioEnd;
+                } else {
+                    const snapToPitch = (discreteSlideType === 0 || discreteSlideType === 3 || discreteSlideType === 4);
+                    const snapTime = (discreteSlideType === 1 || discreteSlideType === 3) ? 1 : (discreteSlideType === 2 || discreteSlideType === 4) ? 2 : 0; // parts per step
+                
+                    if (snapTime > 0) {
+                        const ticksPerStep = snapTime * Config.ticksPerPart;
+                    
+                        const ticksIntoNote = tickTimeStartReal - noteStartTick;
+                        const currentStep = Math.floor(ticksIntoNote / ticksPerStep);
+                        const tickAtStepStart = noteStartTick + currentStep * ticksPerStep;
+                    
+                        let discretePinIndex = 0;
+                        while (discretePinIndex < note.pins.length - 1 && (note.start + note.pins[discretePinIndex].time) * Config.ticksPerPart <= tickAtStepStart) {
+                            discretePinIndex++;
+                        }
+                        const discreteStartPin = note.pins[discretePinIndex - 1];
+                        const discreteEndPin = note.pins[discretePinIndex];
+                        const discretePinStartTick = (note.start + discreteStartPin.time) * Config.ticksPerPart;
+                        const discretePinEndTick = (note.start + discreteEndPin.time) * Config.ticksPerPart;
+                    
+                        const discretePinRatio = Math.max(0.0, Math.min(1.0, (tickAtStepStart - discretePinStartTick) / (discretePinEndTick - discretePinStartTick)));
+                        let finalInterval = discreteStartPin.interval + (discreteEndPin.interval - discreteStartPin.interval) * discretePinRatio;
+                    
+                        finalInterval += vibratoStart; 
+                    
+                        if (snapToPitch) {
+                            finalInterval = Math.round(finalInterval);
+                        }
+                    
+                        intervalStart = finalInterval;
+                        intervalEnd = finalInterval;
+                    } else {
+                        const pinRatioStart: number = Math.max(0.0, Math.min(1.0, (tickTimeStartReal - pinStart) / (pinEnd - pinStart)));
+                        const pinRatioEnd: number = Math.max(0.0, Math.min(1.0, (tickTimeEndReal - pinStart) / (pinEnd - pinStart)));
+                        intervalStart = startPin.interval + (endPin.interval - startPin.interval) * pinRatioStart;
+                        intervalEnd = startPin.interval + (endPin.interval - startPin.interval) * pinRatioEnd;
+                    
+                        intervalStart += vibratoStart; // Add vibrato before snapping.
+                        intervalEnd += vibratoEnd;
+                    
+                        if (snapToPitch) {
+                            intervalStart = Math.round(intervalStart);
+                            intervalEnd = Math.round(intervalEnd);
+                        }
+                    }
+                }
+                if (discreteSlideType === -1) {
+                    intervalStart += vibratoStart;
+                    intervalEnd += vibratoEnd;
+                }
+        }
+    }
         if (effectsIncludePitchShift(instrument.effects)) {
             let pitchShift: number = Config.justIntonationSemitones[instrument.pitchShift] / intervalScale;
             let pitchShiftScalarStart: number = 1.0;
@@ -12995,69 +13081,6 @@ export class Synth {
             }
             intervalStart += Synth.detuneToCents(modDetuneStart) * envelopeStart * Config.pitchesPerOctave / (12.0 * 100.0);
             intervalEnd += Synth.detuneToCents(modDetuneEnd) * envelopeEnd * Config.pitchesPerOctave / (12.0 * 100.0);
-        }
-
-        if (effectsIncludeVibrato(instrument.effects)) {
-            let delayTicks: number;
-            let vibratoAmplitudeStart: number;
-            let vibratoAmplitudeEnd: number;
-            // Custom vibrato
-            if (instrument.vibrato == Config.vibratos.length) {
-                delayTicks = instrument.vibratoDelay * 2; // Delay was changed from parts to ticks in BB v9
-                // Special case: if vibrato delay is max, NEVER vibrato.
-                if (instrument.vibratoDelay == Config.modulators.dictionary["vibrato delay"].maxRawVol)
-                    delayTicks = Number.POSITIVE_INFINITY;
-                vibratoAmplitudeStart = instrument.vibratoDepth;
-                vibratoAmplitudeEnd = vibratoAmplitudeStart;
-            } else {
-                delayTicks = Config.vibratos[instrument.vibrato].delayTicks;
-                vibratoAmplitudeStart = Config.vibratos[instrument.vibrato].amplitude;
-                vibratoAmplitudeEnd = vibratoAmplitudeStart;
-            }
-
-            if (this.isModActive(Config.modulators.dictionary["vibrato delay"].index, channelIndex, tone.instrumentIndex)) {
-                delayTicks = this.getModValue(Config.modulators.dictionary["vibrato delay"].index, channelIndex, tone.instrumentIndex, false) * 2; // Delay was changed from parts to ticks in BB v9
-                if (delayTicks == Config.modulators.dictionary["vibrato delay"].maxRawVol * 2)
-                    delayTicks = Number.POSITIVE_INFINITY;
-
-            }
-
-            if (this.isModActive(Config.modulators.dictionary["vibrato depth"].index, channelIndex, tone.instrumentIndex)) {
-                vibratoAmplitudeStart = this.getModValue(Config.modulators.dictionary["vibrato depth"].index, channelIndex, tone.instrumentIndex, false) / 25;
-                vibratoAmplitudeEnd = this.getModValue(Config.modulators.dictionary["vibrato depth"].index, channelIndex, tone.instrumentIndex, true) / 25;
-            }
-
-
-            // To maintain pitch continuity, (mostly for picked string which retriggers impulse
-            // otherwise) remember the vibrato at the end of this run and reuse it at the start
-            // of the next run if available.
-            let vibratoStart: number;
-            if (tone.prevVibrato != null) {
-                vibratoStart = tone.prevVibrato;
-            } else {
-                let vibratoLfoStart: number = Synth.getLFOAmplitude(instrument, secondsPerPart * instrumentState.vibratoTime);
-                const vibratoDepthEnvelopeStart: number = envelopeStarts[EnvelopeComputeIndex.vibratoDepth];
-                vibratoStart = vibratoAmplitudeStart * vibratoLfoStart * vibratoDepthEnvelopeStart;
-                if (delayTicks > 0.0) {
-                    const ticksUntilVibratoStart: number = delayTicks - envelopeComputer.noteTicksStart;
-                    vibratoStart *= Math.max(0.0, Math.min(1.0, 1.0 - ticksUntilVibratoStart / 2.0));
-                }
-            }
-
-            let vibratoLfoEnd: number = Synth.getLFOAmplitude(instrument, secondsPerPart * instrumentState.nextVibratoTime);
-            const vibratoDepthEnvelopeEnd: number = envelopeEnds[EnvelopeComputeIndex.vibratoDepth];
-            if (instrument.type != InstrumentType.mod) {
-                let vibratoEnd: number = vibratoAmplitudeEnd * vibratoLfoEnd * vibratoDepthEnvelopeEnd;
-                if (delayTicks > 0.0) {
-                    const ticksUntilVibratoEnd: number = delayTicks - envelopeComputer.noteTicksEnd;
-                    vibratoEnd *= Math.max(0.0, Math.min(1.0, 1.0 - ticksUntilVibratoEnd / 2.0));
-                }
-
-                tone.prevVibrato = vibratoEnd;
-
-                intervalStart += vibratoStart;
-                intervalEnd += vibratoEnd;
-            }
         }
 
         if ((!transition.isSeamless && !tone.forceContinueAtStart) || tone.prevNote == null) {

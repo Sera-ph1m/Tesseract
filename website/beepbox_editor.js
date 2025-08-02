@@ -22811,52 +22811,13 @@ li.select2-results__option[role=group] > strong:hover {
                 const tickTimeEnd = tickTimeStart + 1.0;
                 const noteTicksPassedTickStart = tickTimeStart - noteStartTick;
                 const noteTicksPassedTickEnd = tickTimeEnd - noteStartTick;
-                let discreteSlideType = -1;
-                if (effectsIncludeDiscreteSlide(instrument.effects)) {
-                    discreteSlideType = instrument.discreteSlide;
-                }
                 const tickTimeStartReal = currentPart * Config.ticksPerPart + this.tick;
                 const tickTimeEndReal = tickTimeStartReal + (roundedSamplesPerTick / samplesPerTick);
-                if (discreteSlideType === -1) {
+                {
                     const pinRatioStart = Math.max(0.0, Math.min(1.0, (tickTimeStartReal - pinStart) / (pinEnd - pinStart)));
                     const pinRatioEnd = Math.max(0.0, Math.min(1.0, (tickTimeEndReal - pinStart) / (pinEnd - pinStart)));
                     intervalStart = startPin.interval + (endPin.interval - startPin.interval) * pinRatioStart;
                     intervalEnd = startPin.interval + (endPin.interval - startPin.interval) * pinRatioEnd;
-                }
-                else {
-                    const snapToPitch = (discreteSlideType === 0 || discreteSlideType === 3 || discreteSlideType === 4);
-                    const snapTime = (discreteSlideType === 1 || discreteSlideType === 3) ? 1 : (discreteSlideType === 2 || discreteSlideType === 4) ? 2 : 0;
-                    if (snapTime > 0) {
-                        const ticksPerStep = snapTime * Config.ticksPerPart;
-                        const ticksIntoNote = tickTimeStartReal - noteStartTick;
-                        const currentStep = Math.floor(ticksIntoNote / ticksPerStep);
-                        const tickAtStepStart = noteStartTick + currentStep * ticksPerStep;
-                        let discretePinIndex = 0;
-                        while (discretePinIndex < note.pins.length - 1 && (note.start + note.pins[discretePinIndex].time) * Config.ticksPerPart <= tickAtStepStart) {
-                            discretePinIndex++;
-                        }
-                        const discreteStartPin = note.pins[discretePinIndex - 1];
-                        const discreteEndPin = note.pins[discretePinIndex];
-                        const discretePinStartTick = (note.start + discreteStartPin.time) * Config.ticksPerPart;
-                        const discretePinEndTick = (note.start + discreteEndPin.time) * Config.ticksPerPart;
-                        const discretePinRatio = Math.max(0.0, Math.min(1.0, (tickAtStepStart - discretePinStartTick) / (discretePinEndTick - discretePinStartTick)));
-                        let finalInterval = discreteStartPin.interval + (discreteEndPin.interval - discreteStartPin.interval) * discretePinRatio;
-                        if (snapToPitch) {
-                            finalInterval = Math.round(finalInterval);
-                        }
-                        intervalStart = finalInterval;
-                        intervalEnd = finalInterval;
-                    }
-                    else {
-                        const pinRatioStart = Math.max(0.0, Math.min(1.0, (tickTimeStartReal - pinStart) / (pinEnd - pinStart)));
-                        const pinRatioEnd = Math.max(0.0, Math.min(1.0, (tickTimeEndReal - pinStart) / (pinEnd - pinStart)));
-                        intervalStart = startPin.interval + (endPin.interval - startPin.interval) * pinRatioStart;
-                        intervalEnd = startPin.interval + (endPin.interval - startPin.interval) * pinRatioEnd;
-                        if (snapToPitch) {
-                            intervalStart = Math.round(intervalStart);
-                            intervalEnd = Math.round(intervalEnd);
-                        }
-                    }
                 }
                 fadeExpressionStart = 1.0;
                 fadeExpressionEnd = 1.0;
@@ -22964,6 +22925,123 @@ li.select2-results__option[role=group] > strong:hover {
                     }
                 }
             }
+            if (tone.note != null) {
+                const note = tone.note;
+                const noteStartPart = tone.noteStartPart;
+                const endPinIndex = note.getEndPinIndex(currentPart);
+                const startPin = note.pins[endPinIndex - 1];
+                const endPin = note.pins[endPinIndex];
+                const noteStartTick = noteStartPart * Config.ticksPerPart;
+                const pinStart = (note.start + startPin.time) * Config.ticksPerPart;
+                const pinEnd = (note.start + endPin.time) * Config.ticksPerPart;
+                if (effectsIncludeDiscreteSlide(instrument.effects) || effectsIncludeVibrato(instrument.effects)) {
+                    let vibratoStart = 0.0;
+                    let vibratoEnd = 0.0;
+                    if (effectsIncludeVibrato(instrument.effects)) {
+                        let delayTicks;
+                        let vibratoAmplitudeStart;
+                        let vibratoAmplitudeEnd;
+                        if (instrument.vibrato == Config.vibratos.length) {
+                            delayTicks = instrument.vibratoDelay * 2;
+                            if (instrument.vibratoDelay == Config.modulators.dictionary["vibrato delay"].maxRawVol)
+                                delayTicks = Number.POSITIVE_INFINITY;
+                            vibratoAmplitudeStart = instrument.vibratoDepth;
+                            vibratoAmplitudeEnd = vibratoAmplitudeStart;
+                        }
+                        else {
+                            delayTicks = Config.vibratos[instrument.vibrato].delayTicks;
+                            vibratoAmplitudeStart = Config.vibratos[instrument.vibrato].amplitude;
+                            vibratoAmplitudeEnd = vibratoAmplitudeStart;
+                        }
+                        if (this.isModActive(Config.modulators.dictionary["vibrato delay"].index, channelIndex, tone.instrumentIndex)) {
+                            delayTicks = this.getModValue(Config.modulators.dictionary["vibrato delay"].index, channelIndex, tone.instrumentIndex, false) * 2;
+                            if (delayTicks == Config.modulators.dictionary["vibrato delay"].maxRawVol * 2)
+                                delayTicks = Number.POSITIVE_INFINITY;
+                        }
+                        if (this.isModActive(Config.modulators.dictionary["vibrato depth"].index, channelIndex, tone.instrumentIndex)) {
+                            vibratoAmplitudeStart = this.getModValue(Config.modulators.dictionary["vibrato depth"].index, channelIndex, tone.instrumentIndex, false) / 25;
+                            vibratoAmplitudeEnd = this.getModValue(Config.modulators.dictionary["vibrato depth"].index, channelIndex, tone.instrumentIndex, true) / 25;
+                        }
+                        if (tone.prevVibrato != null) {
+                            vibratoStart = tone.prevVibrato;
+                        }
+                        else {
+                            let vibratoLfoStart = Synth.getLFOAmplitude(instrument, secondsPerPart * instrumentState.vibratoTime);
+                            const vibratoDepthEnvelopeStart = envelopeStarts[20];
+                            vibratoStart = vibratoAmplitudeStart * vibratoLfoStart * vibratoDepthEnvelopeStart;
+                            if (delayTicks > 0.0) {
+                                const ticksUntilVibratoStart = delayTicks - envelopeComputer.noteTicksStart;
+                                vibratoStart *= Math.max(0.0, Math.min(1.0, 1.0 - ticksUntilVibratoStart / 2.0));
+                            }
+                        }
+                        let vibratoLfoEnd = Synth.getLFOAmplitude(instrument, secondsPerPart * instrumentState.nextVibratoTime);
+                        const vibratoDepthEnvelopeEnd = envelopeEnds[20];
+                        if (instrument.type != 10) {
+                            vibratoEnd = vibratoAmplitudeEnd * vibratoLfoEnd * vibratoDepthEnvelopeEnd;
+                            if (delayTicks > 0.0) {
+                                const ticksUntilVibratoEnd = delayTicks - envelopeComputer.noteTicksEnd;
+                                vibratoEnd *= Math.max(0.0, Math.min(1.0, 1.0 - ticksUntilVibratoEnd / 2.0));
+                            }
+                            tone.prevVibrato = vibratoEnd;
+                        }
+                    }
+                    tone.ticksSinceReleased = 0;
+                    let discreteSlideType = -1;
+                    if (effectsIncludeDiscreteSlide(instrument.effects)) {
+                        discreteSlideType = instrument.discreteSlide;
+                    }
+                    const tickTimeStartReal = currentPart * Config.ticksPerPart + this.tick;
+                    const tickTimeEndReal = tickTimeStartReal + (roundedSamplesPerTick / samplesPerTick);
+                    if (discreteSlideType === -1) {
+                        const pinRatioStart = Math.max(0.0, Math.min(1.0, (tickTimeStartReal - pinStart) / (pinEnd - pinStart)));
+                        const pinRatioEnd = Math.max(0.0, Math.min(1.0, (tickTimeEndReal - pinStart) / (pinEnd - pinStart)));
+                        intervalStart = startPin.interval + (endPin.interval - startPin.interval) * pinRatioStart;
+                        intervalEnd = startPin.interval + (endPin.interval - startPin.interval) * pinRatioEnd;
+                    }
+                    else {
+                        const snapToPitch = (discreteSlideType === 0 || discreteSlideType === 3 || discreteSlideType === 4);
+                        const snapTime = (discreteSlideType === 1 || discreteSlideType === 3) ? 1 : (discreteSlideType === 2 || discreteSlideType === 4) ? 2 : 0;
+                        if (snapTime > 0) {
+                            const ticksPerStep = snapTime * Config.ticksPerPart;
+                            const ticksIntoNote = tickTimeStartReal - noteStartTick;
+                            const currentStep = Math.floor(ticksIntoNote / ticksPerStep);
+                            const tickAtStepStart = noteStartTick + currentStep * ticksPerStep;
+                            let discretePinIndex = 0;
+                            while (discretePinIndex < note.pins.length - 1 && (note.start + note.pins[discretePinIndex].time) * Config.ticksPerPart <= tickAtStepStart) {
+                                discretePinIndex++;
+                            }
+                            const discreteStartPin = note.pins[discretePinIndex - 1];
+                            const discreteEndPin = note.pins[discretePinIndex];
+                            const discretePinStartTick = (note.start + discreteStartPin.time) * Config.ticksPerPart;
+                            const discretePinEndTick = (note.start + discreteEndPin.time) * Config.ticksPerPart;
+                            const discretePinRatio = Math.max(0.0, Math.min(1.0, (tickAtStepStart - discretePinStartTick) / (discretePinEndTick - discretePinStartTick)));
+                            let finalInterval = discreteStartPin.interval + (discreteEndPin.interval - discreteStartPin.interval) * discretePinRatio;
+                            finalInterval += vibratoStart;
+                            if (snapToPitch) {
+                                finalInterval = Math.round(finalInterval);
+                            }
+                            intervalStart = finalInterval;
+                            intervalEnd = finalInterval;
+                        }
+                        else {
+                            const pinRatioStart = Math.max(0.0, Math.min(1.0, (tickTimeStartReal - pinStart) / (pinEnd - pinStart)));
+                            const pinRatioEnd = Math.max(0.0, Math.min(1.0, (tickTimeEndReal - pinStart) / (pinEnd - pinStart)));
+                            intervalStart = startPin.interval + (endPin.interval - startPin.interval) * pinRatioStart;
+                            intervalEnd = startPin.interval + (endPin.interval - startPin.interval) * pinRatioEnd;
+                            intervalStart += vibratoStart;
+                            intervalEnd += vibratoEnd;
+                            if (snapToPitch) {
+                                intervalStart = Math.round(intervalStart);
+                                intervalEnd = Math.round(intervalEnd);
+                            }
+                        }
+                    }
+                    if (discreteSlideType === -1) {
+                        intervalStart += vibratoStart;
+                        intervalEnd += vibratoEnd;
+                    }
+                }
+            }
             if (effectsIncludePitchShift(instrument.effects)) {
                 let pitchShift = Config.justIntonationSemitones[instrument.pitchShift] / intervalScale;
                 let pitchShiftScalarStart = 1.0;
@@ -22993,57 +23071,6 @@ li.select2-results__option[role=group] > strong:hover {
                 }
                 intervalStart += Synth.detuneToCents(modDetuneStart) * envelopeStart * Config.pitchesPerOctave / (12.0 * 100.0);
                 intervalEnd += Synth.detuneToCents(modDetuneEnd) * envelopeEnd * Config.pitchesPerOctave / (12.0 * 100.0);
-            }
-            if (effectsIncludeVibrato(instrument.effects)) {
-                let delayTicks;
-                let vibratoAmplitudeStart;
-                let vibratoAmplitudeEnd;
-                if (instrument.vibrato == Config.vibratos.length) {
-                    delayTicks = instrument.vibratoDelay * 2;
-                    if (instrument.vibratoDelay == Config.modulators.dictionary["vibrato delay"].maxRawVol)
-                        delayTicks = Number.POSITIVE_INFINITY;
-                    vibratoAmplitudeStart = instrument.vibratoDepth;
-                    vibratoAmplitudeEnd = vibratoAmplitudeStart;
-                }
-                else {
-                    delayTicks = Config.vibratos[instrument.vibrato].delayTicks;
-                    vibratoAmplitudeStart = Config.vibratos[instrument.vibrato].amplitude;
-                    vibratoAmplitudeEnd = vibratoAmplitudeStart;
-                }
-                if (this.isModActive(Config.modulators.dictionary["vibrato delay"].index, channelIndex, tone.instrumentIndex)) {
-                    delayTicks = this.getModValue(Config.modulators.dictionary["vibrato delay"].index, channelIndex, tone.instrumentIndex, false) * 2;
-                    if (delayTicks == Config.modulators.dictionary["vibrato delay"].maxRawVol * 2)
-                        delayTicks = Number.POSITIVE_INFINITY;
-                }
-                if (this.isModActive(Config.modulators.dictionary["vibrato depth"].index, channelIndex, tone.instrumentIndex)) {
-                    vibratoAmplitudeStart = this.getModValue(Config.modulators.dictionary["vibrato depth"].index, channelIndex, tone.instrumentIndex, false) / 25;
-                    vibratoAmplitudeEnd = this.getModValue(Config.modulators.dictionary["vibrato depth"].index, channelIndex, tone.instrumentIndex, true) / 25;
-                }
-                let vibratoStart;
-                if (tone.prevVibrato != null) {
-                    vibratoStart = tone.prevVibrato;
-                }
-                else {
-                    let vibratoLfoStart = Synth.getLFOAmplitude(instrument, secondsPerPart * instrumentState.vibratoTime);
-                    const vibratoDepthEnvelopeStart = envelopeStarts[20];
-                    vibratoStart = vibratoAmplitudeStart * vibratoLfoStart * vibratoDepthEnvelopeStart;
-                    if (delayTicks > 0.0) {
-                        const ticksUntilVibratoStart = delayTicks - envelopeComputer.noteTicksStart;
-                        vibratoStart *= Math.max(0.0, Math.min(1.0, 1.0 - ticksUntilVibratoStart / 2.0));
-                    }
-                }
-                let vibratoLfoEnd = Synth.getLFOAmplitude(instrument, secondsPerPart * instrumentState.nextVibratoTime);
-                const vibratoDepthEnvelopeEnd = envelopeEnds[20];
-                if (instrument.type != 10) {
-                    let vibratoEnd = vibratoAmplitudeEnd * vibratoLfoEnd * vibratoDepthEnvelopeEnd;
-                    if (delayTicks > 0.0) {
-                        const ticksUntilVibratoEnd = delayTicks - envelopeComputer.noteTicksEnd;
-                        vibratoEnd *= Math.max(0.0, Math.min(1.0, 1.0 - ticksUntilVibratoEnd / 2.0));
-                    }
-                    tone.prevVibrato = vibratoEnd;
-                    intervalStart += vibratoStart;
-                    intervalEnd += vibratoEnd;
-                }
             }
             if ((!transition.isSeamless && !tone.forceContinueAtStart) || tone.prevNote == null) {
                 const fadeInSeconds = instrument.getFadeInSeconds();
@@ -41401,7 +41428,7 @@ You should be redirected to the song at:<br /><br />
                                 : ChannelType.Pitch;
                         const cg = new ChangeGroup();
                         for (const tag of this._doc.song.channelTags) {
-                            if (tag.startChannel >= idx) {
+                            if (tag.startChannel > idx) {
                                 cg.append(new ChangeChannelTagRange(this._doc, tag.id, tag.startChannel + 1, tag.endChannel + 1));
                             }
                             else if (tag.endChannel >= idx) {
@@ -41568,7 +41595,7 @@ You should be redirected to the song at:<br /><br />
             this._tagContextMenu.innerHTML = "";
             const options = [
                 { label: "Rename...", action: "tagRename" },
-                { label: "Mute Tag", action: "tagMute" },
+                { label: "Mute/Unmute Tag", action: "tagMute" },
                 { label: "Solo/Unsolo Tag", action: "tagSolo" },
                 { label: "Remove Tag", action: "tagRemove" },
                 { label: "Remove Channels & Tag", action: "tagRemoveChannels" },
@@ -50929,7 +50956,7 @@ You should be redirected to the song at:<br /><br />
                                     : ChannelType.Pitch;
                             const cg = new ChangeGroup();
                             for (const tag of this.doc.song.channelTags) {
-                                if (tag.startChannel >= idx) {
+                                if (tag.startChannel > idx) {
                                     cg.append(new ChangeChannelTagRange(this.doc, tag.id, tag.startChannel + 1, tag.endChannel + 1));
                                 }
                                 else if (tag.endChannel >= idx) {
