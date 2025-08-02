@@ -39,7 +39,7 @@ import { EditorConfig, isMobile, prettyNumber, Preset, PresetCategory } from "./
 import { EuclideanRhythmPrompt } from "./EuclidgenRhythmPrompt";
 import { ExportPrompt } from "./ExportPrompt";
 import "./Layout"; // Imported here for the sake of ensuring this code is transpiled early.
-import { Instrument, Channel, Synth, ChannelType } from "../synth/synth";
+import { Instrument, Channel, Synth, ChannelType, ChannelTag } from "../synth/synth";
 import { HTML, SVG } from "imperative-html/dist/esm/elements-strict";
 import { Preferences } from "./Preferences";
 import { HarmonicsEditor, HarmonicsEditorPrompt } from "./HarmonicsEditor";
@@ -165,8 +165,10 @@ import {
     ChangeDiscreteSlide,
 	ChangeMonophonicTone,
 	ChangeChannelOrder,
+    ChangeChannelTagRange,
     ChangeAddChannel,
-    ChangeRemoveChannel
+    ChangeRemoveChannel,
+    ChangeRemoveChannelTag
 } from "./changes";
 
 import { TrackEditor } from "./TrackEditor";
@@ -4461,22 +4463,35 @@ export class SongEditor {
                 event.preventDefault();
                 break;
             case 13: // enter/return
-                this.doc.synth.loopBarStart = -1;
-                this.doc.synth.loopBarEnd = -1;
-                this._loopEditor.setLoopAt(this.doc.synth.loopBarStart, this.doc.synth.loopBarEnd);
-
                 if ((event.ctrlKey || event.metaKey) && !event.shiftKey) {
-					const currentChannel = this.doc.channel;
-					let type: ChannelType;
-					if (this.doc.song.getChannelIsMod(currentChannel)) {
-						type = ChannelType.Mod;
-					} else if (this.doc.song.getChannelIsNoise(currentChannel)) {
-						type = ChannelType.Noise;
-					} else {
-						type = ChannelType.Pitch;
-					}
-					this.doc.record(new ChangeAddChannel(this.doc, type, currentChannel));
-				} else if (event.shiftKey) {
+                    // ==== ADD CHANNEL + SHIFT TAGS ====
+                    const idx = this.doc.channel;
+                    let type: ChannelType = this.doc.song.getChannelIsMod(idx)
+                        ? ChannelType.Mod
+                        : this.doc.song.getChannelIsNoise(idx)
+                            ? ChannelType.Noise
+                            : ChannelType.Pitch;
+                    const cg = new ChangeGroup();
+                    for (const tag of this.doc.song.channelTags) {
+                        if (tag.startChannel >= idx) {
+                            // entirely below insertion → shift both start+end
+                            cg.append(new ChangeChannelTagRange(
+                                this.doc, tag.id,
+                                tag.startChannel + 1,
+                                tag.endChannel + 1
+                            ));
+                        } else if (tag.endChannel >= idx) {
+                            // spans insertion → shift end only
+                            cg.append(new ChangeChannelTagRange(
+                                this.doc, tag.id,
+                                tag.startChannel,
+                                tag.endChannel + 1
+                            ));
+                        }
+                    }
+                    cg.append(new ChangeAddChannel(this.doc, type, idx));
+                    this.doc.record(cg);
+                } else if (event.shiftKey) {
 					const width = this.doc.selection.boxSelectionWidth;
 					this.doc.selection.boxSelectionX0 -= width;
 					this.doc.selection.boxSelectionX1 -= width;
@@ -4902,16 +4917,73 @@ export class SongEditor {
                     event.preventDefault();
                 }
                 break;
-            case 38: // up
+                case 38: // Up
                 if (event.ctrlKey || event.metaKey) {
-					const channel = this.doc.channel;
-					if (channel > 0) {
-						this.doc.record(new ChangeChannelOrder(this.doc, channel, channel, -1));
-						this.doc.song.updateDefaultChannelNames();
-						this.doc.selection.setChannelBar(channel - 1, this.doc.bar);
-                        this.doc.recalcChannelNames = true;
-                        this.doc.notifier.changed();
-					}
+                    const ch   = this.doc.channel;
+                    const tags = this.doc.song.channelTags;
+
+                    // 1) Outermost tag ending at ch-1 → expand downward (favor larger spans, tie=older)
+                    const endTags = tags.filter(t => t.endChannel === ch - 1);
+                    if (endTags.length > 0) {
+                        const outer = endTags.reduce(
+                            (best: ChannelTag, t: ChannelTag) => {
+                                const spanBest = best.endChannel - best.startChannel;
+                                const spanT    = t.endChannel   - t.startChannel;
+                                if (spanT > spanBest) return t;     // larger=outer
+                                if (spanT < spanBest) return best;
+                                // tie: pick older
+                                return tags.indexOf(t) < tags.indexOf(best)
+                                    ? t
+                                    : best;
+                            },
+                            endTags[0]
+                        );
+                        this.doc.record(new ChangeChannelTagRange(
+                            this.doc, outer.id,
+                            outer.startChannel, ch
+                        ));
+                    }
+                    else {
+                        // 2) Innermost tag starting at ch → shrink upward (or delete if single-channel)
+                        const startTags = tags.filter(t => t.startChannel === ch);
+                        if (startTags.length > 0) {
+                            const inner = startTags.reduce(
+                                (best: ChannelTag, t: ChannelTag) => {
+                                    const spanBest = best.endChannel - best.startChannel;
+                                    const spanT    = t.endChannel   - t.startChannel;
+                                    if (spanT < spanBest) return t;         // smaller=inner
+                                    if (spanT > spanBest) return best;
+                                    // tie: pick newer
+                                    return tags.indexOf(t) > tags.indexOf(best)
+                                        ? t
+                                        : best;
+                                },
+                                startTags[0]
+                            );
+                            if (inner.startChannel === inner.endChannel) {
+                                this.doc.record(
+                                    new ChangeRemoveChannelTag(this.doc, inner.id)
+                                );
+                            } else {
+                                this.doc.record(
+                                    new ChangeChannelTagRange(
+                                        this.doc,
+                                        inner.id,
+                                        ch + 1,
+                                        inner.endChannel
+                                    )
+                                );
+                            }
+                        }
+                        // 3) Otherwise normal swap up
+                        else if (ch > 0) {
+                            this.doc.record(new ChangeChannelOrder(this.doc, ch, ch, -1));
+                            this.doc.song.updateDefaultChannelNames();
+                            this.doc.selection.setChannelBar(ch - 1, this.doc.bar);
+                            this.doc.recalcChannelNames = true;
+                            this.doc.notifier.changed();
+                        }
+                    }
                 } else if (event.shiftKey) {
                     this.doc.selection.boxSelectionY1 = Math.max(0, this.doc.selection.boxSelectionY1 - 1);
                     this.doc.selection.scrollToEndOfSelection();
@@ -4925,16 +4997,72 @@ export class SongEditor {
                 }
                 event.preventDefault();
                 break;
-            case 40: // down
+                case 40: // down
                 if (event.ctrlKey || event.metaKey) {
-					const channel = this.doc.channel;
-					if (channel < this.doc.song.getChannelCount() - 1) {
-						this.doc.record(new ChangeChannelOrder(this.doc, channel, channel, 1));
-						this.doc.song.updateDefaultChannelNames();
-						this.doc.selection.setChannelBar(channel + 1, this.doc.bar);
-                        this.doc.recalcChannelNames = true;
-                        this.doc.notifier.changed();
-					}
+                    const ch   = this.doc.channel;
+                    const tags = this.doc.song.channelTags;
+                    // 1) Innermost tag ending at ch → shrink upward (or delete if single-channel)
+                    const endTagsDown = tags.filter(t => t.endChannel === ch);
+                    if (endTagsDown.length > 0) {
+                        const inner = endTagsDown.reduce(
+                            (best: ChannelTag, t: ChannelTag) => {
+                                const spanBest = best.endChannel - best.startChannel;
+                                const spanT    = t.endChannel   - t.startChannel;
+                                if (spanT < spanBest) return t;     // smaller=inner
+                                if (spanT > spanBest) return best;
+                                // tie: pick newer
+                                return tags.indexOf(t) > tags.indexOf(best)
+                                    ? t
+                                    : best;
+                            },
+                            endTagsDown[0]
+                        );
+                        if (inner.startChannel === inner.endChannel) {
+                            this.doc.record(
+                                new ChangeRemoveChannelTag(this.doc, inner.id)
+                            );
+                        } else {
+                            this.doc.record(
+                                new ChangeChannelTagRange(
+                                    this.doc,
+                                    inner.id,
+                                    inner.startChannel,
+                                    ch - 1
+                                )
+                            );
+                        }
+                    }
+                    else {
+                        // 2) Innermost tag starting at ch+1 → expand its start downward (favor larger spans, tie=older)
+                        const startTagsDown = tags.filter(t => t.startChannel === ch + 1);
+                        if (startTagsDown.length > 0) {
+                            const outer = startTagsDown.reduce(
+                                (best: ChannelTag, t: ChannelTag) => {
+                                    const spanBest = best.endChannel - best.startChannel;
+                                    const spanT    = t.endChannel   - t.startChannel;
+                                    if (spanT > spanBest) return t;     // larger=outer
+                                    if (spanT < spanBest) return best;
+                                    // tie: pick older
+                                    return tags.indexOf(t) < tags.indexOf(best)
+                                        ? t
+                                        : best;
+                                },
+                                startTagsDown[0]
+                            );
+                            this.doc.record(new ChangeChannelTagRange(
+                                this.doc, outer.id,
+                                ch, outer.endChannel
+                            ));
+                        }
+                        // 3) Otherwise normal swap down
+                        else if (ch < this.doc.song.getChannelCount() - 1) {
+                            this.doc.record(new ChangeChannelOrder(this.doc, ch, ch, 1));
+                            this.doc.song.updateDefaultChannelNames();
+                            this.doc.selection.setChannelBar(ch + 1, this.doc.bar);
+                            this.doc.recalcChannelNames = true;
+                            this.doc.notifier.changed();
+                        }
+                    }
                 } else if (event.shiftKey) {
                     this.doc.selection.boxSelectionY1 = Math.min(this.doc.song.getChannelCount() - 1, this.doc.selection.boxSelectionY1 + 1);
                     this.doc.selection.scrollToEndOfSelection();

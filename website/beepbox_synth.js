@@ -5650,7 +5650,7 @@ var beepbox = (function (exports) {
             } while (this.channelTags.some(tag => tag.id === id));
             return id;
         }
-        createChannelTag(name, startChannel, endChannel, id) {
+        createChannelTag(name, startChannel, endChannel, id, addToStart = false) {
             const newId = id || this._generateUniqueTagId();
             if (this.channelTags.some(tag => tag.id === newId)) {
                 console.error("A tag with this ID already exists.");
@@ -5680,7 +5680,10 @@ var beepbox = (function (exports) {
                 startChannel: newStart,
                 endChannel: newEnd,
             };
-            this.channelTags.push(newTag);
+            addToStart
+                ? this.channelTags.unshift(newTag)
+                : this.channelTags.push(newTag);
+            this.channelTags.sort((a, b) => b.endChannel - a.endChannel);
             return newId;
         }
         removeChannelTagById(id) {
@@ -5689,6 +5692,7 @@ var beepbox = (function (exports) {
                 this.channelTags.splice(index, 1);
                 return true;
             }
+            this.channelTags.sort((a, b) => b.endChannel - a.endChannel);
             return false;
         }
         removeChannelTagByName(name) {
@@ -5696,6 +5700,7 @@ var beepbox = (function (exports) {
             if (id) {
                 return this.removeChannelTagById(id);
             }
+            this.channelTags.sort((a, b) => b.endChannel - a.endChannel);
             return false;
         }
         updateChannelTagRangeById(id, startChannel, endChannel) {
@@ -5705,6 +5710,7 @@ var beepbox = (function (exports) {
                 tag.endChannel = Math.max(startChannel, endChannel);
                 return true;
             }
+            this.channelTags.sort((a, b) => b.endChannel - a.endChannel);
             return false;
         }
         updateChannelTagRangeByName(name, startChannel, endChannel) {
@@ -5714,6 +5720,7 @@ var beepbox = (function (exports) {
                 tag.endChannel = Math.max(startChannel, endChannel);
                 return true;
             }
+            this.channelTags.sort((a, b) => b.endChannel - a.endChannel);
             return false;
         }
         renameChannelTagById(id, newName) {
@@ -5726,6 +5733,7 @@ var beepbox = (function (exports) {
                 tag.name = newName;
                 return true;
             }
+            this.channelTags.sort((a, b) => b.endChannel - a.endChannel);
             return false;
         }
         renameChannelTagByName(oldName, newName) {
@@ -5738,6 +5746,7 @@ var beepbox = (function (exports) {
                 tag.name = newName;
                 return true;
             }
+            this.channelTags.sort((a, b) => b.endChannel - a.endChannel);
             return false;
         }
         getChannelCount() {
@@ -14858,10 +14867,6 @@ var beepbox = (function (exports) {
                 }
                 chipSource += `
             if (chipWaveLoopMode === 3 || chipWaveLoopMode === 2 || chipWaveLoopMode === 0) {
-                // If playing once or looping, we force the correct direction,
-                // since it shouldn't really change. This is mostly so that if
-                // the mode is changed midway through playback, it won't get
-                // stuck on the wrong direction.
                 if (!chipWavePlayBackwards) {`;
                 for (let i = 0; i < voiceCount; i++) {
                     chipSource += `

@@ -11,16 +11,17 @@ import {
 	ChangeRemoveChannel,
 	ChangeRemoveChannelTag,
 	ChangeRenameChannelTag,
+	ChangeChannelTagRange,
 } from "./changes";
+import { ChangeGroup } from "./Change";
 import { Config } from "../synth/SynthConfig";
-import { ChannelType } from "../synth/synth";
+import { ChannelType, ChannelTag } from "../synth/synth";
 import { SongEditor } from "./SongEditor";
 
 export class MuteEditor {
 	private readonly _tagContextMenu: HTMLDivElement = HTML.div({
 		style: `display: none; position: fixed; z-index: 1000; background: ${ColorConfig.editorBackground}; border: 1px solid ${ColorConfig.primaryText}; font-size: 12px; width: max-content;`,
 	});
-	// ------------------------------------------------------------
 	// Channel context‐menu (replaces the old <select>)
 	private readonly _channelContextMenu: HTMLDivElement = HTML.div({
 		style: `display: none; position: fixed; z-index: 1000;
@@ -36,6 +37,7 @@ export class MuteEditor {
 	private readonly _buttons: HTMLDivElement[] = [];
 	private _rowToChannel: (number | null)[] = [];
 	private _rowToTag: (string | null)[] = [];
+	private readonly _tagColors = new Map<string, { primary: string; secondary: string }>();
 	private readonly _channelCounts: HTMLDivElement[] = [];
 	private readonly _channelNameDisplay: HTMLDivElement = HTML.div(
 		{
@@ -127,6 +129,10 @@ export class MuteEditor {
 				pitchCounter = (pitchCounter + 1) % 10;
 			}
 		}
+
+        // Cache per-tag colors for rendering mute-rows
+        this._tagColors.clear();
+        tagColors.forEach((c, id) => this._tagColors.set(id, c));
 
 		// Second pass: Apply tag overrides to find the final color for each channel
 		for (let ch = 0; ch < channelCount; ch++) {
@@ -398,9 +404,7 @@ export class MuteEditor {
 						muteContainer.children[0] as HTMLElement
 					).style.visibility = "hidden";
 					countText.textContent = "○";
-					countText.style.color = this._channelColors.get(
-						tag.startChannel
-					)!.primary;
+					countText.style.color = this._tagColors.get(tag.id)!.primary;
 					countText.style.fontSize = "inherit";
 
 					const isInsideCollapsed = tags.some(
@@ -515,7 +519,6 @@ export class MuteEditor {
 	private _onOpenTagMenu = (evt: CustomEvent) => {
 		this.openTagContextMenu(evt.detail.tagId, evt.detail.originalEvent);
 	};
-	// === NEW: channel‐menu opener
 	private _onOpenChannelMenu = (evt: CustomEvent) => {
 		this.openChannelContextMenu(evt.detail.channelIndex, evt.detail.originalEvent);
 	};
@@ -658,7 +661,6 @@ export class MuteEditor {
 		this._activeTagIdForMenu = null;
 	};
 
-	// ===================================================================
 	// Build & show the channel context menu
 	public openChannelContextMenu(channelIndex: number, event: MouseEvent): void {
 		this._activeChannelIndexForMenu = channelIndex;
@@ -724,7 +726,6 @@ export class MuteEditor {
 		this._channelContextMenu.style.top  = `${event.clientY - h}px`;
 	}
 
-	// ===================================================================
 	// Handle clicks inside our channel menu
 	private _onChannelMenuClick = (event: MouseEvent): void => {
 		const target = event.target as HTMLElement;
@@ -733,6 +734,7 @@ export class MuteEditor {
 		this._channelContextMenu.style.display = "none";
 		const ch = this._activeChannelIndexForMenu;
 		const channel = this._doc.song.channels[ch];
+        const tags = this._doc.song.channelTags;
 		switch (action) {
 			case "rename": {
 				const oldName = channel.name;
@@ -742,14 +744,137 @@ export class MuteEditor {
 				}
 				break;
 			}
-			case "chnUp":
-				this._doc.record(new ChangeChannelOrder(this._doc, ch, ch, -1));
-				this._doc.song.updateDefaultChannelNames();
+			case "chnUp": {
+				// 1) Outermost tag ending at ch-1 → expand (favor larger spans, tie=older)
+				const endTagsUp = tags.filter(t => t.endChannel === ch - 1);
+				if (endTagsUp.length > 0) {
+					 const outer = endTagsUp.reduce(
+                        (best: ChannelTag, t: ChannelTag) => {
+                            const spanBest = best.endChannel - best.startChannel;
+                            const spanT    = t.endChannel   - t.startChannel;
+                            if (spanT > spanBest) return t;     // larger=outer
+                            if (spanT < spanBest) return best;
+                            // tie: pick older
+                            return tags.indexOf(t) < tags.indexOf(best)
+                                ? t
+                                : best;
+                        },
+                        endTagsUp[0]
+                    );
+					 this._doc.record(
+                        new ChangeChannelTagRange(
+                            this._doc,
+                            outer.id,
+                            outer.startChannel,
+                            ch
+                        )
+                    );
+				}
+				else {
+					 // 2) Innermost tag starting at ch → shrink (or delete if span==0)
+					 const startTagsUp = tags.filter(t => t.startChannel === ch);
+					 if (startTagsUp.length > 0) {
+						  const inner = startTagsUp.reduce(
+                            (best: ChannelTag, t: ChannelTag) => {
+                                const spanBest = best.endChannel - best.startChannel;
+                                const spanT    = t.endChannel   - t.startChannel;
+                                if (spanT < spanBest) return t;     // smaller=inner
+                                if (spanT > spanBest) return best;
+                                // tie: pick newer
+                                return tags.indexOf(t) > tags.indexOf(best)
+                                    ? t
+                                    : best;
+                            },
+                            startTagsUp[0]
+                        );
+						  if (inner.startChannel === inner.endChannel) {
+                                this._doc.record(
+                                    new ChangeRemoveChannelTag(this._doc, inner.id)
+                                );
+                          } else {
+                                this._doc.record(
+                                    new ChangeChannelTagRange(
+                                        this._doc,
+                                        inner.id,
+                                        ch + 1,
+                                        inner.endChannel
+                                    )
+                                );
+                          }
+					 }
+					 // 3) Otherwise swap up
+					 else if (ch > 0) {
+						  this._doc.record(new ChangeChannelOrder(this._doc, ch, ch, -1));
+						  this._doc.song.updateDefaultChannelNames();
+					 }
+				}
 				break;
-			case "chnDown":
-				this._doc.record(new ChangeChannelOrder(this._doc, ch, ch,  1));
-				this._doc.song.updateDefaultChannelNames();
-				break;
+		  }
+         case "chnDown": {
+                // 1) Innermost tag ending at ch → shrink (or delete if span==0)
+                const endTagsDown = tags.filter(t => t.endChannel === ch);
+                if (endTagsDown.length > 0) {
+                    const inner = endTagsDown.reduce(
+                        (best: ChannelTag, t: ChannelTag) => {
+                            const spanBest = best.endChannel - best.startChannel;
+                            const spanT    = t.endChannel   - t.startChannel;
+                            if (spanT < spanBest) return t;     // smaller=inner
+                            if (spanT > spanBest) return best;
+                            // tie: pick newer
+                            return tags.indexOf(t) > tags.indexOf(best)
+                                ? t
+                                : best;
+                        },
+                        endTagsDown[0]
+                    );
+                    if (inner.startChannel === inner.endChannel) {
+                        this._doc.record(
+                            new ChangeRemoveChannelTag(this._doc, inner.id)
+                        );
+                    } else {
+                        this._doc.record(
+                            new ChangeChannelTagRange(
+                                this._doc,
+                                inner.id,
+                                inner.startChannel,
+                                ch - 1
+                            )
+                        );
+                    }
+                }
+                else {
+                    // 2) Innermost tag starting at ch+1 → expand its start (favor larger spans, tie=older)
+                    const startTagsDown = tags.filter(t => t.startChannel === ch + 1);
+                    if (startTagsDown.length > 0) {
+                        const outer = startTagsDown.reduce(
+                            (best: ChannelTag, t: ChannelTag) => {
+                                const spanBest = best.endChannel - best.startChannel;
+                                const spanT    = t.endChannel   - t.startChannel;
+                                if (spanT > spanBest) return t;     // larger=outer
+                                if (spanT < spanBest) return best;
+                                // tie: pick older
+                                return tags.indexOf(t) < tags.indexOf(best)
+                                    ? t
+                                    : best;
+                            },
+                            startTagsDown[0]
+                        );
+                        this._doc.record(new ChangeChannelTagRange(
+                            this._doc, outer.id,
+                            ch,
+                            outer.endChannel
+                        ));
+                    }
+                    // 3) Otherwise normal swap-down
+                    else if (ch<this._doc.song.getChannelCount()-1) {
+                        this._doc.record(new ChangeChannelOrder(
+                            this._doc, ch, ch, 1
+                        ));
+                        this._doc.song.updateDefaultChannelNames();
+                    }
+                }
+                break;
+            }
 			case "chnMute":
 				channel.muted = !channel.muted;
 				this._doc.notifier.changed();
@@ -789,16 +914,33 @@ export class MuteEditor {
 				this._doc.notifier.changed();
 				break;
 			}
-			case "chnInsert": {
-				const type = this._doc.song.getChannelIsMod(ch)
-					? ChannelType.Mod
-					: this._doc.song.getChannelIsNoise(ch)
-					  ? ChannelType.Noise
-					  : ChannelType.Pitch;
-				this._doc.record(new ChangeAddChannel(this._doc, type, ch));
-				this._doc.notifier.changed();
-				break;
-			}
+         case "chnInsert": {
+                const idx = ch;
+                const type: ChannelType = this._doc.song.getChannelIsMod(idx)
+                    ? ChannelType.Mod
+                    : this._doc.song.getChannelIsNoise(idx)
+                        ? ChannelType.Noise
+                        : ChannelType.Pitch;
+                const cg = new ChangeGroup();
+                for (const tag of this._doc.song.channelTags) {
+                    if (tag.startChannel >= idx) {
+                        cg.append(new ChangeChannelTagRange(
+                            this._doc, tag.id,
+                            tag.startChannel + 1,
+                            tag.endChannel + 1
+                        ));
+                    } else if (tag.endChannel >= idx) {
+                        cg.append(new ChangeChannelTagRange(
+                            this._doc, tag.id,
+                            tag.startChannel,
+                            tag.endChannel + 1
+                        ));
+                    }
+                }
+                cg.append(new ChangeAddChannel(this._doc, type, idx));
+                this._doc.record(cg);
+                break;
+            }
 			case "chnDelete":
 				this._doc.record(new ChangeRemoveChannel(this._doc, ch));
 				break;

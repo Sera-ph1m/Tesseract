@@ -59,6 +59,9 @@ export class TrackEditor {
 		number,
 		{ primary: string; secondary: string }
 	> = new Map();
+	// Per-tag colors (so tags at the same startChannel can differ)
+	private _tagColors: Map<string, { primary: string; secondary: string }> =
+		new Map();
 
 	public readonly _barDropDown: HTMLSelectElement = HTML.select(
 		{
@@ -236,7 +239,10 @@ export class TrackEditor {
 		let pitchCounter = 0;
 		let modCounter = 0;
 
-		const tagColors = new Map<string, { primary: string; secondary: string }>();
+		const tagColors = new Map<
+			string,
+			{ primary: string; secondary: string }
+		>();
 		const baseChannelColors = new Map<
 			number,
 			{ primary: string; secondary: string }
@@ -244,17 +250,15 @@ export class TrackEditor {
 
 		// First pass: Iterate through visual rows to determine base colors and tag colors
 		for (let ch = 0; ch < channelCount; ch++) {
-			tags
-				.filter(t => t.startChannel === ch)
-				.forEach(tag => {
-					const colorIndex = (pitchCounter % 10) + 1;
-					const colors = {
-						primary: `var(--pitch${colorIndex}-primary-note)`,
-						secondary: `var(--pitch${colorIndex}-secondary-note)`,
-					};
-					tagColors.set(tag.id, colors);
-					pitchCounter = (pitchCounter + 1) % 10;
-				});
+			tags.filter((t) => t.startChannel === ch).forEach((tag) => {
+				const colorIndex = (pitchCounter % 10) + 1;
+				const colors = {
+					primary: `var(--pitch${colorIndex}-primary-note)`,
+					secondary: `var(--pitch${colorIndex}-secondary-note)`,
+				};
+				tagColors.set(tag.id, colors);
+				pitchCounter = (pitchCounter + 1) % 10;
+			});
 
 			// The channel itself
 			if (song.getChannelIsMod(ch)) {
@@ -275,12 +279,33 @@ export class TrackEditor {
 			}
 		}
 
+		// Save per-tag colors for TagRow rendering
+		this._tagColors = tagColors;
 		// Second pass: Apply tag overrides to generate final color map
 		for (let ch = 0; ch < channelCount; ch++) {
-			const innermostTag = tags
-				.filter(t => t.startChannel <= ch && ch <= t.endChannel)
-				.pop();
-
+			// find all tags covering this channel
+			const covering = tags.filter(
+				(t) => t.startChannel <= ch && ch <= t.endChannel
+			);
+			let innermostTag = null;
+			if (covering.length > 0) {
+				// pick the smallest‐range tags
+				const minRange = Math.min(
+					...covering.map((t) => t.endChannel - t.startChannel)
+				);
+				const smallest = covering.filter(
+					(t) => t.endChannel - t.startChannel === minRange
+				);
+				if (smallest.length > 1) {
+					// tie‐break by latest in original tags[] array
+					innermostTag = smallest.reduce((latest, t) =>
+						tags.indexOf(t) > tags.indexOf(latest) ? t : latest,
+					smallest[0]
+					);
+				} else {
+					innermostTag = smallest[0];
+				}
+			}
 			if (innermostTag) {
 				this._channelColors.set(ch, tagColors.get(innermostTag.id)!);
 			} else {
@@ -311,15 +336,21 @@ export class TrackEditor {
 		return Math.max(0, this._doc.song.getChannelCount() - 1);
 	}
 
-	private _getVisualRowInfo(channelIndex: number): { y: number; height: number } | null {
+	private _getVisualRowInfo(
+		channelIndex: number
+	): { y: number; height: number } | null {
 		let cumulativeY = Config.barEditorHeight;
-		const channelRow = this._channelRowContainer.querySelector(`[data-channel-index='${channelIndex}']`) as HTMLElement | null;
+		const channelRow = this._channelRowContainer.querySelector(
+			`[data-channel-index='${channelIndex}']`
+		) as HTMLElement | null;
 
 		if (!channelRow || channelRow.style.display === "none") {
 			return null;
 		}
 
-		const rows = Array.from(this._channelRowContainer.children) as HTMLElement[];
+		const rows = Array.from(
+			this._channelRowContainer.children
+		) as HTMLElement[];
 		for (const row of rows) {
 			if (row.style.display === "none") continue;
 			if (row === channelRow) {
@@ -372,7 +403,10 @@ export class TrackEditor {
 			this._doc.bar = this._barDropDownBar - 1 + moveBarOffset;
 			this._doc.selection.resetBoxSelection();
 			this._doc.selection.insertBars();
-			if (this._doc.synth.playhead >= this._barDropDownBar + moveBarOffset) {
+			if (
+				this._doc.synth.playhead >=
+				this._barDropDownBar + moveBarOffset
+			) {
 				this._doc.synth.playhead++;
 				this._songEditor._barScrollBar.animatePlayhead();
 			}
@@ -510,7 +544,7 @@ export class TrackEditor {
 			// Left‐click on tag → rename
 			const tagId = tagRow.dataset.tagId;
 			if (tagId) {
-				const tag = this._doc.song.channelTags.find(t => t.id === tagId);
+				const tag = this._doc.song.channelTags.find((t) => t.id === tagId);
 				if (tag) {
 					const orig = tag.name;
 					const collapsed = orig.endsWith("...");
@@ -672,7 +706,13 @@ export class TrackEditor {
 			}
 		}
 
-		if (this._mouseOver && !this._mousePressed && !selected && overTrackEditor && visualRowInfo) {
+		if (
+			this._mouseOver &&
+			!this._mousePressed &&
+			!selected &&
+			overTrackEditor &&
+			visualRowInfo
+		) {
 			this._boxHighlight.setAttribute("x", "" + (1 + this._barWidth * bar));
 			this._boxHighlight.setAttribute("y", "" + (1 + visualRowInfo.y));
 			this._boxHighlight.setAttribute(
@@ -699,9 +739,14 @@ export class TrackEditor {
 			this._boxHighlight.style.visibility = "hidden";
 		}
 
-		if ((this._mouseOver || this._touchMode) && selected && overTrackEditor && visualRowInfo) {
+		if (
+			(this._mouseOver || this._touchMode) &&
+			selected &&
+			overTrackEditor &&
+			visualRowInfo
+		) {
 			const up: boolean =
-				(this._mouseY - visualRowInfo.y) < visualRowInfo.height / 2;
+				this._mouseY - visualRowInfo.y < visualRowInfo.height / 2;
 			const center: number = this._barWidth * (bar + 0.8);
 			const middle: number = visualRowInfo.y + visualRowInfo.height * 0.5;
 			const base: number = visualRowInfo.height * 0.1;
@@ -789,46 +834,53 @@ export class TrackEditor {
 
 		// 5. Sync, update & color TagRows
 		const tags = this._doc.song.channelTags;
-		tags.forEach(tag => {
+		tags.forEach((tag) => {
 			if (!this._tagRows.has(tag.id)) {
 				this._tagRows.set(tag.id, new TagRow(tag));
 			}
 			const row = this._tagRows.get(tag.id)!;
 			row.container.dataset.tagId = tag.id;
 			row.update(tag);
-			row.setColor(this._channelColors.get(tag.startChannel)!.primary);
+			// use the tag’s own color
+			row.setColor(this._tagColors.get(tag.id)!.primary);
 		});
 		for (const id of Array.from(this._tagRows.keys())) {
-			if (!tags.find(t => t.id === id)) this._tagRows.delete(id);
+			if (!tags.find((t) => t.id === id)) this._tagRows.delete(id);
 		}
 
 		// 6. Rebuild the DOM in (tag→channel) order, handling collapsed tags
 		this._channelRowContainer.innerHTML = "";
 		const collapsedTagIds = new Set(
-			tags.filter(t => t.name.endsWith("...")).map(t => t.id)
+			tags.filter((t) => t.name.endsWith("...")).map((t) => t.id)
 		);
 
 		for (let ch = 0; ch < channelCount; ch++) {
-			// Add any tags that start at this channel index
-			tags
-				.filter(t => t.startChannel === ch)
-				.forEach(tag => {
-					const tagRow = this._tagRows.get(tag.id)!.container;
-					const isInsideCollapsed = tags.some(
-						p =>
-							collapsedTagIds.has(p.id) &&
-							tag.startChannel >= p.startChannel &&
-							tag.endChannel <= p.endChannel &&
-							p.id !== tag.id
-					);
-					tagRow.style.display = isInsideCollapsed ? "none" : "flex";
-					this._channelRowContainer.appendChild(tagRow);
+			// Add any tags that start at this channel index, drawing larger tags underneath smaller ones
+			const startTags = tags
+				.filter((t) => t.startChannel === ch)
+				.sort((a, b) => {
+					const lenA = a.endChannel - a.startChannel;
+					const lenB = b.endChannel - b.startChannel;
+					if (lenA !== lenB) return lenB - lenA; // larger spans first
+					return tags.indexOf(a) - tags.indexOf(b); // if equal span, older first
 				});
+			startTags.forEach((tag) => {
+				const tagRow = this._tagRows.get(tag.id)!.container;
+				const isInsideCollapsed = tags.some(
+					(p) =>
+						collapsedTagIds.has(p.id) &&
+						tag.startChannel >= p.startChannel &&
+						tag.endChannel <= p.endChannel &&
+						p.id !== tag.id
+				);
+				tagRow.style.display = isInsideCollapsed ? "none" : "flex";
+				this._channelRowContainer.appendChild(tagRow);
+			});
 
 			// Add the channel row itself
 			const channelRow = this._channels[ch].container;
 			const parentTag = tags.find(
-				t =>
+				(t) =>
 					ch >= t.startChannel &&
 					ch <= t.endChannel &&
 					collapsedTagIds.has(t.id)
@@ -902,11 +954,21 @@ export class TrackEditor {
 		}
 
 		// 8. Draw tag borders
-		Array.from(this.container.querySelectorAll(".tagBorder")).forEach(el => el.remove());
-		tags.forEach(tag => {
+		Array.from(this.container.querySelectorAll(".tagBorder")).forEach((el) =>
+			el.remove()
+		);
+		tags.forEach((tag) => {
 			const color = this._channelColors.get(tag.startChannel)!.primary;
-			const sameEnd = tags.filter(t => t.endChannel === tag.endChannel);
-			const idx = sameEnd.findIndex(t => t.id === tag.id);
+			// order tags ending on this row by span (largest first), tie→original array order
+			const sameEnd = tags
+				.filter((t) => t.endChannel === tag.endChannel)
+				.sort((a, b) => {
+					const spanA = a.endChannel - a.startChannel;
+					const spanB = b.endChannel - b.startChannel;
+					if (spanA !== spanB) return spanB - spanA; // larger spans first
+					return tags.indexOf(a) - tags.indexOf(b); // if equal, older first
+				});
+			const idx = sameEnd.findIndex((t) => t.id === tag.id);
 			const tagRowElem = this._tagRows.get(tag.id)!.container;
 			const isCollapsed = collapsedTagIds.has(tag.id);
 
@@ -916,7 +978,7 @@ export class TrackEditor {
 					class: "tagBorder",
 					style: `position:absolute;bottom:0;left:0;
                            width:100%;height:2px;background:${color};
-                           pointer-events:none;z-index:${200+idx};`,
+                           pointer-events:none;`,
 				});
 				tagRowElem.style.position = "relative";
 				tagRowElem.appendChild(top);
@@ -934,11 +996,11 @@ export class TrackEditor {
 			} else {
 				// find all visible tagRows covering endChannel
 				const candidates = tags
-					.map(t2 => this._tagRows.get(t2.id)!.container)
-					.filter(el => el.style.display !== "none")
-					.filter(el => {
+					.map((t2) => this._tagRows.get(t2.id)!.container)
+					.filter((el) => el.style.display !== "none")
+					.filter((el) => {
 						const start = parseInt(el.dataset.startChannel!);
-						const t2 = tags.find(x => x.id === el.dataset.tagId)!;
+						const t2 = tags.find((x) => x.id === el.dataset.tagId)!;
 						return start <= tag.endChannel && tag.endChannel <= t2.endChannel;
 					});
 				if (candidates.length) {
@@ -954,9 +1016,9 @@ export class TrackEditor {
 			if (attachElem) {
 				const bot = HTML.div({
 					class: "tagBorder",
-					style: `position:absolute;bottom:${idx*3}px;left:0;
+					style: `position:absolute;bottom:${idx * 3}px;left:0;
                            width:100%;height:2px;background:${color};
-                           pointer-events:none;z-index:${100+idx};`,
+                           pointer-events:none;`,
 				});
 				attachElem.style.position = "relative";
 				attachElem.appendChild(bot);
@@ -964,7 +1026,12 @@ export class TrackEditor {
 		});
 
 		// 9. Update overall editor height
-		const editorHeightVisual = Array.from(this._channelRowContainer.children).reduce((sum, child) => sum + (child as HTMLElement).offsetHeight, 0);
+		const editorHeightVisual = Array.from(
+			this._channelRowContainer.children
+		).reduce(
+			(sum, child) => sum + (child as HTMLElement).offsetHeight,
+			0
+		);
 		if (this._renderedEditorHeight !== editorHeightVisual) {
 			this._renderedEditorHeight = editorHeightVisual;
 			this._svg.setAttribute(
@@ -984,13 +1051,26 @@ export class TrackEditor {
 			const startCh = this._doc.selection.boxSelectionChannel;
 			const endCh = startCh + this._doc.selection.boxSelectionHeight - 1;
 			const startVisual = this._getVisualRowInfo(startCh);
-			const endVisual = this._getVisualRowInfo(Math.min(endCh, this._doc.song.getChannelCount() - 1));
+			const endVisual = this._getVisualRowInfo(
+				Math.min(endCh, this._doc.song.getChannelCount() - 1)
+			);
 
 			if (startVisual && endVisual) {
-				this._selectionRect.setAttribute("x", String(this._barWidth * this._doc.selection.boxSelectionBar + 1));
+				this._selectionRect.setAttribute(
+					"x",
+					String(this._barWidth * this._doc.selection.boxSelectionBar + 1)
+				);
 				this._selectionRect.setAttribute("y", String(startVisual.y + 1));
-				this._selectionRect.setAttribute("width", String(this._barWidth * this._doc.selection.boxSelectionWidth - 2));
-				this._selectionRect.setAttribute("height", String((endVisual.y + endVisual.height) - startVisual.y - 2));
+				this._selectionRect.setAttribute(
+					"width",
+					String(
+						this._barWidth * this._doc.selection.boxSelectionWidth - 2
+					)
+				);
+				this._selectionRect.setAttribute(
+					"height",
+					String(endVisual.y + endVisual.height - startVisual.y - 2)
+				);
 				this._selectionRect.setAttribute("visibility", "visible");
 			} else {
 				this._selectionRect.setAttribute("visibility", "hidden");

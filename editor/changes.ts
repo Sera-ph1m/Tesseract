@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2022 John Nesky and contributing authors, distributed under the MIT license, see accompanying the LICENSE.md file.
+
 
 import { Algorithm, Dictionary, FilterType, SustainType, InstrumentType, EffectType, AutomationTarget, Config, effectsIncludeDistortion, LFOEnvelopeTypes, RandomEnvelopeTypes } from "../synth/SynthConfig";
 import { NotePin, Note, makeNotePin, Pattern, FilterSettings, FilterControlPoint, SpectrumWave, HarmonicsWave, Instrument, Channel, Song, Synth, clamp } from "../synth/synth";
@@ -64,18 +64,18 @@ export function generateScaleMap(oldScaleFlags: ReadonlyArray<boolean>, newScale
     const roles: string[] = ["root", "second", "second", "third", "third", "fourth", "tritone", "fifth", "sixth", "sixth", "seventh", "seventh", "root"];
     let bestScore: number = Number.MAX_SAFE_INTEGER;
     let bestIndexMap: number[] = [];
-    const stack: number[][] = [[0]]; // Root always maps to root.
+    const stack: number[][] = [[0]]; 
 
     while (stack.length > 0) {
         const indexMap: number[] = stack.pop()!;
 
         if (indexMap.length == smallerScale.length) {
-            // Score this mapping.
+            
             let score: number = 0;
             for (let i: number = 0; i < indexMap.length; i++) {
                 score += Math.abs(smallerScale[i] - largerScale[indexMap[i]]);
                 if (roles[smallerScale[i]] != roles[largerScale[indexMap[i]]]) {
-                    // Penalize changing roles.
+                    
                     score += 0.75;
                 }
             }
@@ -84,7 +84,7 @@ export function generateScaleMap(oldScaleFlags: ReadonlyArray<boolean>, newScale
                 bestIndexMap = indexMap;
             }
         } else {
-            // Recursively choose next indices for mapping.
+            
             const lowIndex: number = indexMap[indexMap.length - 1] + 1;
             const highIndex: number = largerScale.length - smallerScale.length + indexMap.length;
             for (let i: number = lowIndex; i <= highIndex; i++) {
@@ -102,7 +102,7 @@ export function generateScaleMap(oldScaleFlags: ReadonlyArray<boolean>, newScale
             : [smallerScalePitch, largerScalePitch];
     }
 
-    // To make it easier to wrap around.
+    
     sparsePitchMap.push([12, 12]);
     newScale.push(12);
 
@@ -122,7 +122,7 @@ export function generateScaleMap(oldScaleFlags: ReadonlyArray<boolean>, newScale
         for (const newPitch of newScale) {
             let distance: number = Math.abs(newPitch - transformedPitch);
             if (roles[newPitch] != roles[i]) {
-                // Again, penalize changing roles.
+                
                 distance += 0.1;
             }
             if (nearestPitchDistance > distance) {
@@ -151,8 +151,8 @@ function removeRedundantPins(pins: NotePin[]): void {
 }
 
 function projectNoteIntoBar(oldNote: Note, timeOffset: number, noteStartPart: number, noteEndPart: number, newNotes: Note[]): void {
-    // Create a new note, and interpret the pitch bend and size events
-    // to determine where we need to insert pins to control interval and volume.
+    
+    
     const newNote: Note = new Note(-1, noteStartPart, noteEndPart, Config.noteSizeMax, false);
     newNote.pins.length = 0;
     newNote.pitches.length = 0;
@@ -170,7 +170,7 @@ function projectNoteIntoBar(oldNote: Note, timeOffset: number, noteStartPart: nu
             const nextPin: NotePin = oldNote.pins[pinIndex + 1];
             const nextPinTime: number = nextPin.time + timeOffset;
             if (nextPinTime > 0) {
-                // Insert an interpolated pin at the start of the new note.
+                
                 const ratio: number = (-newPinTime) / (nextPinTime - newPinTime);
                 newNote.pins.push(makeNotePin(Math.round(pin.interval + ratio * (nextPin.interval - pin.interval)), 0, Math.round(pin.size + ratio * (nextPin.size - pin.size))));
 
@@ -182,14 +182,14 @@ function projectNoteIntoBar(oldNote: Note, timeOffset: number, noteStartPart: nu
             const prevPin: NotePin = oldNote.pins[pinIndex - 1];
             const prevPinTime: number = prevPin.time + timeOffset;
             if (prevPinTime < newNoteLength) {
-                // Insert an interpolated pin at the end of the new note.
+                
                 const ratio: number = (newNoteLength - prevPinTime) / (newPinTime - prevPinTime);
                 newNote.pins.push(makeNotePin(Math.round(prevPin.interval + ratio * (pin.interval - prevPin.interval)), newNoteLength, Math.round(prevPin.size + ratio * (pin.size - prevPin.size))));
             }
         }
     }
 
-    // Fix from Jummbus: Ensure the first pin's interval is zero, adjust pitches and pins to compensate.
+    
     const offsetInterval: number = newNote.pins[0].interval;
     for (let pitchIdx: number = 0; pitchIdx < newNote.pitches.length; pitchIdx++) {
         newNote.pitches[pitchIdx] += offsetInterval;
@@ -233,25 +233,20 @@ function sigma(a: number, b: (i: number) => number, c: number): number {
     for (let i = c; i <= a; i++) {
         result += b(i);
     }
-    /*
-        The variables here look like this:
-        A
-        Σ  (i) => B
-        C
-    */
+   
     return result;
 }
 
-// Custom chip generation functions.
+
 function randomSineWave(wave: Float32Array): void {
-    // Random sine waves refer to stuff similar in shape to sine/curvy waves. Imagine hills.
+    
     let randomRoundWave: Float32Array = new Float32Array(64);
     let waveLength: number = 64;
     let foundNonZero = false;
     const roundedWaveType: number = (Math.random() * 2 + 1) | 0;
     if (roundedWaveType == 1 || roundedWaveType == 3) {
-        // https://www.desmos.com/calculator/hji1istsat
-        // "Phased"
+        
+        
         let randomNumber1 = Math.random() * 2 + 0.5;
         let randomNumber2 = Math.random() * 13 + 3;
         let randomNumber3 = Math.random() * 48 - 24;
@@ -259,8 +254,8 @@ function randomSineWave(wave: Float32Array): void {
             randomRoundWave[i] = clamp(-24, 24 + 1, Math.round(mod(randomNumber3 + ((Math.sin((i + randomNumber3) / randomNumber2) * 24) + i * randomNumber1), 48) - 24));
         }
     } else if (roundedWaveType == 2) {
-        // https://www.desmos.com/calculator/0bxjhiwhwq
-        // "Bouncy"
+        
+        
         let randomNumber1 = Math.random() * 0.19 + 0.06;
         let randomNumber2 = Math.random() * 2 + 1;
         let randomNumber3 = Math.random() * 48 - 24;
@@ -282,16 +277,16 @@ function randomSineWave(wave: Float32Array): void {
             foundNonZero = true;
         }
     }
-    // If the waveform is too quiet/all waves are the same, reroll.
+    
     if (!foundNonZero) randomSineWave(wave);
 }
 function randomPulses(wave: Float32Array): void {
-    // Random pulses refers to pulse widths. This one chooses two values and alternates between them
-    // in a repeated pattern.
+    
+    
     let randomPulse: Float32Array = new Float32Array(64);
     let waveLength: number = 64;
     let foundNonZero = false;
-    // Weird math for building random pulses but this is what we are going with.
+    
     let randomNumber2 = Math.round(Math.random() * 15 + 15);
     let randomNumber3 = Math.round(Math.random() * 3 + 1);
     let randomNumber4 = Math.round(Math.random() * 13 + 2);
@@ -312,19 +307,19 @@ function randomPulses(wave: Float32Array): void {
             foundNonZero = true;
         }
     }
-    // If the waveform is too quiet/all waves are the same, reroll.
+    
     if (!foundNonZero) randomPulses(wave);
 }
 function randomChipWave(wave: Float32Array): void {
-    // Random chip is meant to mimic chipwaves in how they are made. Picture the shapes
-    // of JummBox's chipwaves in the custom chip.
+    
+    
     let randomChip: Float32Array = new Float32Array(64);
     let waveLength: number = 64;
     let foundNonZero = false;
     const chipType: number = (Math.random() * 2 + 1) | 0;
     if (chipType == 1) {
-        // https://www.desmos.com/calculator/udpkkpxqaj
-        // "Sawscape"
+        
+        
         let randomNumber1 = Math.random() * 3;
         let randomNumber2 = Math.random() * 0.99 - 1;
         let randomNumber3 = Math.random() * 9 + 2;
@@ -333,8 +328,8 @@ function randomChipWave(wave: Float32Array): void {
             randomChip[i] = clamp(-24, 24 + 1, (Math.round(Math.abs(randomNumber4 * mod(((randomNumber2 / randomNumber3) * randomNumber3) + (sigma(i / (randomNumber1 * randomNumber1), (i) => randomNumber3, randomNumber1 * -randomNumber2)) * randomNumber4, 24)))) * 2 - 24);
         }
     } else if (chipType == 2) {
-        // https://www.desmos.com/calculator/bmogge156f
-        // "Fake Chip"
+        
+        
         let randomNumber1 = Math.random() * 3;
         let randomNumber2 = Math.random() * 2 - 1;
         let randomNumber3 = Math.random() * 100;
@@ -355,17 +350,17 @@ function randomChipWave(wave: Float32Array): void {
             foundNonZero = true;
         }
     }
-    // If the waveform is too quiet/all waves are the same, reroll.
+    
     if (!foundNonZero) randomChipWave(wave);
 }
 function biasedFullyRandom(wave: Float32Array): void {
-    // Biased-fully random means that the wave will be completely randomized, but the way it's 
-    // randomized will be biased towards a certain point; in this case, that is the center.
+    
+    
     let fullyRandomWave: Float32Array = new Float32Array(64);
     let waveLength: number = 64;
     let foundNonZero = false;
-    // Math for a fully random custom chip but the higher/lower parts 
-    // of the waveform (in height) will contain less samples.
+    
+    
     for (let i: number = 0; i < waveLength; i++) {
         const v = Math.random() * 2 - 1;
         const bias = 6;
@@ -385,14 +380,14 @@ function biasedFullyRandom(wave: Float32Array): void {
             foundNonZero = true;
         }
     }
-    // If the waveform is too quiet/all waves are the same, reroll.
+    
     if (!foundNonZero) biasedFullyRandom(wave);
 }
 function fullyRandom(wave: Float32Array): void {
-    // A completely randomized waveform.
+    
     let fullyRandomWave: Float32Array = new Float32Array(64);
     let waveLength: number = 64;
-    // Randomize whatever is inside of the start-end parameter.
+    
     for (let i: number = 0; i < waveLength; i++) {
         fullyRandomWave[i] = clamp(-24, 24 + 1, ((Math.random() * 48) | 0) - 24);
     }
@@ -453,7 +448,7 @@ export class ChangeMoveAndOverflowNotes extends ChangeGroup {
 
                             if (noteStartPart < noteEndPart) {
 
-                                // Ensure a pattern exists for the current bar before inserting notes into it.
+                                
                                 if (currentBar < bar || pattern == null) {
                                     currentBar++;
                                     while (currentBar < bar) {
@@ -467,7 +462,7 @@ export class ChangeMoveAndOverflowNotes extends ChangeGroup {
                                     pattern.instruments.push(...oldPattern.instruments);
                                 }
 
-                                // This is a consideration to allow arbitrary note sequencing, e.g. for mod channels (so the pattern being used can jump around)
+                                
                                 pattern = newChannel.patterns[newChannel.bars[bar] - 1];
 
                                 projectNoteIntoBar(oldNote, absoluteNoteStart - barStartPart - noteStartPart, noteStartPart, noteEndPart, pattern.notes);
@@ -599,7 +594,7 @@ export class ChangeCustomWave extends Change {
             }
             const average: number = sum / instrument.customChipWave.length;
 
-            // Perform the integral on the wave. The chipSynth will perform the derivative to get the original wave back but with antialiasing.
+            
             let cumulative: number = 0;
             let wavePrev: number = 0;
             for (let i: number = 0; i < instrument.customChipWave.length; i++) {
@@ -698,15 +693,15 @@ export class ChangePreset extends Change {
                     const tempVolume: number = instrument.volume;
                     const tempPan: number = instrument.pan;
                     const tempPanDelay = instrument.panDelay;
-                    //const usesPanning: boolean = effectsIncludePanning(instrument.effects);
+                    
                     instrument.fromJsonObject(preset.settings, doc.song.getChannelIsNoise(doc.channel), doc.song.getChannelIsMod(doc.channel), doc.song.rhythm == 0 || doc.song.rhythm == 2, doc.song.rhythm >= 2);
                     instrument.volume = tempVolume;
                     instrument.pan = tempPan;
                     instrument.panDelay = tempPanDelay;
-                    //@jummbus - Disable this check, pan will be on by default.
-                    //if (usesPanning && instrument.pan != Config.panCenter) {
+                    
+                    
                     instrument.effects = (instrument.effects | (1 << EffectType.panning));
-                    //}
+                    
                 }
             }
             instrument.preset = newValue;
@@ -763,7 +758,7 @@ export class ChangeRandomGeneratedInstrument extends Change {
                 point.type = potentialPoint.type;
                 point.freq = selectCurvedDistribution(potentialPoint.minFreq, potentialPoint.maxFreq, FilterControlPoint.getRoundedSettingValueFromHz(potentialPoint.centerHz), 1.0 / Config.filterFreqStep);
                 point.gain = selectCurvedDistribution(0, Config.filterGainRange - 1, Config.filterGainCenter + potentialPoint.centerGain, 2.0 / Config.filterGainStep);
-                if (point.type == FilterType.peak && point.gain == Config.filterGainCenter) continue; // skip pointless points. :P
+                if (point.type == FilterType.peak && point.gain == Config.filterGainCenter) continue; 
                 if (usedFreqs.includes(point.freq)) continue;
                 usedFreqs.push(point.freq);
                 filter.controlPoints[filter.controlPointCount] = point;
@@ -773,7 +768,7 @@ export class ChangeRandomGeneratedInstrument extends Change {
 
         const isNoise: boolean = doc.song.getChannelIsNoise(doc.channel);
         const instrument: Instrument = doc.song.channels[doc.channel].instruments[doc.getCurrentInstrument()];
-        instrument.effects = 1 << EffectType.panning; // disable all existing effects except panning, which should always be on.
+        instrument.effects = 1 << EffectType.panning; 
         instrument.aliases = false;
         instrument.envelopeCount = 0;
 
@@ -797,7 +792,7 @@ export class ChangeRandomGeneratedInstrument extends Change {
             ]);
             instrument.preset = instrument.type = type;
 
-            if (type != InstrumentType.drumset) { // Drumset doesn't use fade.
+            if (type != InstrumentType.drumset) { 
                 instrument.fadeIn = (Math.random() < 0.8) ? 0 : selectCurvedDistribution(0, Config.fadeInRange - 1, 0, 2);
                 instrument.fadeOut = selectCurvedDistribution(0, Config.fadeOutTicks.length - 1, Config.fadeOutNeutral, 2);
             }
@@ -888,7 +883,7 @@ export class ChangeRandomGeneratedInstrument extends Change {
                 instrument.reverb = selectCurvedDistribution(1, Config.reverbRange - 1, 1, 1);
             }
 
-            // Configure this to whatever you'd like.
+            
             if (type == InstrumentType.noise || type == InstrumentType.spectrum) {
                 instrument.unison = Config.unisons.dictionary[selectWeightedRandom([
                     { item: "none", weight: 100 },
@@ -915,7 +910,7 @@ export class ChangeRandomGeneratedInstrument extends Change {
                     { item: "chorus", weight: 2 },
                     { item: "block", weight: 1 },
                     { item: "bow", weight: 2 },
-                    // { item: "custom", weight: 10 },
+                    
                 ])].index;
 
                 if (instrument.unison != Config.unisons.dictionary["none"].index && Math.random() > 0.4)
@@ -983,7 +978,7 @@ export class ChangeRandomGeneratedInstrument extends Change {
                 } break;
                 case InstrumentType.drumset: {
                     for (let i: number = 0; i < Config.drumCount; i++) {
-                        // Might wanna do this Random*Config.____.length thing for all envelope/unison randomization?
+                        
                         instrument.drumsetEnvelopes[i] = Math.floor(Math.random() * Config.envelopes.length);
                         const spectrum: number[] = [];
                         let randomFactor: number = Math.floor(Math.random() * 3)
@@ -1006,7 +1001,7 @@ export class ChangeRandomGeneratedInstrument extends Change {
             const type: InstrumentType = usesCurrentInstrumentType ? instrument.type :
             selectWeightedRandom([
                 { item: InstrumentType.chip, weight: 2 },
-                // { item: InstrumentType.noise, weight: 1 },
+                
                 { item: InstrumentType.pwm, weight: 2 },
                 { item: InstrumentType.supersaw, weight: 2 },
                 { item: InstrumentType.customChipWave, weight: 2 },
@@ -1020,7 +1015,7 @@ export class ChangeRandomGeneratedInstrument extends Change {
 
             instrument.fadeIn = (Math.random() < 0.5) ? 0 : selectCurvedDistribution(0, Config.fadeInRange - 1, 0, 2);
             instrument.fadeOut = selectCurvedDistribution(0, Config.fadeOutTicks.length - 1, Config.fadeOutNeutral, 2);
-            if (type == InstrumentType.chip || type == InstrumentType.harmonics || type == InstrumentType.pickedString || type == InstrumentType.customChipWave || type == InstrumentType.pwm || type == InstrumentType.spectrum) { // TODO: add noise
+            if (type == InstrumentType.chip || type == InstrumentType.harmonics || type == InstrumentType.pickedString || type == InstrumentType.customChipWave || type == InstrumentType.pwm || type == InstrumentType.spectrum) { 
                 instrument.unison = Config.unisons.dictionary[selectWeightedRandom([
                     { item: "none", weight: 100 },
                     { item: "shimmer", weight: 10 },
@@ -1046,23 +1041,15 @@ export class ChangeRandomGeneratedInstrument extends Change {
                     { item: "chorus", weight: 2 },
                     { item: "block", weight: 1 },
                     { item: "bow", weight: 2 },
-                    // { item: "custom", weight: 10 },
+                    
                 ])].index;
-                /* randomly generated unisons don't work correctly - instead of trying to fix them, just ignore it
-
-                if (instrument.unison == Config.unisons.length) {
-                    instrument.unisonVoices = 2;
-                    instrument.unisonSpread = Math.floor(Math.random() * 12000 - 6000) / 1000;
-                    instrument.unisonOffset = Math.floor(Math.random() * 12000 - 6000) / 1000;
-                    instrument.unisonExpression = 1;
-                    instrument.unisonSign = Math.floor(Math.random() * 2000 - 1000) / 1000;
-                } else {  */
+               
                 instrument.unisonVoices = Config.unisons[instrument.unison].voices;
                 instrument.unisonSpread = Config.unisons[instrument.unison].spread;
                 instrument.unisonOffset = Config.unisons[instrument.unison].offset;
                 instrument.unisonExpression = Config.unisons[instrument.unison].expression;
                 instrument.unisonSign = Config.unisons[instrument.unison].sign;
-                //  } 
+                
             }
 
             if (Math.random() < 0.1) {
@@ -1501,14 +1488,14 @@ export class ChangeRandomGeneratedInstrument extends Change {
             switch (type) {
                 case InstrumentType.chip: {
                     instrument.chipWave = (Math.random() * Config.chipWaves.length) | 0;
-                    // advloop addition
+                    
                     instrument.isUsingAdvancedLoopControls = false;
                     instrument.chipWaveLoopStart = 0;
                     instrument.chipWaveLoopEnd = Config.rawRawChipWaves[instrument.chipWave].samples.length - 1;
                     instrument.chipWaveLoopMode = 0;
                     instrument.chipWavePlayBackwards = false;
                     instrument.chipWaveStartOffset = 0;
-                    // advloop addition
+                    
                 } break;
                 case InstrumentType.pwm:
                 case InstrumentType.supersaw: {
@@ -1643,7 +1630,7 @@ export class ChangeRandomGeneratedInstrument extends Change {
                                 { item: 2, weight: 7 },
                                 { item: 3, weight: 10 },
                                 { item: 4, weight: 15 },
-                                { item: 5, weight: 25 }, // 50%
+                                { item: 5, weight: 25 }, 
                                 { item: 6, weight: 15 },
                                 { item: 7, weight: 10 },
                                 { item: 8, weight: 7 },
@@ -1715,7 +1702,7 @@ export class ChangeRandomGeneratedInstrument extends Change {
                                 { item: 2, weight: 7 },
                                 { item: 3, weight: 10 },
                                 { item: 4, weight: 15 },
-                                { item: 5, weight: 25 }, // 50%
+                                { item: 5, weight: 25 }, 
                                 { item: 6, weight: 15 },
                                 { item: 7, weight: 10 },
                                 { item: 8, weight: 7 },
@@ -1750,9 +1737,9 @@ export class ChangeRandomGeneratedInstrument extends Change {
                     }
                 } break;
                 case InstrumentType.customChipWave: {
-                    // The custom chip randomizing is a little different. It uses a random algorithm
-                    // (seen as the functions below) to give the waveform unique shapes other than messy
-                    // custom chip sounds. 
+                    
+                    
+                    
                     let randomGeneratedArray: Float32Array = new Float32Array(64);
                     let randomGeneratedArrayIntegral: Float32Array = new Float32Array(65);
                     const algorithmFunction: (wave: Float32Array) => void = selectWeightedRandom([
@@ -1779,20 +1766,20 @@ export class ChangeRandomGeneratedInstrument extends Change {
                     instrument.customChipWave = randomGeneratedArray;
                     instrument.customChipWaveIntegral = randomGeneratedArrayIntegral;
                 } break;
-               // case InstrumentType.noise: {
-                //     instrument.chipNoise = selectWeightedRandom([
-                //         { item: 0, weight: 1 }, // retro
-                //         { item: 1, weight: 1 }, // white
-                //         { item: 2, weight: 6 }, // clang
-                //         { item: 3, weight: 6 }, // buzz
-                //         { item: 4, weight: 1 }, // hollow
-                //         { item: 7, weight: 4 }, // cutter
-                //         { item: 8, weight: 4 }, // metallic
-                //         { item: 9, weight: 1 }, // static
-                //         { item: 10, weight: 1 }, // 1-bit white
-                //         { item: 11, weight: 5 }, // 1-bit metallic
-                //     ]);
-                // } break;
+               
+                
+                
+                
+                
+                
+                
+                
+                
+                
+                
+                
+                
+                
                 default: throw new Error("Unhandled pitched instrument type in random generator.");
             }
         }
@@ -1826,9 +1813,9 @@ export class ChangeToggleEffects extends Change {
         const wasSelected: boolean = ((oldValue & (1 << toggleFlag)) != 0);
         const newValue: number = wasSelected ? (oldValue & (~(1 << toggleFlag))) : (oldValue | (1 << toggleFlag));
         instrument.effects = newValue;
-        // As a special case, toggling the panning effect doesn't remove the preset.
+        
         if (toggleFlag != EffectType.panning) instrument.preset = instrument.type;
-        // Remove AA when distortion is turned off.
+        
         if (toggleFlag == EffectType.distortion && wasSelected)
             instrument.aliases = false;
         if (wasSelected) instrument.clearInvalidEnvelopeTargets();
@@ -1852,7 +1839,7 @@ export class ChangePatternNumbers extends Change {
             }
         }
 
-        //Make mod channels shift viewed instrument over when pattern numbers change
+        
         if (startChannel >= doc.song.pitchChannelCount + doc.song.noiseChannelCount) {
             const pattern: Pattern | null = doc.getCurrentPattern();
             if (pattern != null) {
@@ -1963,8 +1950,8 @@ export class ChangeLimiterSettings extends Change {
     constructor(doc: SongDocument, limitRatio: number, compressionRatio: number, limitThreshold: number, compressionThreshold: number, limitRise: number, limitDecay: number, masterGain: number) {
         super();
 
-        // This check causes issues with the state change handler because it gets superceded by whenupdated when the limiter prompt closes for some reason, causing the state to revert. I think it's because the notifier change needs to happen right as the prompt closes.
-        //if (limitRatio != doc.song.limitRatio || compressionRatio != doc.song.compressionRatio || limitThreshold != doc.song.limitThreshold || compressionThreshold != doc.song.compressionThreshold || limitRise != doc.song.limitRise || limitDecay != doc.song.limitDecay) {
+        
+        
 
         doc.song.limitRatio = limitRatio;
         doc.song.compressionRatio = compressionRatio;
@@ -1976,7 +1963,7 @@ export class ChangeLimiterSettings extends Change {
 
         doc.notifier.changed();
         this._didSomething();
-        //}
+        
     }
 }
 
@@ -2059,52 +2046,71 @@ export class ChangeRemoveChannelTag extends UndoableChange {
 export class ChangeChannelTagRange extends UndoableChange {
     private _doc: SongDocument;
     private _tagId: string;
+    private _origIndex: number;
     private _oldStart: number;
     private _oldEnd: number;
     private _newStart: number;
     private _newEnd: number;
-
+  
     constructor(doc: SongDocument, id: string, newStart: number, newEnd: number) {
-        super(false);
-        this._doc = doc;
-        this._tagId = id;
-        const tag = this._doc.song.channelTags.find(tag => tag.id === id);
-        if (!tag) {
-            this._oldStart = 0;
-            this._oldEnd = 0;
-            this._newStart = 0;
-            this._newEnd = 0;
-            return;
-        }
-        this._oldStart = tag.startChannel;
-        this._oldEnd = tag.endChannel;
-        this._newStart = Math.min(newStart, newEnd);
-        this._newEnd = Math.max(newStart, newEnd);
-
-        if (this._oldStart !== this._newStart || this._oldEnd !== this._newEnd) {
-            this._didSomething();
-        }
-        this.redo();
+      super(false);
+      this._doc = doc;
+      this._tagId = id;
+      this._origIndex = doc.song.channelTags.findIndex((t) => t.id === id);
+  
+      const tag = this._doc.song.channelTags.find((t) => t.id === id);
+      if (!tag) {
+        this._oldStart = 0;
+        this._oldEnd = 0;
+        this._newStart = 0;
+        this._newEnd = 0;
+        return;
+      }
+  
+      this._oldStart = tag.startChannel;
+      this._oldEnd = tag.endChannel;
+      this._newStart = Math.min(newStart, newEnd);
+      this._newEnd = Math.max(newStart, newEnd);
+  
+      if (
+        this._oldStart !== this._newStart ||
+        this._oldEnd !== this._newEnd
+      ) {
+        this._didSomething();
+      }
+      this.redo();
     }
-
+  
     protected _doForwards(): void {
-        const tag = this._doc.song.channelTags.find(tag => tag.id === this._tagId);
-        if (tag) {
-            tag.startChannel = this._newStart;
-            tag.endChannel = this._newEnd;
+      const tags = this._doc.song.channelTags;
+      const tag = tags.find((t) => t.id === this._tagId);
+      if (tag) {
+        tag.startChannel = this._newStart;
+        tag.endChannel = this._newEnd;
+        const currentIndex = tags.findIndex((t) => t.id === this._tagId);
+        if (currentIndex > -1 && this._origIndex > -1) {
+          tags.splice(currentIndex, 1);
+          tags.splice(this._origIndex, 0, tag);
         }
-        this._doc.notifier.changed();
+      }
+      this._doc.notifier.changed();
     }
-
+  
     protected _doBackwards(): void {
-        const tag = this._doc.song.channelTags.find(tag => tag.id === this._tagId);
-        if (tag) {
-            tag.startChannel = this._oldStart;
-            tag.endChannel = this._oldEnd;
+      const tags = this._doc.song.channelTags;
+      const tag = tags.find((t) => t.id === this._tagId);
+      if (tag) {
+        tag.startChannel = this._oldStart;
+        tag.endChannel = this._oldEnd;
+        const currentIndex = tags.findIndex((t) => t.id === this._tagId);
+        if (currentIndex > -1 && this._origIndex > -1) {
+          tags.splice(currentIndex, 1);
+          tags.splice(this._origIndex, 0, tag);
         }
-        this._doc.notifier.changed();
+      }
+      this._doc.notifier.changed();
     }
-}
+  }
 
 export class ChangeRenameChannelTag extends UndoableChange {
     private _doc: SongDocument;
@@ -2174,7 +2180,7 @@ export class ChangeChannelOrder extends Change {
 		const movedLiveItems = doc.song.channels.splice(selectionMin, count);
 		doc.song.channels.splice(newStart, 0, ...movedLiveItems);
 
-		// Add this line to match the working pattern of addChannel.
+		
 		doc.song.updateDefaultChannelNames();
 
 		doc.notifier.changed();
@@ -2250,7 +2256,7 @@ export class ChangeChannelCount extends Change {
 
             doc.channel = Math.min(doc.channel, newPitchChannelCount + newNoiseChannelCount + newModChannelCount - 1);
 
-            // Determine if any mod instruments now refer to an invalid channel. Unset them if so
+            
             for (let channelIndex: number = doc.song.pitchChannelCount + doc.song.noiseChannelCount; channelIndex < doc.song.getChannelCount(); channelIndex++) {
                 for (let instrumentIdx: number = 0; instrumentIdx < doc.song.channels[channelIndex].instruments.length; instrumentIdx++) {
                     for (let mod: number = 0; mod < Config.modCount; mod++) {
@@ -2258,12 +2264,12 @@ export class ChangeChannelCount extends Change {
                         let instrument: Instrument = doc.song.channels[channelIndex].instruments[instrumentIdx];
                         let modChannel: number = instrument.modChannels[mod];
 
-                        // Boundary checking
+                        
                         if ((modChannel >= doc.song.pitchChannelCount && modChannel < oldPitchCount) || modChannel >= doc.song.pitchChannelCount + doc.song.noiseChannelCount) {
                             instrument.modulators[mod] = Config.modulators.dictionary["none"].index;
                         }
 
-                        // Bump indices - new pitch channel added, bump all noise mods.
+                        
                         if (modChannel >= oldPitchCount && oldPitchCount < newPitchChannelCount) {
                             instrument.modChannels[mod] += newPitchChannelCount - oldPitchCount;
                         }
@@ -2287,18 +2293,18 @@ export class ChangeAddChannel extends Change {
     private _position: number;
 
     constructor(doc: SongDocument, type: ChannelType, position: number) {
-        super(); // No arguments here.
+        super(); 
         this._channelType = type;
         this._position = position;
 
-        // Perform the action immediately in the constructor, using the passed 'doc'.
+        
         doc.song.addChannel(this._channelType, this._position);
         doc.notifier.changed();
         this._didSomething();
     }
 
     protected _undo(doc: SongDocument): void {
-        // addChannel inserts at position + 1.
+        
         doc.song.removeChannel(this._position + 1);
         doc.notifier.changed();
     }
@@ -2308,33 +2314,29 @@ export class ChangeAddChannel extends Change {
 export class ChangeRemoveChannel extends Change {
     private _removedChannel: Channel;
     private _index: number;
-    private _oldChannelIndex: number; // Store the original selected channel index
+    private _oldChannelIndex: number; 
 
     constructor(doc: SongDocument, index: number) {
         super();
-        this._oldChannelIndex = doc.channel; // Capture current channel index before any changes
+        this._oldChannelIndex = doc.channel; 
         this._removedChannel = doc.song.channels[index];
         this._index = index;
 
-        // If the channel being removed is the currently selected channel AND
-        // it's the last channel in the array (and there's more than one channel total),
-        // then move the selected channel index to the one before it.
-        // This prevents the doc.channel from becoming an out-of-bounds index after removal.
         if (doc.channel >= this._index && doc.song.channels.length > 1) {
             if (doc.channel == this._index && doc.channel == doc.song.channels.length - 1) {
                 doc.channel--;
             }
         }
 
-        doc.song.removeChannel(this._index); // Perform the removal
-        doc.notifier.changed(); // Notify listeners of the change
-        this._didSomething(); // Mark this change as having performed an action
+        doc.song.removeChannel(this._index); 
+        doc.notifier.changed(); 
+        this._didSomething(); 
     }
 
     protected _undo(doc: SongDocument): void {
-        doc.song.restoreChannel(this._removedChannel, this._index); // Restore the channel
-        doc.channel = this._oldChannelIndex; // Restore the original selected channel index
-        doc.notifier.changed(); // Notify listeners of the undo
+        doc.song.restoreChannel(this._removedChannel, this._index); 
+        doc.channel = this._oldChannelIndex; 
+        doc.notifier.changed(); 
     }
 }
 
@@ -2348,7 +2350,7 @@ export class ChangeChannelBar extends Change {
         if (!silently) {
             doc.selection.scrollToSelectedPattern();
         }
-        // Mod channels always jump to viewing the active instrument for the mod.
+        
         if (doc.song.getChannelIsMod(doc.channel)) {
             const pattern: Pattern | null = doc.song!.getPattern(doc.channel, doc.bar);
             if (pattern != null)
@@ -2387,7 +2389,7 @@ export class ChangeUnisonVoices extends Change {
         let prevUnison: number = instrument.unison;
         if (oldValue != newValue || prevUnison != Config.unisons.length) {
             instrument.unisonVoices = newValue;
-            instrument.unison = Config.unisons.length; // Custom
+            instrument.unison = Config.unisons.length; 
             instrument.preset = instrument.type;
             doc.notifier.changed();
             this._didSomething();
@@ -2402,7 +2404,7 @@ export class ChangeUnisonSpread extends Change {
         let prevUnison: number = instrument.unison;
         if (oldValue != newValue || prevUnison != Config.unisons.length) {
             instrument.unisonSpread = newValue;
-            instrument.unison = Config.unisons.length; // Custom
+            instrument.unison = Config.unisons.length; 
             instrument.preset = instrument.type;
             doc.notifier.changed();
             this._didSomething();
@@ -2417,7 +2419,7 @@ export class ChangeUnisonOffset extends Change {
         let prevUnison: number = instrument.unison;
         if (oldValue != newValue || prevUnison != Config.unisons.length) {
             instrument.unisonOffset = newValue;
-            instrument.unison = Config.unisons.length; // Custom
+            instrument.unison = Config.unisons.length; 
             instrument.preset = instrument.type;
             doc.notifier.changed();
             this._didSomething();
@@ -2432,7 +2434,7 @@ export class ChangeUnisonExpression extends Change {
         let prevUnison: number = instrument.unison;
         if (oldValue != newValue || prevUnison != Config.unisons.length) {
             instrument.unisonExpression = newValue;
-            instrument.unison = Config.unisons.length; // Custom
+            instrument.unison = Config.unisons.length; 
             instrument.preset = instrument.type;
             doc.notifier.changed();
             this._didSomething();
@@ -2447,7 +2449,7 @@ export class ChangeUnisonSign extends Change {
         let prevUnison: number = instrument.unison;
         if (oldValue != newValue || prevUnison != Config.unisons.length) {
             instrument.unisonSign = newValue;
-            instrument.unison = Config.unisons.length; // Custom
+            instrument.unison = Config.unisons.length; 
             instrument.preset = instrument.type;
             doc.notifier.changed();
             this._didSomething();
@@ -2478,7 +2480,7 @@ export class ChangeVibrato extends Change {
             instrument.vibrato = newValue;
             instrument.vibratoDepth = Config.vibratos[instrument.vibrato].amplitude;
             instrument.vibratoDelay = Config.vibratos[instrument.vibrato].delayTicks / 2;
-            instrument.vibratoSpeed = 10; // default
+            instrument.vibratoSpeed = 10; 
             instrument.vibratoType = Config.vibratos[instrument.vibrato].type;
             instrument.preset = instrument.type;
             doc.notifier.changed();
@@ -2497,7 +2499,7 @@ export class ChangeVibratoDepth extends Change {
         doc.notifier.changed();
         if (oldValue != newValue || prevVibrato != Config.vibratos.length) {
             instrument.vibratoDepth = newValue / 25;
-            instrument.vibrato = Config.vibratos.length; // Custom
+            instrument.vibrato = Config.vibratos.length; 
             instrument.preset = instrument.type;
             doc.notifier.changed();
             this._didSomething();
@@ -2531,7 +2533,7 @@ export class ChangeVibratoSpeed extends Change {
         doc.notifier.changed();
         if (oldValue != newValue || prevVibrato != Config.vibratos.length) {
             instrument.vibratoSpeed = newValue;
-            instrument.vibrato = Config.vibratos.length; // Custom
+            instrument.vibrato = Config.vibratos.length; 
             instrument.preset = instrument.type;
             doc.notifier.changed();
             this._didSomething();
@@ -2549,7 +2551,7 @@ export class ChangeVibratoDelay extends Change {
         doc.notifier.changed();
         if (oldValue != newValue || prevVibrato != Config.vibratos.length) {
             instrument.vibratoDelay = newValue;
-            instrument.vibrato = Config.vibratos.length; // Custom
+            instrument.vibrato = Config.vibratos.length; 
             instrument.preset = instrument.type;
             doc.notifier.changed();
             this._didSomething();
@@ -2567,7 +2569,7 @@ export class ChangeVibratoType extends Change {
         doc.notifier.changed();
         if (oldValue != newValue || prevVibrato != Config.vibratos.length) {
             instrument.vibratoType = newValue;
-            instrument.vibrato = Config.vibratos.length; // Custom
+            instrument.vibrato = Config.vibratos.length; 
             instrument.preset = instrument.type;
             doc.notifier.changed();
             this._didSomething();
@@ -2699,7 +2701,7 @@ class ChangeInstrumentSlider extends Change {
 }
 
 
-//for envelope mod recording
+
 class IndexableChange extends ChangeInstrumentSlider {
     constructor(index: number, _doc: SongDocument) {
         super(_doc);
@@ -2879,7 +2881,7 @@ export class ChangeGrainAmounts extends ChangeInstrumentSlider {
         super(doc);
         this._instrument.grainAmounts = newValue;
         doc.notifier.changed();
-        // doc.synth.unsetMod(Config.modulators.dictionary["granular"].index, doc.channel, doc.getCurrentInstrument());
+        
         if (oldValue != newValue) this._didSomething();
     }
 }
@@ -2889,7 +2891,7 @@ export class ChangeGrainRange extends ChangeInstrumentSlider {
         super(doc);
         this._instrument.grainRange = newValue;
         doc.notifier.changed();
-        // doc.synth.unsetMod(Config.modulators.dictionary["grain size"].index, doc.channel, doc.getCurrentInstrument());
+        
         if (oldValue != newValue) this._didSomething();
     }
 }
@@ -2952,13 +2954,13 @@ export class ChangeEQFilterType extends Change {
     constructor(doc: SongDocument, instrument: Instrument, newValue: boolean) {
         super();
         instrument.eqFilterType = newValue;
-        if (newValue == true) { // To Simple - clear eq filter
+        if (newValue == true) { 
             instrument.eqFilter.reset();
             instrument.tmpEqFilterStart = instrument.eqFilter;
             instrument.tmpEqFilterEnd = null;
         }
         else {
-            // To Advanced - convert filter
+            
             instrument.eqFilter.convertLegacySettings(instrument.eqFilterSimpleCut, instrument.eqFilterSimplePeak, Config.envelopes.dictionary["none"]);
             instrument.tmpEqFilterStart = instrument.eqFilter;
             instrument.tmpEqFilterEnd = null;
@@ -2974,13 +2976,13 @@ export class ChangeNoteFilterType extends Change {
     constructor(doc: SongDocument, instrument: Instrument, newValue: boolean) {
         super();
         instrument.noteFilterType = newValue;
-        if (newValue == true) { // To Simple - clear note filter, kill modulators
+        if (newValue == true) { 
             instrument.noteFilter.reset();
             instrument.tmpNoteFilterStart = instrument.noteFilter;
             instrument.tmpNoteFilterEnd = null;
         }
         else {
-            // To Advanced - convert filter, kill modulators
+            
             instrument.noteFilter.convertLegacySettings(instrument.noteFilterSimpleCut, instrument.noteFilterSimplePeak, Config.envelopes.dictionary["none"]);
             instrument.tmpNoteFilterStart = instrument.noteFilter;
             instrument.tmpNoteFilterEnd = null;
@@ -3095,9 +3097,9 @@ export class ChangeFilterAddPoint extends UndoableChange {
             this._envelopeTargetsAdd.push(target);
             this._envelopeIndicesAdd.push(targetIndex);
             if (deletion) {
-                // When deleting a filter control point, find all envelopes that targeted that
-                // point and clear them, and all envelopes that targeted later points and
-                // decrement those to keep them in sync with the new list of points.
+                
+                
+                
                 const automationTarget: AutomationTarget = Config.instrumentAutomationTargets[target];
                 if (automationTarget.isFilter && (automationTarget.effect == EffectType.noteFilter) == isNoteFilter) {
                     if (automationTarget.maxCount == Config.filterMaxPoints) {
@@ -3521,8 +3523,8 @@ export class ChangeOperatorAmplitude extends ChangeInstrumentSlider {
         super(doc);
         this.operatorIndex = operatorIndex;
         this._instrument.operators[operatorIndex].amplitude = newValue;
-        // Not used currently as mod is implemented as multiplicative
-        //doc.synth.unsetMod(ModSetting.mstFMSlider1 + operatorIndex, doc.channel, doc.getCurrentInstrument());
+        
+        
         doc.notifier.changed();
         if (oldValue != newValue) this._didSomething();
     }
@@ -3532,8 +3534,8 @@ export class ChangeFeedbackAmplitude extends ChangeInstrumentSlider {
     constructor(doc: SongDocument, oldValue: number, newValue: number) {
         super(doc);
         this._instrument.feedbackAmplitude = newValue;
-        // Not used currently as mod is implemented as multiplicative
-        //doc.synth.unsetMod(ModSetting.mstFMFeedback, doc.channel, doc.getCurrentInstrument());
+        
+        
         doc.notifier.changed();
         if (oldValue != newValue) this._didSomething();
     }
@@ -3555,11 +3557,11 @@ export class ChangeAddChannelInstrument extends Change {
         instrument.effects |= 1 << EffectType.panning;
         instrument.volume = 0;
         channel.instruments.push(instrument);
-        if (!isMod) { // Mod channels lose information when changing set instrument
+        if (!isMod) { 
             doc.viewedInstrument[doc.channel] = channel.instruments.length - 1;
         }
 
-        // Determine if any mod instruments were setting 'all' or 'active'. If so, bump indices since there is now a new instrument in the list.
+        
         for (let channelIndex: number = doc.song.pitchChannelCount + doc.song.noiseChannelCount; channelIndex < doc.song.getChannelCount(); channelIndex++) {
             for (let instrumentIndex: number = 0; instrumentIndex < doc.song.channels[channelIndex].instruments.length; instrumentIndex++) {
                 for (let mod: number = 0; mod < Config.modCount; mod++) {
@@ -3569,13 +3571,13 @@ export class ChangeAddChannelInstrument extends Change {
                     let modChannel: number = instrument.modChannels[mod];
 
                     if (modChannel == doc.channel && modInstrument >= doc.song.channels[modChannel].instruments.length - 1) {
-                        //BUGFIX FROM JUMMBOX
+                        
                         instrument.modInstruments[mod]++;
                     }
                 }
             }
         }
-        // Also, make synth re-compute mod values, since 'all'/'active' mods now retroactively apply to this new instrument.
+        
         doc.synth.computeLatestModValues();
 
         doc.notifier.changed();
@@ -3606,7 +3608,7 @@ export class ChangeRemoveChannelInstrument extends Change {
             }
         }
 
-        // Determine if any mod instruments now refer to an invalid instrument number. Unset them if so
+        
         for (let channelIndex: number = doc.song.pitchChannelCount + doc.song.noiseChannelCount; channelIndex < doc.song.getChannelCount(); channelIndex++) {
             for (let instrumentIdx: number = 0; instrumentIdx < doc.song.channels[channelIndex].instruments.length; instrumentIdx++) {
                 for (let mod: number = 0; mod < Config.modCount; mod++) {
@@ -3616,11 +3618,11 @@ export class ChangeRemoveChannelInstrument extends Change {
                     let modChannel: number = instrument.modChannels[mod];
 
                     if (modChannel == doc.channel) {
-                        // Boundary checking - check if setting was 'all' or 'active' previously
+                        
                         if (modInstrument > removedIndex) {
                             instrument.modInstruments[mod]--;
                         }
-                        // Boundary checking - check if setting was set to the last instrument before splice
+                        
                         else if (modInstrument == removedIndex) {
                             instrument.modInstruments[mod] = 0;
                             instrument.modulators[mod] = 0;
@@ -3666,7 +3668,7 @@ export class ChangeInstrumentsFlags extends Change {
             for (let j: number = 0; j < doc.song.patternsPerChannel; j++) {
                 const pattern: Pattern = channel.patterns[j];
                 if (!oldPatternInstruments && newPatternInstruments) {
-                    // patternInstruments was enabled, set up pattern instruments as appropriate.
+                    
                     for (let i: number = 0; i < channel.instruments.length; i++) {
                         pattern.instruments[i] = i;
                     }
@@ -3758,10 +3760,10 @@ export class ChangePaste extends ChangeGroup {
     constructor(doc: SongDocument, pattern: Pattern, notes: any[], selectionStart: number, selectionEnd: number, oldPartDuration: number) {
         super();
 
-        // Erase the current contents of the selection:
+        
         this.append(new ChangeNoteTruncate(doc, pattern, selectionStart, selectionEnd, null, true));
 
-        // Mods don't follow this sequence, so skipping for now.
+        
         let noteInsertionIndex: number = 0;
         if (!doc.song.getChannelIsMod(doc.channel)) {
             for (let i: number = 0; i < pattern.notes.length; i++) {
@@ -3802,7 +3804,7 @@ export class ChangePaste extends ChangeGroup {
             selectionStart += oldPartDuration;
         }
 
-        // Need to re-sort the notes by start time as they might change order because of paste.
+        
         if (pattern != null && doc.song.getChannelIsMod(doc.channel)) pattern.notes.sort(function (a, b) { return (a.start == b.start) ? a.pitches[0] - b.pitches[0] : a.start - b.start; });
 
 
@@ -3851,7 +3853,7 @@ export class ChangeModChannel extends Change {
         if (useInstrument != undefined)
             instrument = useInstrument;
 
-        // None, or swapping from song to instrument/vice-versa
+        
         if (index == 0 || (Config.modulators[instrument.modulators[mod]].forSong && index >= 2) || (!Config.modulators[instrument.modulators[mod]].forSong && index < 2)) {
             instrument.modulators[mod] = Config.modulators.dictionary["none"].index;
         }
@@ -3884,15 +3886,15 @@ export class ChangeModSetting extends Change {
 
         let instrument: Instrument = doc.song.channels[doc.channel].instruments[doc.getCurrentInstrument()];
 
-        // Populate all instruments that could be targeted by this mod setting.
+        
         let tgtChannel: number = instrument.modChannels[mod];
         let usedInstruments: Instrument[] = [];
-        if (tgtChannel >= 0) { // Ignore song/none.
+        if (tgtChannel >= 0) { 
             if (instrument.modInstruments[mod] == doc.song.channels[tgtChannel].instruments.length) {
-                // All - Populate list of all instruments
+                
                 usedInstruments = usedInstruments.concat(doc.song.channels[tgtChannel].instruments);
             } else if (instrument.modInstruments[mod] > doc.song.channels[tgtChannel].instruments.length) {
-                // Active - Populate list of only used instruments
+                
                 let tgtPattern: Pattern | null = doc.song.getPattern(tgtChannel, doc.bar);
                 if (tgtPattern != null) {
                     for (let i: number = 0; i < tgtPattern.instruments.length; i++) {
@@ -3901,12 +3903,12 @@ export class ChangeModSetting extends Change {
                 }
             }
             else {
-                // Single instrument used.
+                
                 usedInstruments.push(doc.song.channels[tgtChannel].instruments[instrument.modInstruments[mod]]);
             }
         }
 
-        // Check if a new effect is being added - if so add the proper associated effect to the instrument(s), and truncate "+ " from start of text.
+        
         if (text.startsWith("+ ")) {
             text = text.substr(2);
             for (let i: number = 0; i < usedInstruments.length; i++) {
@@ -3923,7 +3925,7 @@ export class ChangeModSetting extends Change {
 
             instrument.modulators[mod] = setting;
 
-            // Go through each pattern where this instrument is set, and clean up any notes that are out of bounds
+            
             let cap: number = Config.modulators[setting].maxRawVol;
 
             for (let i: number = 0; i < doc.song.patternsPerChannel; i++) {
@@ -3958,7 +3960,7 @@ export class ChangeModFilter extends Change {
 
             instrument.modFilterTypes[mod] = type;
 
-            // Go through each pattern where this instrument is set, and clean up any notes that are out of bounds
+            
             let cap: number = doc.song.getVolumeCapForSetting(true, instrument.modulators[mod], instrument.modFilterTypes[mod]);
 
             for (let i: number = 0; i < doc.song.patternsPerChannel; i++) {
@@ -3993,7 +3995,7 @@ export class ChangeModEnvelope extends Change {
 
             instrument.modEnvelopeNumbers[mod] = envelope;
 
-            // Go through each pattern where this instrument is set, and clean up any notes that are out of bounds
+            
             let cap: number = doc.song.getVolumeCapForSetting(true, instrument.modulators[mod], instrument.modEnvelopeNumbers[mod]);
 
             for (let i: number = 0; i < doc.song.patternsPerChannel; i++) {
@@ -4460,7 +4462,7 @@ export class ChangeDetectKey extends ChangeGroup {
         let bestKey: number = 0;
         let bestKeyWeight: number = 0;
         for (let key: number = 0; key < 12; key++) {
-            // Look for the root of the most prominent major or minor chord.
+            
             const keyWeight: number = keyWeights[key] * (3 * keyWeights[(key + 7) % 12] + keyWeights[(key + 4) % 12] + keyWeights[(key + 3) % 12]);
             if (bestKeyWeight < keyWeight) {
                 bestKeyWeight = keyWeight;
@@ -4593,7 +4595,7 @@ export class ChangeReplacePatterns extends ChangeGroup {
         while (noiseChannels.length < Config.noiseChannelCountMin) noiseChannels.push(new Channel());
         while (modChannels.length < Config.modChannelCountMin) modChannels.push(new Channel());
 
-        // Set minimum counts.
+        
         song.barCount = 1;
         song.patternsPerChannel = 8;
         const combinedChannels: Channel[] = pitchChannels.concat(noiseChannels.concat(modChannels));
@@ -4858,7 +4860,7 @@ export class ChangeNoteTruncate extends ChangeSequence {
             } else if (note.end <= start) {
                 i++;
             } else if (note.start >= end) {
-                // Allow out-of-order notes for mods so that all get checked.
+                
                 if (!doc.song.getChannelIsMod(doc.channel)) {
                     break;
                 } else {
@@ -4903,7 +4905,7 @@ class ChangeSplitNotesAtSelection extends ChangeSequence {
                 i++;
                 this.append(new ChangeNoteAdded(doc, pattern, copy, i, false));
                 this.append(new ChangeNoteLength(doc, copy, doc.selection.patternSelectionStart, copy.end));
-                // i++; // The second note might be split again at the end of the selection. Check it again.
+                
             } else if (note.start < doc.selection.patternSelectionEnd && doc.selection.patternSelectionEnd < note.end) {
                 const copy: Note = note.clone();
                 this.append(new ChangeNoteLength(doc, note, note.start, doc.selection.patternSelectionEnd));
@@ -4938,13 +4940,13 @@ class ChangeTransposeNote extends UndoableChange {
         this._oldPitches = note.pitches;
         this._newPitches = [];
 
-        // I'm disabling pitch transposing for noise channels to avoid
-        // accidentally messing up noise channels when pitch shifting all
-        // channels at once.
+        
+        
+        
         const isNoise: boolean = doc.song.getChannelIsNoise(channelIndex);
         if (isNoise != doc.song.getChannelIsNoise(doc.channel)) return;
 
-        // Can't transpose mods
+        
         if (doc.song.getChannelIsMod(doc.channel)) return;
 
         const maxPitch: number = (isNoise ? Config.drumCount - 1 : Config.maxPitch);
@@ -5137,13 +5139,13 @@ export class ChangeDragSelectedNotes extends ChangeSequence {
         const newStart: number = Math.max(0, Math.min(doc.song.beatsPerBar * Config.partsPerBeat, oldStart + parts));
         const newEnd: number = Math.max(0, Math.min(doc.song.beatsPerBar * Config.partsPerBeat, oldEnd + parts));
         if (newStart == newEnd) {
-            // Just erase the current contents of the selection:
+            
             this.append(new ChangeNoteTruncate(doc, pattern, oldStart, oldEnd, null, true));
         } else if (parts < 0) {
-            // Clear space for the dragged notes:
+            
             this.append(new ChangeNoteTruncate(doc, pattern, newStart, Math.min(oldStart, newEnd), null, true));
         } else {
-            // Clear space for the dragged notes:
+            
             this.append(new ChangeNoteTruncate(doc, pattern, Math.max(oldEnd, newStart), newEnd, null, true));
         }
 
@@ -5204,16 +5206,16 @@ export class ChangeDuplicateSelectedReusedPatterns extends ChangeGroup {
                 if (currentPatternIndex == 0) continue;
                 if (reusablePatterns[String(currentPatternIndex)] == undefined) {
                     let isUsedElsewhere = false;
-                    // if (replaceUnused) {
-                    //     for (let bar2: number = 0; bar2 < doc.song.barCount; bar2++) {
-                    //         if (bar2 < barStart || bar2 >= barStart + barWidth) {
-                    //             if (doc.song.channels[channelIndex].bars[bar2] == currentPatternIndex) {
-                    //                 isUsedElsewhere = true;
-                    //                 break;
-                    //             }
-                    //         }
-                    //     }
-                    // } else {
+                    
+                    
+                    
+                    
+                    
+                    
+                    
+                    
+                    
+                    
                         for (let bar2: number = 0; bar2 < doc.song.barCount; bar2++) {
                             if (bar2 < barStart || bar2 >= barStart + barWidth) {
                                 if (doc.song.channels[channelIndex].bars[bar2] == currentPatternIndex) {
@@ -5222,9 +5224,9 @@ export class ChangeDuplicateSelectedReusedPatterns extends ChangeGroup {
                                 }
                             }
                         }
-                    // }
+                    
                     if (isUsedElsewhere) {
-                        // Need to duplicate the pattern.
+                        
                         const copiedPattern: Pattern = doc.song.getPattern(channelIndex, bar)!;
                         this.append(new ChangePatternNumbers(doc, 0, bar, channelIndex, 1, 1));
                         this.append(new ChangeEnsurePatternExists(doc, channelIndex, bar));
@@ -5232,7 +5234,7 @@ export class ChangeDuplicateSelectedReusedPatterns extends ChangeGroup {
                         if (newPattern == null) throw new Error();
                         this.append(new ChangePaste(doc, newPattern, copiedPattern.notes, 0, Config.partsPerBeat * doc.song.beatsPerBar, Config.partsPerBeat * doc.song.beatsPerBar));
 
-                        // Copy the instruments into the new pattern.
+                        
                         newPattern.instruments.length = 0;
                         newPattern.instruments.push(...copiedPattern.instruments);
 
@@ -5312,8 +5314,8 @@ export class ChangeVolume extends Change {
     constructor(doc: SongDocument, oldValue: number, newValue: number) {
         super();
         doc.song.channels[doc.channel].instruments[doc.getCurrentInstrument()].volume = newValue;
-        // Not used currently as mod is implemented as multiplicative.
-        //doc.synth.unsetMod(ModSetting.mstInsVolume, doc.channel, doc.getCurrentInstrument());
+        
+        
         doc.notifier.changed();
         if (oldValue != newValue) this._didSomething();
     }
@@ -5346,7 +5348,7 @@ export class ChangeChannelName extends Change {
             newValue = newValue.substring(0, 15);
         }
 
-        // Use the channelIndex passed to the constructor, not doc.muteEditorChannel.
+        
         doc.song.channels[channelIndex].name = newValue;
         doc.recalcChannelNames = true;
 
@@ -5434,14 +5436,14 @@ export class ChangeChipWave extends Change {
         const instrument: Instrument = doc.song.channels[doc.channel].instruments[doc.getCurrentInstrument()];
         if (instrument.chipWave != newValue) {
             instrument.chipWave = newValue;
-            // advloop addition
+            
             instrument.isUsingAdvancedLoopControls = false;
             instrument.chipWaveLoopStart = 0;
             instrument.chipWaveLoopEnd = Config.rawRawChipWaves[instrument.chipWave].samples.length - 1;
             instrument.chipWaveLoopMode = 0;
             instrument.chipWavePlayBackwards = false;
             instrument.chipWaveStartOffset = 0;
-            // advloop addition
+            
             instrument.preset = instrument.type;
             doc.notifier.changed();
             this._didSomething();
@@ -5449,7 +5451,7 @@ export class ChangeChipWave extends Change {
     }
 }
 
-// advloop addition
+
 export class ChangeChipWaveUseAdvancedLoopControls extends Change {
     constructor(doc: SongDocument, newValue: boolean) {
         super();
@@ -5533,7 +5535,7 @@ export class ChangeChipWavePlayBackwards extends Change {
         }
     }
 }
-// advloop addition
+
 
 export class ChangeNoiseWave extends Change {
     constructor(doc: SongDocument, newValue: number) {
@@ -5579,7 +5581,7 @@ export class ChangeRemoveEnvelope extends Change {
             instrument.envelopes[i].waveform = instrument.envelopes[i + 1].waveform;
             instrument.envelopes[i].discrete = instrument.envelopes[i + 1].discrete;
         }
-        // TODO: Shift any envelopes that were targeting other envelope indices after the removed one.
+        
         instrument.preset = instrument.type;
         doc.notifier.changed();
         this._didSomething();
@@ -5731,7 +5733,7 @@ export class ChangeRandomEnvelopeSeed extends Change {
         seed = seed > Config.randomEnvelopeSeedMax ? Config.randomEnvelopeSeedMax : seed < 1 ? 2 : Math.floor(seed);
         instrument.envelopes[index].seed = seed;
         if (oldSeed != seed) {
-            //changing the seed does not change the preset
+            
             doc.notifier.changed();
             this._didSomething();
         }
@@ -5756,7 +5758,7 @@ export class ChangeSetEnvelopeWaveform extends Change {
         super();
         const instrument: Instrument = doc.song.channels[doc.channel].instruments[doc.getCurrentInstrument()];
         const oldWaveform: number = instrument.envelopes[index].waveform;
-        waveform = parseInt(waveform + ""); //make sure waveform isn't a string
+        waveform = parseInt(waveform + ""); 
         instrument.envelopes[index].waveform = waveform;
         if (oldWaveform != waveform) {
             instrument.preset = instrument.type;

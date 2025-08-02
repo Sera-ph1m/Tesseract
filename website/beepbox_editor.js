@@ -14489,7 +14489,7 @@ li.select2-results__option[role=group] > strong:hover {
             } while (this.channelTags.some(tag => tag.id === id));
             return id;
         }
-        createChannelTag(name, startChannel, endChannel, id) {
+        createChannelTag(name, startChannel, endChannel, id, addToStart = false) {
             const newId = id || this._generateUniqueTagId();
             if (this.channelTags.some(tag => tag.id === newId)) {
                 console.error("A tag with this ID already exists.");
@@ -14519,7 +14519,10 @@ li.select2-results__option[role=group] > strong:hover {
                 startChannel: newStart,
                 endChannel: newEnd,
             };
-            this.channelTags.push(newTag);
+            addToStart
+                ? this.channelTags.unshift(newTag)
+                : this.channelTags.push(newTag);
+            this.channelTags.sort((a, b) => b.endChannel - a.endChannel);
             return newId;
         }
         removeChannelTagById(id) {
@@ -14528,6 +14531,7 @@ li.select2-results__option[role=group] > strong:hover {
                 this.channelTags.splice(index, 1);
                 return true;
             }
+            this.channelTags.sort((a, b) => b.endChannel - a.endChannel);
             return false;
         }
         removeChannelTagByName(name) {
@@ -14535,6 +14539,7 @@ li.select2-results__option[role=group] > strong:hover {
             if (id) {
                 return this.removeChannelTagById(id);
             }
+            this.channelTags.sort((a, b) => b.endChannel - a.endChannel);
             return false;
         }
         updateChannelTagRangeById(id, startChannel, endChannel) {
@@ -14544,6 +14549,7 @@ li.select2-results__option[role=group] > strong:hover {
                 tag.endChannel = Math.max(startChannel, endChannel);
                 return true;
             }
+            this.channelTags.sort((a, b) => b.endChannel - a.endChannel);
             return false;
         }
         updateChannelTagRangeByName(name, startChannel, endChannel) {
@@ -14553,6 +14559,7 @@ li.select2-results__option[role=group] > strong:hover {
                 tag.endChannel = Math.max(startChannel, endChannel);
                 return true;
             }
+            this.channelTags.sort((a, b) => b.endChannel - a.endChannel);
             return false;
         }
         renameChannelTagById(id, newName) {
@@ -14565,6 +14572,7 @@ li.select2-results__option[role=group] > strong:hover {
                 tag.name = newName;
                 return true;
             }
+            this.channelTags.sort((a, b) => b.endChannel - a.endChannel);
             return false;
         }
         renameChannelTagByName(oldName, newName) {
@@ -14577,6 +14585,7 @@ li.select2-results__option[role=group] > strong:hover {
                 tag.name = newName;
                 return true;
             }
+            this.channelTags.sort((a, b) => b.endChannel - a.endChannel);
             return false;
         }
         getChannelCount() {
@@ -23697,10 +23706,6 @@ li.select2-results__option[role=group] > strong:hover {
                 }
                 chipSource += `
             if (chipWaveLoopMode === 3 || chipWaveLoopMode === 2 || chipWaveLoopMode === 0) {
-                // If playing once or looping, we force the correct direction,
-                // since it shouldn't really change. This is mostly so that if
-                // the mode is changed midway through playback, it won't get
-                // stuck on the wrong direction.
                 if (!chipWavePlayBackwards) {`;
                 for (let i = 0; i < voiceCount; i++) {
                     chipSource += `
@@ -28600,6 +28605,59 @@ li.select2-results__option[role=group] > strong:hover {
         _doBackwards() {
             if (this._index > -1) {
                 this._doc.song.channelTags.splice(this._index, 0, this._tag);
+            }
+            this._doc.notifier.changed();
+        }
+    }
+    class ChangeChannelTagRange extends UndoableChange {
+        constructor(doc, id, newStart, newEnd) {
+            super(false);
+            this._doc = doc;
+            this._tagId = id;
+            this._origIndex = doc.song.channelTags.findIndex((t) => t.id === id);
+            const tag = this._doc.song.channelTags.find((t) => t.id === id);
+            if (!tag) {
+                this._oldStart = 0;
+                this._oldEnd = 0;
+                this._newStart = 0;
+                this._newEnd = 0;
+                return;
+            }
+            this._oldStart = tag.startChannel;
+            this._oldEnd = tag.endChannel;
+            this._newStart = Math.min(newStart, newEnd);
+            this._newEnd = Math.max(newStart, newEnd);
+            if (this._oldStart !== this._newStart ||
+                this._oldEnd !== this._newEnd) {
+                this._didSomething();
+            }
+            this.redo();
+        }
+        _doForwards() {
+            const tags = this._doc.song.channelTags;
+            const tag = tags.find((t) => t.id === this._tagId);
+            if (tag) {
+                tag.startChannel = this._newStart;
+                tag.endChannel = this._newEnd;
+                const currentIndex = tags.findIndex((t) => t.id === this._tagId);
+                if (currentIndex > -1 && this._origIndex > -1) {
+                    tags.splice(currentIndex, 1);
+                    tags.splice(this._origIndex, 0, tag);
+                }
+            }
+            this._doc.notifier.changed();
+        }
+        _doBackwards() {
+            const tags = this._doc.song.channelTags;
+            const tag = tags.find((t) => t.id === this._tagId);
+            if (tag) {
+                tag.startChannel = this._oldStart;
+                tag.endChannel = this._oldEnd;
+                const currentIndex = tags.findIndex((t) => t.id === this._tagId);
+                if (currentIndex > -1 && this._origIndex > -1) {
+                    tags.splice(currentIndex, 1);
+                    tags.splice(this._origIndex, 0, tag);
+                }
             }
             this._doc.notifier.changed();
         }
@@ -40624,6 +40682,8 @@ You should be redirected to the song at:<br /><br />
                     pitchCounter = (pitchCounter + 1) % 10;
                 }
             }
+            this._tagColors.clear();
+            tagColors.forEach((c, id) => this._tagColors.set(id, c));
             for (let ch = 0; ch < channelCount; ch++) {
                 const innermostTag = tags
                     .filter(t => t.startChannel <= ch && ch <= t.endChannel)
@@ -40655,6 +40715,7 @@ You should be redirected to the song at:<br /><br />
             this._buttons = [];
             this._rowToChannel = [];
             this._rowToTag = [];
+            this._tagColors = new Map();
             this._channelCounts = [];
             this._channelNameDisplay = HTML.div({
                 style: `background-color: ${ColorConfig.uiWidgetFocus}; white-space:nowrap; display: none; transform:translate(20px); width: auto; pointer-events: none; position: absolute; border-radius: 0.2em; z-index: 2;`,
@@ -40880,6 +40941,7 @@ You should be redirected to the song at:<br /><br />
                 this._channelContextMenu.style.display = "none";
                 const ch = this._activeChannelIndexForMenu;
                 const channel = this._doc.song.channels[ch];
+                const tags = this._doc.song.channelTags;
                 switch (action) {
                     case "rename": {
                         const oldName = channel.name;
@@ -40889,14 +40951,94 @@ You should be redirected to the song at:<br /><br />
                         }
                         break;
                     }
-                    case "chnUp":
-                        this._doc.record(new ChangeChannelOrder(this._doc, ch, ch, -1));
-                        this._doc.song.updateDefaultChannelNames();
+                    case "chnUp": {
+                        const endTagsUp = tags.filter(t => t.endChannel === ch - 1);
+                        if (endTagsUp.length > 0) {
+                            const outer = endTagsUp.reduce((best, t) => {
+                                const spanBest = best.endChannel - best.startChannel;
+                                const spanT = t.endChannel - t.startChannel;
+                                if (spanT > spanBest)
+                                    return t;
+                                if (spanT < spanBest)
+                                    return best;
+                                return tags.indexOf(t) < tags.indexOf(best)
+                                    ? t
+                                    : best;
+                            }, endTagsUp[0]);
+                            this._doc.record(new ChangeChannelTagRange(this._doc, outer.id, outer.startChannel, ch));
+                        }
+                        else {
+                            const startTagsUp = tags.filter(t => t.startChannel === ch);
+                            if (startTagsUp.length > 0) {
+                                const inner = startTagsUp.reduce((best, t) => {
+                                    const spanBest = best.endChannel - best.startChannel;
+                                    const spanT = t.endChannel - t.startChannel;
+                                    if (spanT < spanBest)
+                                        return t;
+                                    if (spanT > spanBest)
+                                        return best;
+                                    return tags.indexOf(t) > tags.indexOf(best)
+                                        ? t
+                                        : best;
+                                }, startTagsUp[0]);
+                                if (inner.startChannel === inner.endChannel) {
+                                    this._doc.record(new ChangeRemoveChannelTag(this._doc, inner.id));
+                                }
+                                else {
+                                    this._doc.record(new ChangeChannelTagRange(this._doc, inner.id, ch + 1, inner.endChannel));
+                                }
+                            }
+                            else if (ch > 0) {
+                                this._doc.record(new ChangeChannelOrder(this._doc, ch, ch, -1));
+                                this._doc.song.updateDefaultChannelNames();
+                            }
+                        }
                         break;
-                    case "chnDown":
-                        this._doc.record(new ChangeChannelOrder(this._doc, ch, ch, 1));
-                        this._doc.song.updateDefaultChannelNames();
+                    }
+                    case "chnDown": {
+                        const endTagsDown = tags.filter(t => t.endChannel === ch);
+                        if (endTagsDown.length > 0) {
+                            const inner = endTagsDown.reduce((best, t) => {
+                                const spanBest = best.endChannel - best.startChannel;
+                                const spanT = t.endChannel - t.startChannel;
+                                if (spanT < spanBest)
+                                    return t;
+                                if (spanT > spanBest)
+                                    return best;
+                                return tags.indexOf(t) > tags.indexOf(best)
+                                    ? t
+                                    : best;
+                            }, endTagsDown[0]);
+                            if (inner.startChannel === inner.endChannel) {
+                                this._doc.record(new ChangeRemoveChannelTag(this._doc, inner.id));
+                            }
+                            else {
+                                this._doc.record(new ChangeChannelTagRange(this._doc, inner.id, inner.startChannel, ch - 1));
+                            }
+                        }
+                        else {
+                            const startTagsDown = tags.filter(t => t.startChannel === ch + 1);
+                            if (startTagsDown.length > 0) {
+                                const outer = startTagsDown.reduce((best, t) => {
+                                    const spanBest = best.endChannel - best.startChannel;
+                                    const spanT = t.endChannel - t.startChannel;
+                                    if (spanT > spanBest)
+                                        return t;
+                                    if (spanT < spanBest)
+                                        return best;
+                                    return tags.indexOf(t) < tags.indexOf(best)
+                                        ? t
+                                        : best;
+                                }, startTagsDown[0]);
+                                this._doc.record(new ChangeChannelTagRange(this._doc, outer.id, ch, outer.endChannel));
+                            }
+                            else if (ch < this._doc.song.getChannelCount() - 1) {
+                                this._doc.record(new ChangeChannelOrder(this._doc, ch, ch, 1));
+                                this._doc.song.updateDefaultChannelNames();
+                            }
+                        }
                         break;
+                    }
                     case "chnMute":
                         channel.muted = !channel.muted;
                         this._doc.notifier.changed();
@@ -40923,13 +41065,23 @@ You should be redirected to the song at:<br /><br />
                         break;
                     }
                     case "chnInsert": {
-                        const type = this._doc.song.getChannelIsMod(ch)
+                        const idx = ch;
+                        const type = this._doc.song.getChannelIsMod(idx)
                             ? ChannelType.Mod
-                            : this._doc.song.getChannelIsNoise(ch)
+                            : this._doc.song.getChannelIsNoise(idx)
                                 ? ChannelType.Noise
                                 : ChannelType.Pitch;
-                        this._doc.record(new ChangeAddChannel(this._doc, type, ch));
-                        this._doc.notifier.changed();
+                        const cg = new ChangeGroup();
+                        for (const tag of this._doc.song.channelTags) {
+                            if (tag.startChannel >= idx) {
+                                cg.append(new ChangeChannelTagRange(this._doc, tag.id, tag.startChannel + 1, tag.endChannel + 1));
+                            }
+                            else if (tag.endChannel >= idx) {
+                                cg.append(new ChangeChannelTagRange(this._doc, tag.id, tag.startChannel, tag.endChannel + 1));
+                            }
+                        }
+                        cg.append(new ChangeAddChannel(this._doc, type, idx));
+                        this._doc.record(cg);
                         break;
                     }
                     case "chnDelete":
@@ -41013,7 +41165,7 @@ You should be redirected to the song at:<br /><br />
                     this._rowToTag[rowIndex] = tag.id;
                     muteContainer.children[0].style.visibility = "hidden";
                     countText.textContent = "○";
-                    countText.style.color = this._channelColors.get(tag.startChannel).primary;
+                    countText.style.color = this._tagColors.get(tag.id).primary;
                     countText.style.fontSize = "inherit";
                     const isInsideCollapsed = tags.some(p => collapsedTagIds.has(p.id) &&
                         tag.startChannel >= p.startChannel &&
@@ -45649,6 +45801,7 @@ You should be redirected to the song at:<br /><br />
             this._songEditor = _songEditor;
             this._tagRows = new Map();
             this._channelColors = new Map();
+            this._tagColors = new Map();
             this._barDropDown = HTML.select({
                 style: "width: 32px; height: " +
                     Config.barEditorHeight +
@@ -45746,7 +45899,8 @@ You should be redirected to the song at:<br /><br />
                     this._doc.bar = this._barDropDownBar - 1 + moveBarOffset;
                     this._doc.selection.resetBoxSelection();
                     this._doc.selection.insertBars();
-                    if (this._doc.synth.playhead >= this._barDropDownBar + moveBarOffset) {
+                    if (this._doc.synth.playhead >=
+                        this._barDropDownBar + moveBarOffset) {
                         this._doc.synth.playhead++;
                         this._songEditor._barScrollBar.animatePlayhead();
                     }
@@ -45822,7 +45976,7 @@ You should be redirected to the song at:<br /><br />
                     }
                     const tagId = tagRow.dataset.tagId;
                     if (tagId) {
-                        const tag = this._doc.song.channelTags.find(t => t.id === tagId);
+                        const tag = this._doc.song.channelTags.find((t) => t.id === tagId);
                         if (tag) {
                             const orig = tag.name;
                             const collapsed = orig.endsWith("...");
@@ -45953,9 +46107,7 @@ You should be redirected to the song at:<br /><br />
             const tagColors = new Map();
             const baseChannelColors = new Map();
             for (let ch = 0; ch < channelCount; ch++) {
-                tags
-                    .filter(t => t.startChannel === ch)
-                    .forEach(tag => {
+                tags.filter((t) => t.startChannel === ch).forEach((tag) => {
                     const colorIndex = (pitchCounter % 10) + 1;
                     const colors = {
                         primary: `var(--pitch${colorIndex}-primary-note)`,
@@ -45981,10 +46133,20 @@ You should be redirected to the song at:<br /><br />
                     pitchCounter = (pitchCounter + 1) % 10;
                 }
             }
+            this._tagColors = tagColors;
             for (let ch = 0; ch < channelCount; ch++) {
-                const innermostTag = tags
-                    .filter(t => t.startChannel <= ch && ch <= t.endChannel)
-                    .pop();
+                const covering = tags.filter((t) => t.startChannel <= ch && ch <= t.endChannel);
+                let innermostTag = null;
+                if (covering.length > 0) {
+                    const minRange = Math.min(...covering.map((t) => t.endChannel - t.startChannel));
+                    const smallest = covering.filter((t) => t.endChannel - t.startChannel === minRange);
+                    if (smallest.length > 1) {
+                        innermostTag = smallest.reduce((latest, t) => tags.indexOf(t) > tags.indexOf(latest) ? t : latest, smallest[0]);
+                    }
+                    else {
+                        innermostTag = smallest[0];
+                    }
+                }
                 if (innermostTag) {
                     this._channelColors.set(ch, tagColors.get(innermostTag.id));
                 }
@@ -46121,7 +46283,11 @@ You should be redirected to the song at:<br /><br />
                     this._lastScrollTime = timestamp;
                 }
             }
-            if (this._mouseOver && !this._mousePressed && !selected && overTrackEditor && visualRowInfo) {
+            if (this._mouseOver &&
+                !this._mousePressed &&
+                !selected &&
+                overTrackEditor &&
+                visualRowInfo) {
                 this._boxHighlight.setAttribute("x", "" + (1 + this._barWidth * bar));
                 this._boxHighlight.setAttribute("y", "" + (1 + visualRowInfo.y));
                 this._boxHighlight.setAttribute("height", "" + (visualRowInfo.height - 2));
@@ -46141,8 +46307,11 @@ You should be redirected to the song at:<br /><br />
             else {
                 this._boxHighlight.style.visibility = "hidden";
             }
-            if ((this._mouseOver || this._touchMode) && selected && overTrackEditor && visualRowInfo) {
-                const up = (this._mouseY - visualRowInfo.y) < visualRowInfo.height / 2;
+            if ((this._mouseOver || this._touchMode) &&
+                selected &&
+                overTrackEditor &&
+                visualRowInfo) {
+                const up = this._mouseY - visualRowInfo.y < visualRowInfo.height / 2;
                 const center = this._barWidth * (bar + 0.8);
                 const middle = visualRowInfo.y + visualRowInfo.height * 0.5;
                 const base = visualRowInfo.height * 0.1;
@@ -46198,27 +46367,34 @@ You should be redirected to the song at:<br /><br />
                 this._channels[i].render(this._channelColors.get(i));
             }
             const tags = this._doc.song.channelTags;
-            tags.forEach(tag => {
+            tags.forEach((tag) => {
                 if (!this._tagRows.has(tag.id)) {
                     this._tagRows.set(tag.id, new TagRow(tag));
                 }
                 const row = this._tagRows.get(tag.id);
                 row.container.dataset.tagId = tag.id;
                 row.update(tag);
-                row.setColor(this._channelColors.get(tag.startChannel).primary);
+                row.setColor(this._tagColors.get(tag.id).primary);
             });
             for (const id of Array.from(this._tagRows.keys())) {
-                if (!tags.find(t => t.id === id))
+                if (!tags.find((t) => t.id === id))
                     this._tagRows.delete(id);
             }
             this._channelRowContainer.innerHTML = "";
-            const collapsedTagIds = new Set(tags.filter(t => t.name.endsWith("...")).map(t => t.id));
+            const collapsedTagIds = new Set(tags.filter((t) => t.name.endsWith("...")).map((t) => t.id));
             for (let ch = 0; ch < channelCount; ch++) {
-                tags
-                    .filter(t => t.startChannel === ch)
-                    .forEach(tag => {
+                const startTags = tags
+                    .filter((t) => t.startChannel === ch)
+                    .sort((a, b) => {
+                    const lenA = a.endChannel - a.startChannel;
+                    const lenB = b.endChannel - b.startChannel;
+                    if (lenA !== lenB)
+                        return lenB - lenA;
+                    return tags.indexOf(a) - tags.indexOf(b);
+                });
+                startTags.forEach((tag) => {
                     const tagRow = this._tagRows.get(tag.id).container;
-                    const isInsideCollapsed = tags.some(p => collapsedTagIds.has(p.id) &&
+                    const isInsideCollapsed = tags.some((p) => collapsedTagIds.has(p.id) &&
                         tag.startChannel >= p.startChannel &&
                         tag.endChannel <= p.endChannel &&
                         p.id !== tag.id);
@@ -46226,7 +46402,7 @@ You should be redirected to the song at:<br /><br />
                     this._channelRowContainer.appendChild(tagRow);
                 });
                 const channelRow = this._channels[ch].container;
-                const parentTag = tags.find(t => ch >= t.startChannel &&
+                const parentTag = tags.find((t) => ch >= t.startChannel &&
                     ch <= t.endChannel &&
                     collapsedTagIds.has(t.id));
                 channelRow.style.display = parentTag ? "none" : "";
@@ -46275,11 +46451,19 @@ You should be redirected to the song at:<br /><br />
                     this._barNumbers[pos].setAttribute("x", pos * this._barWidth + this._barWidth / 2 + "px");
                 }
             }
-            Array.from(this.container.querySelectorAll(".tagBorder")).forEach(el => el.remove());
-            tags.forEach(tag => {
+            Array.from(this.container.querySelectorAll(".tagBorder")).forEach((el) => el.remove());
+            tags.forEach((tag) => {
                 const color = this._channelColors.get(tag.startChannel).primary;
-                const sameEnd = tags.filter(t => t.endChannel === tag.endChannel);
-                const idx = sameEnd.findIndex(t => t.id === tag.id);
+                const sameEnd = tags
+                    .filter((t) => t.endChannel === tag.endChannel)
+                    .sort((a, b) => {
+                    const spanA = a.endChannel - a.startChannel;
+                    const spanB = b.endChannel - b.startChannel;
+                    if (spanA !== spanB)
+                        return spanB - spanA;
+                    return tags.indexOf(a) - tags.indexOf(b);
+                });
+                const idx = sameEnd.findIndex((t) => t.id === tag.id);
                 const tagRowElem = this._tagRows.get(tag.id).container;
                 const isCollapsed = collapsedTagIds.has(tag.id);
                 if (!isCollapsed) {
@@ -46287,7 +46471,7 @@ You should be redirected to the song at:<br /><br />
                         class: "tagBorder",
                         style: `position:absolute;bottom:0;left:0;
                            width:100%;height:2px;background:${color};
-                           pointer-events:none;z-index:${200 + idx};`,
+                           pointer-events:none;`,
                     });
                     tagRowElem.style.position = "relative";
                     tagRowElem.appendChild(top);
@@ -46299,11 +46483,11 @@ You should be redirected to the song at:<br /><br />
                 }
                 else {
                     const candidates = tags
-                        .map(t2 => this._tagRows.get(t2.id).container)
-                        .filter(el => el.style.display !== "none")
-                        .filter(el => {
+                        .map((t2) => this._tagRows.get(t2.id).container)
+                        .filter((el) => el.style.display !== "none")
+                        .filter((el) => {
                         const start = parseInt(el.dataset.startChannel);
-                        const t2 = tags.find(x => x.id === el.dataset.tagId);
+                        const t2 = tags.find((x) => x.id === el.dataset.tagId);
                         return start <= tag.endChannel && tag.endChannel <= t2.endChannel;
                     });
                     if (candidates.length) {
@@ -46320,7 +46504,7 @@ You should be redirected to the song at:<br /><br />
                         class: "tagBorder",
                         style: `position:absolute;bottom:${idx * 3}px;left:0;
                            width:100%;height:2px;background:${color};
-                           pointer-events:none;z-index:${100 + idx};`,
+                           pointer-events:none;`,
                     });
                     attachElem.style.position = "relative";
                     attachElem.appendChild(bot);
@@ -46343,7 +46527,7 @@ You should be redirected to the song at:<br /><br />
                     this._selectionRect.setAttribute("x", String(this._barWidth * this._doc.selection.boxSelectionBar + 1));
                     this._selectionRect.setAttribute("y", String(startVisual.y + 1));
                     this._selectionRect.setAttribute("width", String(this._barWidth * this._doc.selection.boxSelectionWidth - 2));
-                    this._selectionRect.setAttribute("height", String((endVisual.y + endVisual.height) - startVisual.y - 2));
+                    this._selectionRect.setAttribute("height", String(endVisual.y + endVisual.height - startVisual.y - 2));
                     this._selectionRect.setAttribute("visibility", "visible");
                 }
                 else {
@@ -50404,22 +50588,24 @@ You should be redirected to the song at:<br /><br />
                         event.preventDefault();
                         break;
                     case 13:
-                        this.doc.synth.loopBarStart = -1;
-                        this.doc.synth.loopBarEnd = -1;
-                        this._loopEditor.setLoopAt(this.doc.synth.loopBarStart, this.doc.synth.loopBarEnd);
                         if ((event.ctrlKey || event.metaKey) && !event.shiftKey) {
-                            const currentChannel = this.doc.channel;
-                            let type;
-                            if (this.doc.song.getChannelIsMod(currentChannel)) {
-                                type = ChannelType.Mod;
+                            const idx = this.doc.channel;
+                            let type = this.doc.song.getChannelIsMod(idx)
+                                ? ChannelType.Mod
+                                : this.doc.song.getChannelIsNoise(idx)
+                                    ? ChannelType.Noise
+                                    : ChannelType.Pitch;
+                            const cg = new ChangeGroup();
+                            for (const tag of this.doc.song.channelTags) {
+                                if (tag.startChannel >= idx) {
+                                    cg.append(new ChangeChannelTagRange(this.doc, tag.id, tag.startChannel + 1, tag.endChannel + 1));
+                                }
+                                else if (tag.endChannel >= idx) {
+                                    cg.append(new ChangeChannelTagRange(this.doc, tag.id, tag.startChannel, tag.endChannel + 1));
+                                }
                             }
-                            else if (this.doc.song.getChannelIsNoise(currentChannel)) {
-                                type = ChannelType.Noise;
-                            }
-                            else {
-                                type = ChannelType.Pitch;
-                            }
-                            this.doc.record(new ChangeAddChannel(this.doc, type, currentChannel));
+                            cg.append(new ChangeAddChannel(this.doc, type, idx));
+                            this.doc.record(cg);
                         }
                         else if (event.shiftKey) {
                             const width = this.doc.selection.boxSelectionWidth;
@@ -50835,13 +51021,51 @@ You should be redirected to the song at:<br /><br />
                         break;
                     case 38:
                         if (event.ctrlKey || event.metaKey) {
-                            const channel = this.doc.channel;
-                            if (channel > 0) {
-                                this.doc.record(new ChangeChannelOrder(this.doc, channel, channel, -1));
-                                this.doc.song.updateDefaultChannelNames();
-                                this.doc.selection.setChannelBar(channel - 1, this.doc.bar);
-                                this.doc.recalcChannelNames = true;
-                                this.doc.notifier.changed();
+                            const ch = this.doc.channel;
+                            const tags = this.doc.song.channelTags;
+                            const endTags = tags.filter(t => t.endChannel === ch - 1);
+                            if (endTags.length > 0) {
+                                const outer = endTags.reduce((best, t) => {
+                                    const spanBest = best.endChannel - best.startChannel;
+                                    const spanT = t.endChannel - t.startChannel;
+                                    if (spanT > spanBest)
+                                        return t;
+                                    if (spanT < spanBest)
+                                        return best;
+                                    return tags.indexOf(t) < tags.indexOf(best)
+                                        ? t
+                                        : best;
+                                }, endTags[0]);
+                                this.doc.record(new ChangeChannelTagRange(this.doc, outer.id, outer.startChannel, ch));
+                            }
+                            else {
+                                const startTags = tags.filter(t => t.startChannel === ch);
+                                if (startTags.length > 0) {
+                                    const inner = startTags.reduce((best, t) => {
+                                        const spanBest = best.endChannel - best.startChannel;
+                                        const spanT = t.endChannel - t.startChannel;
+                                        if (spanT < spanBest)
+                                            return t;
+                                        if (spanT > spanBest)
+                                            return best;
+                                        return tags.indexOf(t) > tags.indexOf(best)
+                                            ? t
+                                            : best;
+                                    }, startTags[0]);
+                                    if (inner.startChannel === inner.endChannel) {
+                                        this.doc.record(new ChangeRemoveChannelTag(this.doc, inner.id));
+                                    }
+                                    else {
+                                        this.doc.record(new ChangeChannelTagRange(this.doc, inner.id, ch + 1, inner.endChannel));
+                                    }
+                                }
+                                else if (ch > 0) {
+                                    this.doc.record(new ChangeChannelOrder(this.doc, ch, ch, -1));
+                                    this.doc.song.updateDefaultChannelNames();
+                                    this.doc.selection.setChannelBar(ch - 1, this.doc.bar);
+                                    this.doc.recalcChannelNames = true;
+                                    this.doc.notifier.changed();
+                                }
                             }
                         }
                         else if (event.shiftKey) {
@@ -50858,13 +51082,51 @@ You should be redirected to the song at:<br /><br />
                         break;
                     case 40:
                         if (event.ctrlKey || event.metaKey) {
-                            const channel = this.doc.channel;
-                            if (channel < this.doc.song.getChannelCount() - 1) {
-                                this.doc.record(new ChangeChannelOrder(this.doc, channel, channel, 1));
-                                this.doc.song.updateDefaultChannelNames();
-                                this.doc.selection.setChannelBar(channel + 1, this.doc.bar);
-                                this.doc.recalcChannelNames = true;
-                                this.doc.notifier.changed();
+                            const ch = this.doc.channel;
+                            const tags = this.doc.song.channelTags;
+                            const endTagsDown = tags.filter(t => t.endChannel === ch);
+                            if (endTagsDown.length > 0) {
+                                const inner = endTagsDown.reduce((best, t) => {
+                                    const spanBest = best.endChannel - best.startChannel;
+                                    const spanT = t.endChannel - t.startChannel;
+                                    if (spanT < spanBest)
+                                        return t;
+                                    if (spanT > spanBest)
+                                        return best;
+                                    return tags.indexOf(t) > tags.indexOf(best)
+                                        ? t
+                                        : best;
+                                }, endTagsDown[0]);
+                                if (inner.startChannel === inner.endChannel) {
+                                    this.doc.record(new ChangeRemoveChannelTag(this.doc, inner.id));
+                                }
+                                else {
+                                    this.doc.record(new ChangeChannelTagRange(this.doc, inner.id, inner.startChannel, ch - 1));
+                                }
+                            }
+                            else {
+                                const startTagsDown = tags.filter(t => t.startChannel === ch + 1);
+                                if (startTagsDown.length > 0) {
+                                    const outer = startTagsDown.reduce((best, t) => {
+                                        const spanBest = best.endChannel - best.startChannel;
+                                        const spanT = t.endChannel - t.startChannel;
+                                        if (spanT > spanBest)
+                                            return t;
+                                        if (spanT < spanBest)
+                                            return best;
+                                        return tags.indexOf(t) < tags.indexOf(best)
+                                            ? t
+                                            : best;
+                                    }, startTagsDown[0]);
+                                    this.doc.record(new ChangeChannelTagRange(this.doc, outer.id, ch, outer.endChannel));
+                                }
+                                else if (ch < this.doc.song.getChannelCount() - 1) {
+                                    this.doc.record(new ChangeChannelOrder(this.doc, ch, ch, 1));
+                                    this.doc.song.updateDefaultChannelNames();
+                                    this.doc.selection.setChannelBar(ch + 1, this.doc.bar);
+                                    this.doc.recalcChannelNames = true;
+                                    this.doc.notifier.changed();
+                                }
                             }
                         }
                         else if (event.shiftKey) {

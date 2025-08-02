@@ -2915,7 +2915,6 @@ export class Instrument {
                     operator.amplitude = 0;
                 }
                 if (operatorObject["waveform"] != undefined) {
-                    // If the json is from GB, we override the last two waves to be sine to account for a bug
                     if (format == "goldbox" && j > 3) {
                         operator.waveform = 0;
                         continue;
@@ -3381,7 +3380,7 @@ export class Song {
         return id;
     }
 
-    public createChannelTag(name: string, startChannel: number, endChannel: number, id?: string): string | null {
+    public createChannelTag(name: string, startChannel: number, endChannel: number, id?: string, addToStart = false): string | null {
         const newId = id || this._generateUniqueTagId();
     
         if (this.channelTags.some(tag => tag.id === newId)) {
@@ -3416,7 +3415,10 @@ export class Song {
             endChannel: newEnd,
         };
     
-        this.channelTags.push(newTag);
+        addToStart
+          ? this.channelTags.unshift(newTag)
+          : this.channelTags.push(newTag);
+        this.channelTags.sort((a, b) => b.endChannel - a.endChannel);
         return newId;
     }
 
@@ -3426,6 +3428,7 @@ export class Song {
             this.channelTags.splice(index, 1);
             return true;
         }
+        this.channelTags.sort((a, b) => b.endChannel - a.endChannel);
         return false;
     }
 
@@ -3434,6 +3437,7 @@ export class Song {
         if (id) {
             return this.removeChannelTagById(id);
         }
+        this.channelTags.sort((a, b) => b.endChannel - a.endChannel);
         return false;
     }
 
@@ -3444,6 +3448,7 @@ export class Song {
             tag.endChannel = Math.max(startChannel, endChannel);
             return true;
         }
+        
         return false;
     }
 
@@ -3462,7 +3467,6 @@ export class Song {
     public getChannelTagNameById = (id: string): string | undefined => this.channelTags.find(tag => tag.id === id)?.name;
     // Returns the ideal new note volume when dragging (max volume for a normal note, a "neutral" value for mod notes based on how they work)
     public renameChannelTagById(id: string, newName: string): boolean {
-        // Check for name collision, excluding the tag we are renaming.
         if (this.channelTags.some(tag => tag.name === newName && tag.id !== id)) {
             console.error("A tag with this name already exists.");
             return false;
@@ -3477,7 +3481,6 @@ export class Song {
     }
 
     public renameChannelTagByName(oldName: string, newName: string): boolean {
-        // Check for name collision, excluding the tag we are renaming.
         if (this.channelTags.some(tag => tag.name === newName && tag.name !== oldName)) {
             console.error("A tag with this name already exists.");
             return false;
@@ -4843,8 +4846,6 @@ export class Song {
                     }
 
                     else {
-                        // UB version 2 URLs and below will be using the old syntax, so we do need to parse it in that case.
-                        // UB version 3 URLs should only have the new syntax, though, unless the user has edited the URL manually.
                         const parseOldSyntax: boolean = beforeThree;
                         const ok: boolean = Song._parseAndConfigureCustomSample(url, customSampleUrls, customSamplePresets, sampleLoadingState, parseOldSyntax);
                         if (!ok) {
@@ -4885,12 +4886,6 @@ export class Song {
 
         let legacySettingsCache: LegacySettings[][] | null = null;
         if ((fromBeepBox && beforeNine) || ((fromJummBox && beforeFive) || (beforeFour && fromGoldBox))) {
-            // Unfortunately, old versions of BeepBox had a variety of different ways of saving
-            // filter-and-envelope-related parameters in the URL, and none of them directly
-            // correspond to the new way of saving these parameters. We can approximate the old
-            // settings by collecting all the old settings for an instrument and passing them to
-            // convertLegacySettings(), so I use this data structure to collect the settings
-            // for each instrument if necessary.
             legacySettingsCache = [];
             for (let i: number = legacySettingsCache.length; i < this.getChannelCount(); i++) {
                 legacySettingsCache[i] = [];
@@ -7668,10 +7663,6 @@ export class Song {
                     }
 
                     else {
-                        // When EditorConfig.customSamples is saved in the json
-                        // export, it should be using the new syntax, unless
-                        // the user has manually modified the URL, so we don't
-                        // really need to parse the old syntax here.
                         const parseOldSyntax: boolean = false;
                         Song._parseAndConfigureCustomSample(url, customSampleUrls, customSamplePresets, sampleLoadingState, parseOldSyntax);
                     }
@@ -7689,9 +7680,6 @@ export class Song {
                 }
             }
         } else {
-            // No custom samples, so the only possibility at this point is that
-            // we need to load the legacy samples. Let's check whether that's
-            // necessary.
             let shouldLoadLegacySamples: boolean = false;
             if (jsonObject["channels"] != undefined) {
                 for (let channelIndex: number = 0; channelIndex < jsonObject["channels"].length; channelIndex++) {
@@ -7901,18 +7889,11 @@ export class Song {
                                 shouldLoadLegacySamples = true;
                             } else if (oldNames.includes(waveName)) {
                                 shouldLoadLegacySamples = true;
-                                // If we see one of these old names, update it
-                                // to the corresponding new name.
                                 instrumentObject["wave"] = names[oldNames.findIndex(x => x === waveName)];
                             } else if (veryOldNames.includes(waveName)) {
                                 if ((waveName === "trumpet" || waveName === "flute") && (format != "paandorasbox")) {
-                                    // If we see chip waves named trumpet or flute, and if the format isn't PaandorasBox, we leave them as-is
                                 } else {
-                                    // There's no other chip waves with ambiguous names like that, so it should
-                                    // be okay to assume we'll need to load the legacy samples now.
                                     shouldLoadLegacySamples = true;
-                                    // If we see one of these old names, update it
-                                    // to the corresponding new name.
                                     instrumentObject["wave"] = names[veryOldNames.findIndex(x => x === waveName)];
                                 }
                             }
@@ -7928,11 +7909,7 @@ export class Song {
                 loadBuiltInSamples(0);
                 EditorConfig.customSamples = ["legacySamples"];
             } else {
-                // We don't need to load the legacy samples, but we may have
-                // leftover samples in memory. If we do, clear them.
                 if (EditorConfig.customSamples != null && EditorConfig.customSamples.length > 0) {
-                    // We need to reload anyway in this case, because (for now)
-                    // the chip wave lists won't be correctly updated.
                     Config.willReloadForCustomSamples = true;
                     Song._clearSamples();
                 }
@@ -8822,11 +8799,8 @@ class EnvelopeComputer {
                     return perEnvelopeUpperBound - Synth.noteSizeToVolumeMult(noteSize) * (boundAdjust);
                 }
             case EnvelopeType.pitch:
-                //inversion and bounds are handled in the pitch calculation that we did prior
                 return pitch;
             case EnvelopeType.pseudorandom:
-                //randomization is essentially just a complex hashing function which appears random to us, but is repeatable every time
-                //we can use either the time passed from the beginning of our song or the pitch of the note for what we hash
                 const hashMax: number = 0xffffffff;
                 const step: number = steps;
                 switch (waveform) {
@@ -9448,18 +9422,14 @@ class InstrumentState {
     }
 
     public allocateEchoBuffers(samplesPerTick: number, echoDelay: number) {
-        // account for tempo and delay automation changing delay length during a tick?
-        const safeEchoDelaySteps: number = Math.max(Config.echoDelayRange >> 1, (echoDelay + 1)); // The delay may be very short now, but if it increases later make sure we have enough sample history.
+        const safeEchoDelaySteps: number = Math.max(Config.echoDelayRange >> 1, (echoDelay + 1));
         const baseEchoDelayBufferSize: number = Synth.fittingPowerOfTwo(safeEchoDelaySteps * Config.echoDelayStepTicks * samplesPerTick);
-        const safeEchoDelayBufferSize: number = baseEchoDelayBufferSize * 2; // If the tempo or delay changes and we suddenly need a longer delay, make sure that we have enough sample history to accomodate the longer delay.
+        const safeEchoDelayBufferSize: number = baseEchoDelayBufferSize * 2; 
 
         if (this.echoDelayLineL == null || this.echoDelayLineR == null) {
             this.echoDelayLineL = new Float32Array(safeEchoDelayBufferSize);
             this.echoDelayLineR = new Float32Array(safeEchoDelayBufferSize);
         } else if (this.echoDelayLineL.length < safeEchoDelayBufferSize || this.echoDelayLineR.length < safeEchoDelayBufferSize) {
-            // The echo delay length may change while the song is playing if tempo changes,
-            // so buffers may need to be reallocated, but we don't want to lose any echoes
-            // so we need to copy the contents of the old buffer to the new one.
             const newDelayLineL: Float32Array = new Float32Array(safeEchoDelayBufferSize);
             const newDelayLineR: Float32Array = new Float32Array(safeEchoDelayBufferSize);
             const oldMask: number = this.echoDelayLineL.length - 1;
@@ -10631,7 +10601,7 @@ export class Synth {
     private static readonly chipFunctionCache: Function[] = [];
     private static readonly pulseFunctionCache: Function[] = [];
     private static readonly harmonicsFunctionCache: Function[] = [];
-    private static readonly loopableChipFunctionCache: Function[] = Array(Config.unisonVoicesMax + 1).fill(undefined); //For loopable chips, we have a matrix where the rows represent voices and the columns represent loop types
+    private static readonly loopableChipFunctionCache: Function[] = Array(Config.unisonVoicesMax + 1).fill(undefined); 
 
     public readonly channels: ChannelState[] = [];
     private readonly tonePool: Deque<Tone> = new Deque<Tone>();
@@ -10897,19 +10867,6 @@ export class Synth {
                                                             let bpmScalar: number = Config.partsPerBeat * Config.ticksPerPart / 60;
 
                                                             if (currPinTempo != prevPinTempo) {
-
-                                                                // Definite integral of SamplesPerTick w/r/t beats to find total samples from start point to end point for a variable tempo
-                                                                // The starting formula is
-                                                                // SamplesPerTick = SamplesPerSec / ((PartsPerBeat * TicksPerPart) / SecPerMin) * BeatsPerMin )
-                                                                //
-                                                                // This is an expression of samples per tick "instantaneously", and it can be multiplied by a number of ticks to get a sample count.
-                                                                // But this isn't the full story. BeatsPerMin, e.g. tempo, changes throughout the interval so it has to be expressed in terms of ticks, "t"
-                                                                // ( Also from now on PartsPerBeat, TicksPerPart, and SecPerMin are combined into one scalar, called "BPMScalar" )
-                                                                // Substituting BPM for a step variable that moves with respect to the current tick, we get
-                                                                // SamplesPerTick = SamplesPerSec / (BPMScalar * ( (EndTempo - StartTempo / TickLength) * t + StartTempo ) )
-                                                                //
-                                                                // When this equation is integrated from 0 to TickLength with respect to t, we get the following expression:
-                                                                //   Samples = - SamplesPerSec * TickLength * ( log( BPMScalar * EndTempo * TickLength ) - log( BPMScalar * StartTempo * TickLength ) ) / BPMScalar * ( StartTempo - EndTempo )
 
                                                                 totalSamples += - this.samplesPerSecond * tickLength * (Math.log(bpmScalar * currPinTempo * tickLength) - Math.log(bpmScalar * prevPinTempo * tickLength)) / (bpmScalar * (prevPinTempo - currPinTempo));
 
@@ -11491,8 +11448,6 @@ export class Synth {
 
             // Handle next bar mods if they were set
             if (this.wantToSkip) {
-                // Unable to continue, as we have skipped back to a previously visited bar without generating new samples, which means we are infinitely skipping.
-                // In this case processing will return before the designated number of samples are processed. In other words, silence will be generated.
                 let barVisited: boolean = skippedBars.includes(this.bar);
                 if (barVisited && bufferIndex == firstSkippedBufferIndex) {
                     this.pause();
@@ -13514,13 +13469,6 @@ export class Synth {
                         tone.phases[i] = normalizedPhase;
                         sample += (normalizedPhase - 0.5) * amplitude;
                     }
-
-                    // Find the phase of the zero crossing of the sum of the sawtooths. You can
-                    // use a constant slope and the distance between sawtooth drops to determine if
-                    // the zero crossing occurs between them. Note that a small phase means that
-                    // the corresponding drop for that wave is far away, and a big phase means the
-                    // drop is nearby, so to iterate forward through the drops we iterate backward
-                    // through the phases.
                     let zeroCrossingPhase: number = 1.0;
                     let prevDrop: number = 0.0;
                     for (let i: number = Config.supersawVoiceCount - 1; i >= 0; i--) {
@@ -13906,10 +13854,6 @@ export class Synth {
 
             chipSource += `
             if (chipWaveLoopMode === 3 || chipWaveLoopMode === 2 || chipWaveLoopMode === 0) {
-                // If playing once or looping, we force the correct direction,
-                // since it shouldn't really change. This is mostly so that if
-                // the mode is changed midway through playback, it won't get
-                // stuck on the wrong direction.
                 if (!chipWavePlayBackwards) {`
             for (let i: number = 0; i < voiceCount; i++) {
                 chipSource += `
@@ -13926,10 +13870,6 @@ export class Synth {
                 }
             }
             if (chipWaveLoopMode === 0 || chipWaveLoopMode === 1) {`
-            // If looping or ping-ponging, we clear the completion status,
-            // as it's not relevant anymore. This is mostly so that if the
-            // mode is changed midway through playback, it won't get stuck
-            // on zero volume.
             for (let i: number = 0; i < voiceCount; i++) {
                 chipSource += `
                     chipWaveCompletion# = 0;
@@ -14450,15 +14390,6 @@ export class Synth {
     }
 
     private static pickedStringSynth(synth: Synth, bufferIndex: number, roundedSamplesPerTick: number, tone: Tone, instrumentState: InstrumentState): void {
-        // This algorithm is similar to the Karpluss-Strong algorithm in principle, but with an
-        // all-pass filter for dispersion and with more control over the impulse harmonics.
-        // The source code is processed as a string before being compiled, in order to
-        // handle the unison feature. If unison is disabled or set to none, then only one
-        // string voice is required, otherwise two string voices are required. We only want
-        // to compute the minimum possible number of string voices, so omit the code for
-        // processing extra ones if possible. Any line containing a "#" is duplicated for
-        // each required voice, replacing the "#" with the voice index.
-
         const voiceCount: number = instrumentState.unisonVoices;
         let pickedStringFunction: Function = Synth.pickedStringFunctionCache[voiceCount];
         if (pickedStringFunction == undefined) {
@@ -16103,13 +16034,11 @@ for (
                     if (tgtSong.eqSubFilters[tone.note!.pins[pinIdx - 1].size] != null || tgtSong.eqSubFilters[tone.note!.pins[pinIdx].size] != null) {
                         tgtSong.tmpEqFilterEnd = FilterSettings.lerpFilters(tgtSong.eqSubFilters[tone.note!.pins[pinIdx - 1].size]!, tgtSong.eqSubFilters[tone.note!.pins[pinIdx].size]!, lerpEndRatio);
                     } else {
-                        // No mutation will occur to the filter object so we can safely return it without copying
                         tgtSong.tmpEqFilterEnd = tgtSong.eqFilter;
                     }
 
-                } // Target (1 is dot 1 X, 2 is dot 1 Y, etc.)
+                }
                 else {
-                    // Since we are directly manipulating the filter, make sure it is a new one and not an actual one of the instrument's filters
                     for (let i: number = 0; i < Config.filterMorphCount; i++) {
                         if (tgtSong.tmpEqFilterEnd == tgtSong.eqSubFilters[i] && tgtSong.tmpEqFilterEnd != null) {
                             tgtSong.tmpEqFilterEnd = new FilterSettings();
@@ -16151,13 +16080,11 @@ for (
                         if (tgtInstrument.eqSubFilters[tone.note!.pins[pinIdx - 1].size] != null || tgtInstrument.eqSubFilters[tone.note!.pins[pinIdx].size] != null) {
                             tgtInstrument.tmpEqFilterEnd = FilterSettings.lerpFilters(tgtInstrument.eqSubFilters[tone.note!.pins[pinIdx - 1].size]!, tgtInstrument.eqSubFilters[tone.note!.pins[pinIdx].size]!, lerpEndRatio);
                         } else {
-                            // No mutation will occur to the filter object so we can safely return it without copying
                             tgtInstrument.tmpEqFilterEnd = tgtInstrument.eqFilter;
                         }
 
                     } // Target (1 is dot 1 X, 2 is dot 1 Y, etc.)
                     else {
-                        // Since we are directly manipulating the filter, make sure it is a new one and not an actual one of the instrument's filters
                         for (let i: number = 0; i < Config.filterMorphCount; i++) {
                             if (tgtInstrument.tmpEqFilterEnd == tgtInstrument.eqSubFilters[i] && tgtInstrument.tmpEqFilterEnd != null) {
                                 tgtInstrument.tmpEqFilterEnd = new FilterSettings();
@@ -16199,13 +16126,11 @@ for (
                         if (tgtInstrument.noteSubFilters[tone.note!.pins[pinIdx - 1].size] != null || tgtInstrument.noteSubFilters[tone.note!.pins[pinIdx].size] != null) {
                             tgtInstrument.tmpNoteFilterEnd = FilterSettings.lerpFilters(tgtInstrument.noteSubFilters[tone.note!.pins[pinIdx - 1].size]!, tgtInstrument.noteSubFilters[tone.note!.pins[pinIdx].size]!, lerpEndRatio);
                         } else {
-                            // No mutation will occur to the filter object so we can safely return it without copying
                             tgtInstrument.tmpNoteFilterEnd = tgtInstrument.noteFilter;
                         }
 
                     } // Target (1 is dot 1 X, 2 is dot 1 Y, etc.)
                     else {
-                        // Since we are directly manipulating the filter, make sure it is a new one and not an actual one of the instrument's filters
 
                         for (let i: number = 0; i < Config.filterMorphCount; i++) {
                             if (tgtInstrument.tmpNoteFilterEnd == tgtInstrument.noteSubFilters[i] && tgtInstrument.tmpNoteFilterEnd != null) {
