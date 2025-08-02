@@ -923,7 +923,7 @@ export class TrackEditor {
       el.remove()
     );
     tags.forEach((tag) => {
-      const color = this._channelColors.get(tag.startChannel)!.primary;
+      const color = this._tagColors.get(tag.id)!.primary;
 
       const sameEnd = tags
         .filter((t) => t.endChannel === tag.endChannel)

@@ -46812,7 +46812,7 @@ You should be redirected to the song at:<br /><br />
             }
             Array.from(this.container.querySelectorAll(".tagBorder")).forEach((el) => el.remove());
             tags.forEach((tag) => {
-                const color = this._channelColors.get(tag.startChannel).primary;
+                const color = this._tagColors.get(tag.id).primary;
                 const sameEnd = tags
                     .filter((t) => t.endChannel === tag.endChannel)
                     .sort((a, b) => {
