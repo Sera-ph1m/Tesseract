@@ -3680,10 +3680,7 @@ export class SongEditor {
   private readonly _instrumentSettingsTextRow: HTMLDivElement = div(
     {
       id: "instrumentSettingsText",
-      style: `padding: 3px 0; max-width: 15em; text-align: center; color: ${getSecondaryNoteColor(
-        this.doc,
-        this.doc.channel
-      )};`,
+      style: `padding: 3px 0; max-width: 15em; text-align: center; color: inherit`,
     },
     "Instrument Settings"
   );
@@ -3821,10 +3818,7 @@ export class SongEditor {
     { style: "cursor: pointer;" },
     div(
       {
-        style: `margin-top: 0.5em; text-align: center; color: ${getSecondaryNoteColor(
-          this.doc,
-          this.doc.channel
-        )};`,
+        style: `margin-top: 0.5em; text-align: center; color: inherit`,
       },
       "Sample Loading Status"
     ),
@@ -6733,20 +6727,21 @@ export class SongEditor {
 
         let channel: Channel = this.doc.song.channels[modChannel];
 
-        // Build options for modulator instruments (make sure it has the right number).
-        if (
-          this._modInstrumentBoxes[mod].children.length !=
-          channel.instruments.length + 2
-        ) {
-          while (this._modInstrumentBoxes[mod].firstChild)
-            this._modInstrumentBoxes[mod].remove(0);
-          const instrumentList: string[] = [];
-          for (let i: number = 0; i < channel.instruments.length; i++) {
-            instrumentList.push("" + i + 1);
-          }
-          instrumentList.push("all");
-          instrumentList.push("active");
-          buildOptions(this._modInstrumentBoxes[mod], instrumentList);
+        // Build options for modulator instruments, preserving “all”/“active”
+        const instBox = this._modInstrumentBoxes[mod];
+        const oldCount = instBox.children.length;
+        const oldSel   = instBox.selectedIndex;
+        const wasAll   = oldSel === oldCount - 2;
+        const wasAct   = oldSel === oldCount - 1;
+        const newCount = channel.instruments.length + 2;
+        if (oldCount !== newCount) {
+          while (instBox.firstChild) instBox.remove(0);
+          const list: string[] = channel.instruments.map((_,i) => String(i+1));
+          list.push("all","active");
+          buildOptions(instBox, list);
+          if (wasAll)    instBox.selectedIndex = newCount - 2;
+          else if (wasAct) instBox.selectedIndex = newCount - 1;
+          else             instBox.selectedIndex = Math.min(oldSel, newCount - 1);
         }
 
         // If non-zero pattern, point to which instrument(s) is/are the current
@@ -6767,9 +6762,10 @@ export class SongEditor {
           }
         }
 
-        // Set selected index based on instrument info.
-        this._modInstrumentBoxes[mod].selectedIndex =
-          instrument.modInstruments[mod];
+        // Apply model’s setting unless we’re preserving “all”/“active”
+        if (!wasAll && !wasAct) {
+          instBox.selectedIndex = instrument.modInstruments[mod];
+        }
 
         // Build options for modulator settings (based on channel settings)
 

@@ -227,81 +227,139 @@ export class TrackEditor {
   }
 
   private _computeChannelColors(): void {
-    this._channelColors.clear();
-    const song = this._doc.song;
-    const channelCount = song.getChannelCount();
-    const tags = song.channelTags;
+	this._channelColors.clear();
+	const song = this._doc.song;
+	const channelCount = song.getChannelCount();
+	const tags = song.channelTags;
+	const rootStyle = getComputedStyle(document.documentElement);
+	const useFormula =
+	  rootStyle.getPropertyValue("--use-color-formula").trim() === "true";
 
-    let pitchCounter = 0;
-    let modCounter = 0;
+	const baseChannelColors = new Map<
+	  number,
+	  { primary: string; secondary: string }
+	>();
 
-    const tagColors = new Map<string, { primary: string; secondary: string }>();
-    const baseChannelColors = new Map<
-      number,
-      { primary: string; secondary: string }
-    >();
+	if (useFormula) {
+	  // Dynamic HSL stepping
+	  let pitchIdx = 0,
+		 noiseIdx = 0,
+		 modIdx = 0;
+	  const getColor = (
+		 type: "pitch" | "noise" | "mod",
+		 element: "primary-note" | "secondary-note",
+		 idx: number
+	  ): string => {
+		 const prefix = `--${type}-${element}`;
+		 const baseH = parseFloat(rootStyle.getPropertyValue(`${prefix}-hue`));
+		 const stepH = parseFloat(
+			rootStyle.getPropertyValue(`${prefix}-hue-scale`)
+		 ) * 6.5;
+		 const baseS = parseFloat(rootStyle.getPropertyValue(`${prefix}-sat`)) * 1;
+		 const stepS = parseFloat(
+			rootStyle.getPropertyValue(`${prefix}-sat-scale`)
+		 );
+		 const baseL = parseFloat(rootStyle.getPropertyValue(`${prefix}-lum`)) * .85;
+		 const stepL = parseFloat(
+			rootStyle.getPropertyValue(`${prefix}-lum-scale`)
+		 );
+		 const h = ((baseH + idx * stepH) % 360 + 360) % 360;
+		 const s = Math.min(100, Math.max(0, baseS + idx * stepS));
+		 const l = Math.min(100, Math.max(0, baseL + idx * stepL));
+		 return `hsl(${h}, ${s}%, ${l}%)`;
+	  };
 
-    for (let ch = 0; ch < channelCount; ch++) {
-      tags
-        .filter((t) => t.startChannel === ch)
-        .forEach((tag) => {
-          const colorIndex = (pitchCounter % 10) + 1;
-          const colors = {
-            primary: `var(--pitch${colorIndex}-primary-note)`,
-            secondary: `var(--pitch${colorIndex}-secondary-note)`,
-          };
-          tagColors.set(tag.id, colors);
-          pitchCounter = (pitchCounter + 1) % 10;
-        });
+	  for (let ch = 0; ch < channelCount; ch++) {
+		 const type = song.getChannelIsMod(ch)
+			? "mod"
+			: song.getChannelIsNoise(ch)
+			  ? "noise"
+			  : "pitch";
+		 const idx =
+			type === "pitch" ? pitchIdx++ : type === "noise" ? noiseIdx++ : modIdx++;
+		 baseChannelColors.set(ch, {
+			primary: getColor(type, "primary-note", idx),
+			secondary: getColor(type, "secondary-note", idx),
+		 });
+	  }
 
-      if (song.getChannelIsMod(ch)) {
-        const colorIndex = (modCounter % 4) + 1;
-        baseChannelColors.set(ch, {
-          primary: `var(--mod${colorIndex}-primary-note)`,
-          secondary: `var(--mod${colorIndex}-secondary-note)`,
-        });
-        modCounter = (modCounter + 1) % 4;
-      } else {
-        const colorIndex = (pitchCounter % 10) + 1;
-        baseChannelColors.set(ch, {
-          primary: `var(--pitch${colorIndex}-primary-note)`,
-          secondary: `var(--pitch${colorIndex}-secondary-note)`,
-        });
-        pitchCounter = (pitchCounter + 1) % 10;
-      }
-    }
+	  // Tag colors = color at the tag's startChannel
+	  this._tagColors.clear();
+	  tags.forEach((t) =>
+		 this._tagColors.set(t.id, baseChannelColors.get(t.startChannel)!)
+	  );
+	} else {
+	  // Static CSS‐var lookup
+	  let pitchCounter = 0,
+		 modCounter = 0;
+	  const tagColors = new Map<
+		 string,
+		 { primary: string; secondary: string }
+	  >();
 
-    this._tagColors = tagColors;
+	  for (let ch = 0; ch < channelCount; ch++) {
+		 tags
+			.filter((t) => t.startChannel === ch)
+			.forEach((tag) => {
+			  const i = (pitchCounter % 10) + 1;
+			  tagColors.set(tag.id, {
+				 primary: `var(--pitch${i}-primary-note)`,
+				 secondary: `var(--pitch${i}-secondary-note)`,
+			  });
+			  pitchCounter = (pitchCounter + 1) % 10;
+			});
 
-    for (let ch = 0; ch < channelCount; ch++) {
-      const covering = tags.filter(
-        (t) => t.startChannel <= ch && ch <= t.endChannel
-      );
-      let innermostTag = null;
-      if (covering.length > 0) {
-        const minRange = Math.min(
-          ...covering.map((t) => t.endChannel - t.startChannel)
-        );
-        const smallest = covering.filter(
-          (t) => t.endChannel - t.startChannel === minRange
-        );
-        if (smallest.length > 1) {
-          innermostTag = smallest.reduce(
-            (latest, t) =>
-              tags.indexOf(t) > tags.indexOf(latest) ? t : latest,
-            smallest[0]
-          );
-        } else {
-          innermostTag = smallest[0];
-        }
-      }
-      if (innermostTag) {
-        this._channelColors.set(ch, tagColors.get(innermostTag.id)!);
-      } else {
-        this._channelColors.set(ch, baseChannelColors.get(ch)!);
-      }
-    }
-  }
+		 if (song.getChannelIsMod(ch)) {
+			const i = (modCounter % 4) + 1;
+			baseChannelColors.set(ch, {
+			  primary: `var(--mod${i}-primary-note)`,
+			  secondary: `var(--mod${i}-secondary-note)`,
+			});
+			modCounter = (modCounter + 1) % 4;
+		 } else {
+			const i = (pitchCounter % 10) + 1;
+			baseChannelColors.set(ch, {
+			  primary: `var(--pitch${i}-primary-note)`,
+			  secondary: `var(--pitch${i}-secondary-note)`,
+			});
+			pitchCounter = (pitchCounter + 1) % 10;
+		 }
+	  }
+
+	  this._tagColors = tagColors;
+	}
+
+	// Final sweep: override with tags or base
+	for (let ch = 0; ch < channelCount; ch++) {
+	  const covering = tags.filter(
+		 (t) => t.startChannel <= ch && ch <= t.endChannel
+	  );
+	  let innermostTag = null;
+	  if (covering.length > 0) {
+		 const minRange = Math.min(
+			...covering.map((t) => t.endChannel - t.startChannel)
+		 );
+		 const smallest = covering.filter(
+			(t) => t.endChannel - t.startChannel === minRange
+		 );
+		 if (smallest.length > 1) {
+			innermostTag = smallest.reduce(
+			  (latest, t) =>
+				 tags.indexOf(t) > tags.indexOf(latest) ? t : latest,
+			  smallest[0]
+			);
+		 } else {
+			innermostTag = smallest[0];
+		 }
+	  }
+
+	  if (innermostTag) {
+		 this._channelColors.set(ch, this._tagColors.get(innermostTag.id)!);
+	  } else {
+		 this._channelColors.set(ch, baseChannelColors.get(ch)!);
+	  }
+	}
+ }
 
   private _computeChannelIndexFromY(relY: number): number {
     const rows = Array.from(

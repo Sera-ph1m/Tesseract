@@ -35663,6 +35663,62 @@ You should be redirected to the song at:<br /><br />
     }
 
     function computeColorForChannel(doc, channelIndex, type) {
+        const rootStyle = getComputedStyle(document.documentElement);
+        const useFormula = rootStyle
+            .getPropertyValue("--use-color-formula")
+            .trim() === "true";
+        if (useFormula) {
+            const song = doc.song;
+            const channelCount = song.getChannelCount();
+            const tags = song.channelTags;
+            let pitchIdx = 0, noiseIdx = 0, modIdx = 0;
+            const baseChannelColors = new Map();
+            const tagColors = new Map();
+            function getColor(mode, element, idx) {
+                const prefix = `--${mode}-${element}`;
+                const baseH = parseFloat(rootStyle.getPropertyValue(`${prefix}-hue`));
+                const stepH = parseFloat(rootStyle.getPropertyValue(`${prefix}-hue-scale`)) * 6.5;
+                const baseS = parseFloat(rootStyle.getPropertyValue(`${prefix}-sat`));
+                const stepS = parseFloat(rootStyle.getPropertyValue(`${prefix}-sat-scale`));
+                const baseL = parseFloat(rootStyle.getPropertyValue(`${prefix}-lum`)) * 0.85;
+                const stepL = parseFloat(rootStyle.getPropertyValue(`${prefix}-lum-scale`));
+                const h = ((baseH + idx * stepH) % 360 + 360) % 360;
+                const s = Math.min(100, Math.max(0, baseS + idx * stepS));
+                const l = Math.min(100, Math.max(0, baseL + idx * stepL));
+                return `hsl(${h}, ${s}%, ${l}%)`;
+            }
+            for (let ch = 0; ch < channelCount; ch++) {
+                const mode = song.getChannelIsMod(ch)
+                    ? "mod"
+                    : song.getChannelIsNoise(ch)
+                        ? "noise"
+                        : "pitch";
+                const idx = mode === "pitch"
+                    ? pitchIdx++
+                    : mode === "noise"
+                        ? noiseIdx++
+                        : modIdx++;
+                const primary = getColor(mode, "primary-note", idx);
+                const secondary = getColor(mode, "secondary-note", idx);
+                baseChannelColors.set(ch, { primary, secondary });
+                tags
+                    .filter(t => t.startChannel === ch)
+                    .forEach(t => tagColors.set(t.id, { primary, secondary }));
+            }
+            const covering = tags.filter(t => t.startChannel <= channelIndex &&
+                channelIndex <= t.endChannel);
+            if (covering.length) {
+                let minRange = Infinity;
+                covering.forEach(t => {
+                    minRange = Math.min(minRange, t.endChannel - t.startChannel);
+                });
+                const innermost = covering
+                    .filter(t => t.endChannel - t.startChannel === minRange)
+                    .reduce((best, t) => tags.indexOf(t) > tags.indexOf(best) ? t : best);
+                return tagColors.get(innermost.id)[type];
+            }
+            return baseChannelColors.get(channelIndex)[type];
+        }
         const song = doc.song;
         const channelCount = song.getChannelCount();
         const tags = song.channelTags;
@@ -41035,46 +41091,81 @@ You should be redirected to the song at:<br /><br />
             const song = this._doc.song;
             const channelCount = song.getChannelCount();
             const tags = song.channelTags;
-            let pitchCounter = 0;
-            let modCounter = 0;
-            const tagColors = new Map();
+            const rootStyle = getComputedStyle(document.documentElement);
+            const useFormula = rootStyle.getPropertyValue("--use-color-formula").trim() === "true";
             const baseChannelColors = new Map();
-            for (let ch = 0; ch < channelCount; ch++) {
-                tags
-                    .filter((t) => t.startChannel === ch)
-                    .forEach((tag) => {
-                    const colorIndex = (pitchCounter % 10) + 1;
-                    tagColors.set(tag.id, {
-                        primary: `var(--pitch${colorIndex}-primary-note)`,
-                        secondary: `var(--pitch${colorIndex}-secondary-note)`,
-                    });
-                    pitchCounter = (pitchCounter + 1) % 10;
-                });
-                if (song.getChannelIsMod(ch)) {
-                    const colorIndex = (modCounter % 4) + 1;
+            if (useFormula) {
+                let pitchIdx = 0, noiseIdx = 0, modIdx = 0;
+                const getColor = (type, element, idx) => {
+                    const prefix = `--${type}-${element}`;
+                    const baseH = parseFloat(rootStyle.getPropertyValue(`${prefix}-hue`));
+                    const stepH = parseFloat(rootStyle.getPropertyValue(`${prefix}-hue-scale`)) * 6.5;
+                    const baseS = parseFloat(rootStyle.getPropertyValue(`${prefix}-sat`));
+                    const stepS = parseFloat(rootStyle.getPropertyValue(`${prefix}-sat-scale`));
+                    const baseL = parseFloat(rootStyle.getPropertyValue(`${prefix}-lum`)) * .85;
+                    const stepL = parseFloat(rootStyle.getPropertyValue(`${prefix}-lum-scale`));
+                    const h = ((baseH + idx * stepH) % 360 + 360) % 360;
+                    const s = Math.min(100, Math.max(0, baseS + idx * stepS));
+                    const l = Math.min(100, Math.max(0, baseL + idx * stepL));
+                    return `hsl(${h}, ${s}%, ${l}%)`;
+                };
+                for (let ch = 0; ch < channelCount; ch++) {
+                    const type = song.getChannelIsMod(ch)
+                        ? "mod"
+                        : song.getChannelIsNoise(ch)
+                            ? "noise"
+                            : "pitch";
+                    const idx = type === "pitch" ? pitchIdx++ :
+                        type === "noise" ? noiseIdx++ :
+                            modIdx++;
                     baseChannelColors.set(ch, {
-                        primary: `var(--mod${colorIndex}-primary-note)`,
-                        secondary: `var(--mod${colorIndex}-secondary-note)`,
+                        primary: getColor(type, "primary-note", idx),
+                        secondary: getColor(type, "secondary-note", idx),
                     });
-                    modCounter = (modCounter + 1) % 4;
                 }
-                else {
-                    const colorIndex = (pitchCounter % 10) + 1;
-                    baseChannelColors.set(ch, {
-                        primary: `var(--pitch${colorIndex}-primary-note)`,
-                        secondary: `var(--pitch${colorIndex}-secondary-note)`,
-                    });
-                    pitchCounter = (pitchCounter + 1) % 10;
-                }
+                this._tagColors.clear();
+                tags.forEach(t => this._tagColors.set(t.id, baseChannelColors.get(t.startChannel)));
             }
-            this._tagColors.clear();
-            tagColors.forEach((c, id) => this._tagColors.set(id, c));
+            else {
+                let pitchCounter = 0, modCounter = 0;
+                const tagColors = new Map();
+                for (let ch = 0; ch < channelCount; ch++) {
+                    tags
+                        .filter(t => t.startChannel === ch)
+                        .forEach(tag => {
+                        const i = (pitchCounter % 10) + 1;
+                        tagColors.set(tag.id, {
+                            primary: `var(--pitch${i}-primary-note)`,
+                            secondary: `var(--pitch${i}-secondary-note)`,
+                        });
+                        pitchCounter = (pitchCounter + 1) % 10;
+                    });
+                    if (song.getChannelIsMod(ch)) {
+                        const i = (modCounter % 4) + 1;
+                        baseChannelColors.set(ch, {
+                            primary: `var(--mod${i}-primary-note)`,
+                            secondary: `var(--mod${i}-secondary-note)`,
+                        });
+                        modCounter = (modCounter + 1) % 4;
+                    }
+                    else {
+                        const i = (pitchCounter % 10) + 1;
+                        baseChannelColors.set(ch, {
+                            primary: `var(--pitch${i}-primary-note)`,
+                            secondary: `var(--pitch${i}-secondary-note)`,
+                        });
+                        pitchCounter = (pitchCounter + 1) % 10;
+                    }
+                }
+                this._tagColors.clear();
+                tagColors.forEach((c, id) => this._tagColors.set(id, c));
+            }
             for (let ch = 0; ch < channelCount; ch++) {
-                const innermostTag = tags
-                    .filter((t) => t.startChannel <= ch && ch <= t.endChannel)
+                const innermost = tags
+                    .filter(t => t.startChannel <= ch && ch <= t.endChannel)
                     .pop();
-                if (innermostTag) {
-                    this._channelColors.set(ch, tagColors.get(innermostTag.id));
+                if (innermost) {
+                    this._channelColors.set(ch, this._tagColors.get(innermost.id));
                 }
                 else {
                     this._channelColors.set(ch, baseChannelColors.get(ch));
@@ -46496,40 +46587,72 @@ You should be redirected to the song at:<br /><br />
             const song = this._doc.song;
             const channelCount = song.getChannelCount();
             const tags = song.channelTags;
-            let pitchCounter = 0;
-            let modCounter = 0;
-            const tagColors = new Map();
+            const rootStyle = getComputedStyle(document.documentElement);
+            const useFormula = rootStyle.getPropertyValue("--use-color-formula").trim() === "true";
             const baseChannelColors = new Map();
-            for (let ch = 0; ch < channelCount; ch++) {
-                tags
-                    .filter((t) => t.startChannel === ch)
-                    .forEach((tag) => {
-                    const colorIndex = (pitchCounter % 10) + 1;
-                    const colors = {
-                        primary: `var(--pitch${colorIndex}-primary-note)`,
-                        secondary: `var(--pitch${colorIndex}-secondary-note)`,
-                    };
-                    tagColors.set(tag.id, colors);
-                    pitchCounter = (pitchCounter + 1) % 10;
-                });
-                if (song.getChannelIsMod(ch)) {
-                    const colorIndex = (modCounter % 4) + 1;
+            if (useFormula) {
+                let pitchIdx = 0, noiseIdx = 0, modIdx = 0;
+                const getColor = (type, element, idx) => {
+                    const prefix = `--${type}-${element}`;
+                    const baseH = parseFloat(rootStyle.getPropertyValue(`${prefix}-hue`));
+                    const stepH = parseFloat(rootStyle.getPropertyValue(`${prefix}-hue-scale`)) * 6.5;
+                    const baseS = parseFloat(rootStyle.getPropertyValue(`${prefix}-sat`)) * 1;
+                    const stepS = parseFloat(rootStyle.getPropertyValue(`${prefix}-sat-scale`));
+                    const baseL = parseFloat(rootStyle.getPropertyValue(`${prefix}-lum`)) * .85;
+                    const stepL = parseFloat(rootStyle.getPropertyValue(`${prefix}-lum-scale`));
+                    const h = ((baseH + idx * stepH) % 360 + 360) % 360;
+                    const s = Math.min(100, Math.max(0, baseS + idx * stepS));
+                    const l = Math.min(100, Math.max(0, baseL + idx * stepL));
+                    return `hsl(${h}, ${s}%, ${l}%)`;
+                };
+                for (let ch = 0; ch < channelCount; ch++) {
+                    const type = song.getChannelIsMod(ch)
+                        ? "mod"
+                        : song.getChannelIsNoise(ch)
+                            ? "noise"
+                            : "pitch";
+                    const idx = type === "pitch" ? pitchIdx++ : type === "noise" ? noiseIdx++ : modIdx++;
                     baseChannelColors.set(ch, {
-                        primary: `var(--mod${colorIndex}-primary-note)`,
-                        secondary: `var(--mod${colorIndex}-secondary-note)`,
+                        primary: getColor(type, "primary-note", idx),
+                        secondary: getColor(type, "secondary-note", idx),
                     });
-                    modCounter = (modCounter + 1) % 4;
                 }
-                else {
-                    const colorIndex = (pitchCounter % 10) + 1;
-                    baseChannelColors.set(ch, {
-                        primary: `var(--pitch${colorIndex}-primary-note)`,
-                        secondary: `var(--pitch${colorIndex}-secondary-note)`,
-                    });
-                    pitchCounter = (pitchCounter + 1) % 10;
-                }
+                this._tagColors.clear();
+                tags.forEach((t) => this._tagColors.set(t.id, baseChannelColors.get(t.startChannel)));
             }
-            this._tagColors = tagColors;
+            else {
+                let pitchCounter = 0, modCounter = 0;
+                const tagColors = new Map();
+                for (let ch = 0; ch < channelCount; ch++) {
+                    tags
+                        .filter((t) => t.startChannel === ch)
+                        .forEach((tag) => {
+                        const i = (pitchCounter % 10) + 1;
+                        tagColors.set(tag.id, {
+                            primary: `var(--pitch${i}-primary-note)`,
+                            secondary: `var(--pitch${i}-secondary-note)`,
+                        });
+                        pitchCounter = (pitchCounter + 1) % 10;
+                    });
+                    if (song.getChannelIsMod(ch)) {
+                        const i = (modCounter % 4) + 1;
+                        baseChannelColors.set(ch, {
+                            primary: `var(--mod${i}-primary-note)`,
+                            secondary: `var(--mod${i}-secondary-note)`,
+                        });
+                        modCounter = (modCounter + 1) % 4;
+                    }
+                    else {
+                        const i = (pitchCounter % 10) + 1;
+                        baseChannelColors.set(ch, {
+                            primary: `var(--pitch${i}-primary-note)`,
+                            secondary: `var(--pitch${i}-secondary-note)`,
+                        });
+                        pitchCounter = (pitchCounter + 1) % 10;
+                    }
+                }
+                this._tagColors = tagColors;
+            }
             for (let ch = 0; ch < channelCount; ch++) {
                 const covering = tags.filter((t) => t.startChannel <= ch && ch <= t.endChannel);
                 let innermostTag = null;
@@ -46544,7 +46667,7 @@ You should be redirected to the song at:<br /><br />
                     }
                 }
                 if (innermostTag) {
-                    this._channelColors.set(ch, tagColors.get(innermostTag.id));
+                    this._channelColors.set(ch, this._tagColors.get(innermostTag.id));
                 }
                 else {
                     this._channelColors.set(ch, baseChannelColors.get(ch));
@@ -50127,7 +50250,7 @@ You should be redirected to the song at:<br /><br />
             this._instrumentExportGroup = div({ class: "editor-controls" }, div({ class: "selectRow" }, this._instrumentExportButton, this._instrumentImportButton));
             this._instrumentSettingsTextRow = div({
                 id: "instrumentSettingsText",
-                style: `padding: 3px 0; max-width: 15em; text-align: center; color: ${getSecondaryNoteColor(this.doc, this.doc.channel)};`,
+                style: `padding: 3px 0; max-width: 15em; text-align: center; color: inherit`,
             }, "Instrument Settings");
             this._instrumentTypeSelectRow = div({ class: "selectRow", id: "typeSelectRow" }, span({ class: "tip", onclick: () => this._openPrompt("instrumentType") }, "Type:"), div(div({ class: "pitchSelect" }, this._pitchedPresetSelect), div({ class: "drumSelect" }, this._drumPresetSelect)));
             this._instrumentSettingsGroup = div({ class: "editor-controls" }, this._instrumentSettingsTextRow, this._instrumentsButtonRow, this._instrumentTypeSelectRow, this._instrumentVolumeSliderRow, this._customInstrumentSettingsGroup);
@@ -50197,7 +50320,7 @@ You should be redirected to the song at:<br /><br />
                 style: `width: 80%; height: 4px; overflow: hidden; margin-left: auto; margin-right: auto; margin-top: 0.5em; cursor: pointer; background-color: ${ColorConfig.indicatorSecondary};`,
             }, this._sampleLoadingBar);
             this._sampleLoadingStatusContainer = div({ style: "cursor: pointer;" }, div({
-                style: `margin-top: 0.5em; text-align: center; color: ${getSecondaryNoteColor(this.doc, this.doc.channel)};`,
+                style: `margin-top: 0.5em; text-align: center; color: inherit`,
             }, "Sample Loading Status"), div({ class: "selectRow", style: "height: 6px; margin-bottom: 0.5em;" }, this._sampleLoadingBarContainer));
             this._songSettingsArea = div({ class: "song-settings-area" }, div({ class: "editor-controls" }, div({ class: "editor-song-settings" }, div({
                 style: "margin: 3px 0; position: relative; text-align: center; color: ${getSecondaryNoteColor(this.doc, this.doc.channel)};",
@@ -51230,17 +51353,24 @@ You should be redirected to the song at:<br /><br />
                         }
                         this._modChannelBoxes[mod].selectedIndex = selectedIndex;
                         let channel = this.doc.song.channels[modChannel];
-                        if (this._modInstrumentBoxes[mod].children.length !=
-                            channel.instruments.length + 2) {
-                            while (this._modInstrumentBoxes[mod].firstChild)
-                                this._modInstrumentBoxes[mod].remove(0);
-                            const instrumentList = [];
-                            for (let i = 0; i < channel.instruments.length; i++) {
-                                instrumentList.push("" + i + 1);
-                            }
-                            instrumentList.push("all");
-                            instrumentList.push("active");
-                            buildOptions(this._modInstrumentBoxes[mod], instrumentList);
+                        const instBox = this._modInstrumentBoxes[mod];
+                        const oldCount = instBox.children.length;
+                        const oldSel = instBox.selectedIndex;
+                        const wasAll = oldSel === oldCount - 2;
+                        const wasAct = oldSel === oldCount - 1;
+                        const newCount = channel.instruments.length + 2;
+                        if (oldCount !== newCount) {
+                            while (instBox.firstChild)
+                                instBox.remove(0);
+                            const list = channel.instruments.map((_, i) => String(i + 1));
+                            list.push("all", "active");
+                            buildOptions(instBox, list);
+                            if (wasAll)
+                                instBox.selectedIndex = newCount - 2;
+                            else if (wasAct)
+                                instBox.selectedIndex = newCount - 1;
+                            else
+                                instBox.selectedIndex = Math.min(oldSel, newCount - 1);
                         }
                         if (channel.bars[this.doc.bar] > 0) {
                             let usedInstruments = channel.patterns[channel.bars[this.doc.bar] - 1].instruments;
@@ -51258,8 +51388,9 @@ You should be redirected to the song at:<br /><br />
                                 this._modInstrumentBoxes[mod].options[i].label = "" + (i + 1);
                             }
                         }
-                        this._modInstrumentBoxes[mod].selectedIndex =
-                            instrument.modInstruments[mod];
+                        if (!wasAll && !wasAct) {
+                            instBox.selectedIndex = instrument.modInstruments[mod];
+                        }
                         if (instrument.modChannels[mod] != -2) {
                             while (this._modSetBoxes[mod].firstChild)
                                 this._modSetBoxes[mod].remove(0);

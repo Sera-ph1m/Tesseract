@@ -86,66 +86,122 @@ export class MuteEditor {
   // Helper function to re-calculate colors according to the new logic.
   // Duplicated from TrackEditor because MuteEditor cannot access TrackEditor's internal state.
   private _computeChannelColors(): void {
-    this._channelColors.clear();
-    const song = this._doc.song;
-    const channelCount = song.getChannelCount();
-    const tags = song.channelTags;
-
-    let pitchCounter = 0;
-    let modCounter = 0;
-
-    const tagColors = new Map<string, { primary: string; secondary: string }>();
-    const baseChannelColors = new Map<
-      number,
-      { primary: string; secondary: string }
-    >();
-
-    // First pass: Iterate through visual rows to determine base colors and tag colors
-    for (let ch = 0; ch < channelCount; ch++) {
-      tags
-        .filter((t) => t.startChannel === ch)
-        .forEach((tag) => {
-          const colorIndex = (pitchCounter % 10) + 1;
-          tagColors.set(tag.id, {
-            primary: `var(--pitch${colorIndex}-primary-note)`,
-            secondary: `var(--pitch${colorIndex}-secondary-note)`,
-          });
-          pitchCounter = (pitchCounter + 1) % 10;
-        });
-
-      if (song.getChannelIsMod(ch)) {
-        const colorIndex = (modCounter % 4) + 1;
-        baseChannelColors.set(ch, {
-          primary: `var(--mod${colorIndex}-primary-note)`,
-          secondary: `var(--mod${colorIndex}-secondary-note)`,
-        });
-        modCounter = (modCounter + 1) % 4;
-      } else {
-        const colorIndex = (pitchCounter % 10) + 1;
-        baseChannelColors.set(ch, {
-          primary: `var(--pitch${colorIndex}-primary-note)`,
-          secondary: `var(--pitch${colorIndex}-secondary-note)`,
-        });
-        pitchCounter = (pitchCounter + 1) % 10;
-      }
-    }
-
-    // Cache per-tag colors for rendering mute-rows
-    this._tagColors.clear();
-    tagColors.forEach((c, id) => this._tagColors.set(id, c));
-
-    // Second pass: Apply tag overrides to find the final color for each channel
-    for (let ch = 0; ch < channelCount; ch++) {
-      const innermostTag = tags
-        .filter((t) => t.startChannel <= ch && ch <= t.endChannel)
-        .pop();
-      if (innermostTag) {
-        this._channelColors.set(ch, tagColors.get(innermostTag.id)!);
-      } else {
-        this._channelColors.set(ch, baseChannelColors.get(ch)!);
-      }
-    }
-  }
+     // Wipe and gather root CSS vars
+     this._channelColors.clear();
+     const song = this._doc.song;
+     const channelCount = song.getChannelCount();
+     const tags = song.channelTags;
+     const rootStyle = getComputedStyle(document.documentElement);
+     const useFormula =
+       rootStyle.getPropertyValue("--use-color-formula").trim() === "true";
+ 
+     // We'll store either dynamic or static results here first
+     const baseChannelColors = new Map<number, {
+       primary: string;
+       secondary: string;
+     }>();
+ 
+     if (useFormula) {
+       // dynamic HSL stepping
+       let pitchIdx = 0, noiseIdx = 0, modIdx = 0;
+       const getColor = (
+         type: "pitch" | "noise" | "mod",
+         element: "primary-note" | "secondary-note",
+         idx: number
+       ): string => {
+         const prefix = `--${type}-${element}`;
+         const baseH = parseFloat(rootStyle.getPropertyValue(`${prefix}-hue`));
+         const stepH = parseFloat(
+           rootStyle.getPropertyValue(`${prefix}-hue-scale`)
+         ) * 6.5;
+         const baseS = parseFloat(rootStyle.getPropertyValue(`${prefix}-sat`));
+         const stepS = parseFloat(
+           rootStyle.getPropertyValue(`${prefix}-sat-scale`)
+         );
+         const baseL = parseFloat(rootStyle.getPropertyValue(`${prefix}-lum`)) * .85;
+         const stepL = parseFloat(
+           rootStyle.getPropertyValue(`${prefix}-lum-scale`)
+         );
+         const h = ((baseH + idx * stepH) % 360 + 360) % 360;
+         const s = Math.min(100, Math.max(0, baseS + idx * stepS));
+         const l = Math.min(100, Math.max(0, baseL + idx * stepL));
+         return `hsl(${h}, ${s}%, ${l}%)`;
+       };
+ 
+       for (let ch = 0; ch < channelCount; ch++) {
+         const type = song.getChannelIsMod(ch)
+           ? "mod"
+           : song.getChannelIsNoise(ch)
+             ? "noise"
+             : "pitch";
+         const idx =
+           type === "pitch" ? pitchIdx++ :
+           type === "noise" ? noiseIdx++ :
+           modIdx++;
+         baseChannelColors.set(ch, {
+           primary: getColor(type, "primary-note", idx),
+           secondary: getColor(type, "secondary-note", idx),
+         });
+       }
+ 
+       // Tag‐color = the color of its first channel
+       this._tagColors.clear();
+       tags.forEach(t =>
+         this._tagColors.set(t.id, baseChannelColors.get(t.startChannel)!)
+       );
+     } else {
+       // static CSS‐var lookup (original)
+       let pitchCounter = 0, modCounter = 0;
+       const tagColors = new Map<string, {
+         primary: string;
+         secondary: string;
+       }>();
+ 
+       for (let ch = 0; ch < channelCount; ch++) {
+         tags
+           .filter(t => t.startChannel === ch)
+           .forEach(tag => {
+             const i = (pitchCounter % 10) + 1;
+             tagColors.set(tag.id, {
+               primary: `var(--pitch${i}-primary-note)`,
+               secondary: `var(--pitch${i}-secondary-note)`,
+             });
+             pitchCounter = (pitchCounter + 1) % 10;
+           });
+ 
+         if (song.getChannelIsMod(ch)) {
+           const i = (modCounter % 4) + 1;
+           baseChannelColors.set(ch, {
+             primary: `var(--mod${i}-primary-note)`,
+             secondary: `var(--mod${i}-secondary-note)`,
+           });
+           modCounter = (modCounter + 1) % 4;
+         } else {
+           const i = (pitchCounter % 10) + 1;
+           baseChannelColors.set(ch, {
+             primary: `var(--pitch${i}-primary-note)`,
+             secondary: `var(--pitch${i}-secondary-note)`,
+           });
+           pitchCounter = (pitchCounter + 1) % 10;
+         }
+       }
+ 
+       this._tagColors.clear();
+       tagColors.forEach((c, id) => this._tagColors.set(id, c));
+     }
+ 
+     // Final sweep: override with tags or base
+     for (let ch = 0; ch < channelCount; ch++) {
+       const innermost = tags
+         .filter(t => t.startChannel <= ch && ch <= t.endChannel)
+         .pop();
+       if (innermost) {
+         this._channelColors.set(ch, this._tagColors.get(innermost.id)!);
+       } else {
+         this._channelColors.set(ch, baseChannelColors.get(ch)!);
+       }
+     }
+	}
 
   private _renderedPitchChannels: number = 0;
   private _renderedNoiseChannels: number = 0;

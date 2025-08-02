@@ -6,10 +6,102 @@ import { SongDocument } from "./SongDocument";
 import { HTML } from "imperative-html/dist/esm/elements-strict";
 
 function computeColorForChannel(doc: SongDocument, channelIndex: number, type: "primary" | "secondary"): string {
-	const song = doc.song;
+		const rootStyle = getComputedStyle(document.documentElement);
+		const useFormula = rootStyle
+			.getPropertyValue("--use-color-formula")
+			.trim() === "true";
+		if (useFormula) {
+			const song = doc.song;
+			const channelCount = song.getChannelCount();
+			const tags = song.channelTags;
+			let pitchIdx = 0, noiseIdx = 0, modIdx = 0;
+			const baseChannelColors = new Map<
+				number,
+				{ primary: string; secondary: string }
+			>();
+			const tagColors = new Map<
+				string,
+				{ primary: string; secondary: string }
+			>();
+			function getColor(
+				mode: "pitch" | "noise" | "mod",
+				element: "primary-note" | "secondary-note",
+				idx: number
+			): string {
+				const prefix = `--${mode}-${element}`;
+				const baseH = parseFloat(
+					rootStyle.getPropertyValue(`${prefix}-hue`)
+				);
+				const stepH =
+					parseFloat(
+						rootStyle.getPropertyValue(`${prefix}-hue-scale`)
+					) * 6.5;
+				const baseS = parseFloat(
+					rootStyle.getPropertyValue(`${prefix}-sat`)
+				);
+				const stepS = parseFloat(
+					rootStyle.getPropertyValue(`${prefix}-sat-scale`)
+				);
+				const baseL =
+					parseFloat(
+						rootStyle.getPropertyValue(`${prefix}-lum`)
+					) * 0.85;
+				const stepL = parseFloat(
+					rootStyle.getPropertyValue(`${prefix}-lum-scale`)
+				);
+				const h = ((baseH + idx * stepH) % 360 + 360) % 360;
+				const s = Math.min(100, Math.max(0, baseS + idx * stepS));
+				const l = Math.min(100, Math.max(0, baseL + idx * stepL));
+				return `hsl(${h}, ${s}%, ${l}%)`;
+			}
+
+			for (let ch = 0; ch < channelCount; ch++) {
+				const mode = song.getChannelIsMod(ch)
+					? "mod"
+					: song.getChannelIsNoise(ch)
+					? "noise"
+					: "pitch";
+				const idx =
+					mode === "pitch"
+						? pitchIdx++
+						: mode === "noise"
+						? noiseIdx++
+						: modIdx++;
+				const primary = getColor(mode, "primary-note", idx);
+				const secondary = getColor(mode, "secondary-note", idx);
+				baseChannelColors.set(ch, { primary, secondary });
+				tags
+					.filter(t => t.startChannel === ch)
+					.forEach(t => tagColors.set(t.id, { primary, secondary }));
+			}
+			const covering = tags.filter(
+				t =>
+					t.startChannel <= channelIndex &&
+					channelIndex <= t.endChannel
+			);
+			if (covering.length) {
+				let minRange = Infinity;
+				covering.forEach(t => {
+					minRange = Math.min(
+						minRange,
+						t.endChannel - t.startChannel
+					);
+				});
+				const innermost = covering
+					.filter(
+						t => t.endChannel - t.startChannel === minRange
+					)
+					.reduce((best, t) =>
+						tags.indexOf(t) > tags.indexOf(best) ? t : best
+					);
+				return tagColors.get(innermost.id)![type];
+			}
+			return baseChannelColors.get(channelIndex)![type];
+		}
+
+		const song = doc.song;
 	const channelCount = song.getChannelCount();
 	const tags = song.channelTags;
-
 	let pitchCounter = 0;
 	let modCounter = 0;
 
