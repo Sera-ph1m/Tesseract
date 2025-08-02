@@ -41617,8 +41617,21 @@ You should be redirected to the song at:<br /><br />
             this._tagContextMenu.style.display = "block";
             const menuHeight = this._tagContextMenu.offsetHeight;
             this._tagContextMenu.style.visibility = "";
-            this._tagContextMenu.style.left = event.clientX + "px";
-            this._tagContextMenu.style.top = event.clientY - menuHeight + "px";
+            const vw = window.innerWidth;
+            const vh = window.innerHeight;
+            const mw = this._tagContextMenu.offsetWidth;
+            let lx = event.clientX;
+            let ty = event.clientY - menuHeight;
+            if (lx + mw > vw)
+                lx = vw - mw;
+            if (lx < 0)
+                lx = 0;
+            if (ty + menuHeight > vh)
+                ty = vh - menuHeight;
+            if (ty < 0)
+                ty = 0;
+            this._tagContextMenu.style.left = lx + "px";
+            this._tagContextMenu.style.top = ty + "px";
         }
         openChannelContextMenu(channelIndex, event) {
             this._activeChannelIndexForMenu = channelIndex;
@@ -41672,8 +41685,21 @@ You should be redirected to the song at:<br /><br />
             this._channelContextMenu.style.display = "block";
             const h = this._channelContextMenu.offsetHeight;
             this._channelContextMenu.style.visibility = "";
-            this._channelContextMenu.style.left = `${event.clientX}px`;
-            this._channelContextMenu.style.top = `${event.clientY - h}px`;
+            const vw = window.innerWidth;
+            const vh = window.innerHeight;
+            const mw = this._channelContextMenu.offsetWidth;
+            let lx = event.clientX;
+            let ty = event.clientY - h;
+            if (lx + mw > vw)
+                lx = vw - mw;
+            if (lx < 0)
+                lx = 0;
+            if (ty + h > vh)
+                ty = vh - h;
+            if (ty < 0)
+                ty = 0;
+            this._channelContextMenu.style.left = lx + "px";
+            this._channelContextMenu.style.top = ty + "px";
         }
     }
 
