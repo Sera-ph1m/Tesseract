@@ -35664,9 +35664,8 @@ You should be redirected to the song at:<br /><br />
 
     function computeColorForChannel(doc, channelIndex, type) {
         const rootStyle = getComputedStyle(document.documentElement);
-        const useFormula = rootStyle
-            .getPropertyValue("--use-color-formula")
-            .trim() === "true";
+        const useFormula = rootStyle.getPropertyValue("--use-color-formula").trim() === "true";
+        const noTagColorsInChannels = rootStyle.getPropertyValue("--NoTagColorsInChannels").trim() === "true";
         if (useFormula) {
             const song = doc.song;
             const channelCount = song.getChannelCount();
@@ -35704,6 +35703,9 @@ You should be redirected to the song at:<br /><br />
                 tags
                     .filter(t => t.startChannel === ch)
                     .forEach(t => tagColors.set(t.id, { primary, secondary }));
+            }
+            if (noTagColorsInChannels) {
+                return baseChannelColors.get(channelIndex)[type];
             }
             const covering = tags.filter(t => t.startChannel <= channelIndex &&
                 channelIndex <= t.endChannel);
@@ -35754,6 +35756,9 @@ You should be redirected to the song at:<br /><br />
                 });
                 pitchCounter = (pitchCounter + 1) % 10;
             }
+        }
+        if (noTagColorsInChannels) {
+            return baseChannelColors.get(channelIndex)[type];
         }
         const innermostTag = tags
             .filter(t => t.startChannel <= channelIndex && channelIndex <= t.endChannel)
@@ -46589,6 +46594,7 @@ You should be redirected to the song at:<br /><br />
             const tags = song.channelTags;
             const rootStyle = getComputedStyle(document.documentElement);
             const useFormula = rootStyle.getPropertyValue("--use-color-formula").trim() === "true";
+            const noTagColorsInChannels = rootStyle.getPropertyValue("--NoTagColorsInChannels").trim() === "true";
             const baseChannelColors = new Map();
             if (useFormula) {
                 let pitchIdx = 0, noiseIdx = 0, modIdx = 0;
@@ -46654,6 +46660,10 @@ You should be redirected to the song at:<br /><br />
                 this._tagColors = tagColors;
             }
             for (let ch = 0; ch < channelCount; ch++) {
+                if (noTagColorsInChannels) {
+                    this._channelColors.set(ch, baseChannelColors.get(ch));
+                    continue;
+                }
                 const covering = tags.filter((t) => t.startChannel <= ch && ch <= t.endChannel);
                 let innermostTag = null;
                 if (covering.length > 0) {

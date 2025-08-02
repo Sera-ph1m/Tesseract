@@ -232,9 +232,8 @@ export class TrackEditor {
 	const channelCount = song.getChannelCount();
 	const tags = song.channelTags;
 	const rootStyle = getComputedStyle(document.documentElement);
-	const useFormula =
-	  rootStyle.getPropertyValue("--use-color-formula").trim() === "true";
-
+	const useFormula = rootStyle.getPropertyValue("--use-color-formula").trim() === "true";
+   const noTagColorsInChannels =rootStyle.getPropertyValue("--NoTagColorsInChannels")  .trim() === "true";
 	const baseChannelColors = new Map<
 	  number,
 	  { primary: string; secondary: string }
@@ -329,8 +328,14 @@ export class TrackEditor {
 	  this._tagColors = tagColors;
 	}
 
-	// Final sweep: override with tags or base
+	// Final pass: override with tags or base
 	for (let ch = 0; ch < channelCount; ch++) {
+       if (noTagColorsInChannels) {
+         // always base color
+         this._channelColors.set(ch,
+           baseChannelColors.get(ch)!);
+         continue;
+       }
 	  const covering = tags.filter(
 		 (t) => t.startChannel <= ch && ch <= t.endChannel
 	  );

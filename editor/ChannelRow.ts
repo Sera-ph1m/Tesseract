@@ -7,9 +7,8 @@ import { HTML } from "imperative-html/dist/esm/elements-strict";
 
 function computeColorForChannel(doc: SongDocument, channelIndex: number, type: "primary" | "secondary"): string {
 		const rootStyle = getComputedStyle(document.documentElement);
-		const useFormula = rootStyle
-			.getPropertyValue("--use-color-formula")
-			.trim() === "true";
+		const useFormula = rootStyle .getPropertyValue("--use-color-formula") .trim() === "true";
+const noTagColorsInChannels = rootStyle .getPropertyValue("--NoTagColorsInChannels")	.trim() === "true";
 		if (useFormula) {
 			const song = doc.song;
 			const channelCount = song.getChannelCount();
@@ -73,6 +72,10 @@ function computeColorForChannel(doc: SongDocument, channelIndex: number, type: "
 				tags
 					.filter(t => t.startChannel === ch)
 					.forEach(t => tagColors.set(t.id, { primary, secondary }));
+			}
+			// skip tag-override when disabled
+			if (noTagColorsInChannels) {
+				return baseChannelColors.get(channelIndex)![type];
 			}
 			const covering = tags.filter(
 				t =>
@@ -144,6 +147,10 @@ function computeColorForChannel(doc: SongDocument, channelIndex: number, type: "
 		}
 	}
 
+	// skip tag-override when disabled
+	if (noTagColorsInChannels) {
+		return baseChannelColors.get(channelIndex)![type];
+	}
 	// Second pass: Apply tag overrides to find the final color for the requested channelIndex
 	const innermostTag = tags
 		.filter(t => t.startChannel <= channelIndex && channelIndex <= t.endChannel)
