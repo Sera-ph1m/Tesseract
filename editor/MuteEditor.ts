@@ -728,52 +728,55 @@ export class MuteEditor {
         break;
       }
       case "chnUp": {
-        // 1) Outermost tag ending at ch-1 → expand (favor larger spans, tie=older)
-        const endTagsUp = tags.filter((t) => t.endChannel === ch - 1);
-        if (endTagsUp.length > 0) {
-          const outer = endTagsUp.reduce((best: ChannelTag, t: ChannelTag) => {
-            const spanBest = best.endChannel - best.startChannel;
-            const spanT = t.endChannel - t.startChannel;
-            if (spanT > spanBest) return t; // larger=outer
-            if (spanT < spanBest) return best;
-            // tie: pick older
-            return tags.indexOf(t) < tags.indexOf(best) ? t : best;
-          }, endTagsUp[0]);
-          this._doc.record(
-            new ChangeChannelTagRange(
-              this._doc,
-              outer.id,
-              outer.startChannel,
-              ch
-            )
+        // 1) Innermost tag starting at ch → shrink (or delete if span==0)
+        const startTagsUp = tags.filter((t) => t.startChannel === ch);
+        if (startTagsUp.length > 0) {
+          const inner = startTagsUp.reduce(
+            (best: ChannelTag, t: ChannelTag) => {
+              const spanBest = best.endChannel - best.startChannel;
+              const spanT = t.endChannel - t.startChannel;
+              if (spanT < spanBest) return t;  // smaller = inner
+              if (spanT > spanBest) return best;
+              // tie: pick newer
+              return tags.indexOf(t) > tags.indexOf(best) ? t : best;
+            },
+            startTagsUp[0]
           );
+          if (inner.startChannel === inner.endChannel) {
+            this._doc.record(new ChangeRemoveChannelTag(this._doc, inner.id));
+          } else {
+            this._doc.record(
+              new ChangeChannelTagRange(
+                this._doc,
+                inner.id,
+                ch + 1,
+                inner.endChannel
+              )
+            );
+          }
         } else {
-          // 2) Innermost tag starting at ch → shrink (or delete if span==0)
-          const startTagsUp = tags.filter((t) => t.startChannel === ch);
-          if (startTagsUp.length > 0) {
-            const inner = startTagsUp.reduce(
+          // 2) Outermost tag ending at ch-1 → expand (favor larger spans, tie=older)
+          const endTagsUp = tags.filter((t) => t.endChannel === ch - 1);
+          if (endTagsUp.length > 0) {
+            const outer = endTagsUp.reduce(
               (best: ChannelTag, t: ChannelTag) => {
                 const spanBest = best.endChannel - best.startChannel;
                 const spanT = t.endChannel - t.startChannel;
-                if (spanT < spanBest) return t; // smaller=inner
-                if (spanT > spanBest) return best;
-                // tie: pick newer
-                return tags.indexOf(t) > tags.indexOf(best) ? t : best;
+                if (spanT > spanBest) return t;  // larger = outer
+                if (spanT < spanBest) return best;
+                // tie: pick older
+                return tags.indexOf(t) < tags.indexOf(best) ? t : best;
               },
-              startTagsUp[0]
+              endTagsUp[0]
             );
-            if (inner.startChannel === inner.endChannel) {
-              this._doc.record(new ChangeRemoveChannelTag(this._doc, inner.id));
-            } else {
-              this._doc.record(
-                new ChangeChannelTagRange(
-                  this._doc,
-                  inner.id,
-                  ch + 1,
-                  inner.endChannel
-                )
-              );
-            }
+            this._doc.record(
+              new ChangeChannelTagRange(
+                this._doc,
+                outer.id,
+                outer.startChannel,
+                ch
+              )
+            );
           }
           // 3) Otherwise swap up
           else if (ch > 0) {
