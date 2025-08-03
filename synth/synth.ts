@@ -5873,8 +5873,8 @@ export class Song {
                 } else {
                     const instrument = this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator];
                     instrument.unison = clamp(0, Config.unisons.length + 1, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
-                    const unisonLength = (beforeFive || !fromSlarmoosBox && !fromSomethingBox) ? 27 : Config.unisons.length; //27 was the old length before I added >2 voice presets
-                    if (((fromUltraBox && !beforeFive) || fromSlarmoosBox) && (instrument.unison == unisonLength)) {
+                    const unisonLength = (beforeFive && !fromSlarmoosBox && !fromSomethingBox) ? 27 : Config.unisons.length; //27 was the old length before I added >2 voice presets
+                    if (((fromUltraBox && !beforeFive) || fromSlarmoosBox || fromSomethingBox) && (instrument.unison == unisonLength)) {
                         // if (instrument.unison == Config.unisons.length) {
                         instrument.unison = Config.unisons.length;
                         instrument.unisonVoices = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
@@ -6149,7 +6149,7 @@ export class Song {
                     const instrument: Instrument = this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator];
                     instrument.pan = clamp(0, Config.panMax + 1, (base64CharCodeToInt[compressed.charCodeAt(charIndex++)] << 6) + base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
                     // Pan delay follows on v3 + v4
-                    if (fromJummBox && !beforeThree || fromGoldBox || fromUltraBox || fromSlarmoosBox) {
+                    if (fromJummBox && !beforeThree || fromGoldBox || fromUltraBox || fromSlarmoosBox || fromSomethingBox) {
                         instrument.panDelay = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
                     }
                 } else {
@@ -6632,7 +6632,7 @@ export class Song {
                         instrument.effects |= 1 << EffectType.distortion;
                     }
                 } else {
-                    if (fromUltraBox || fromSlarmoosBox) {
+                    if (fromUltraBox || fromSlarmoosBox || fromSomethingBox) {
                         const instrument: Instrument = this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator];
                         instrument.decimalOffset = clamp(0, 50 + 1, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
                     }

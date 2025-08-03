@@ -16594,8 +16594,8 @@ li.select2-results__option[role=group] > strong:hover {
                                 else {
                                     const instrument = this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator];
                                     instrument.unison = clamp(0, Config.unisons.length + 1, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
-                                    const unisonLength = (beforeFive || !fromSlarmoosBox && !fromSomethingBox) ? 27 : Config.unisons.length;
-                                    if (((fromUltraBox && !beforeFive) || fromSlarmoosBox) && (instrument.unison == unisonLength)) {
+                                    const unisonLength = (beforeFive && !fromSlarmoosBox && !fromSomethingBox) ? 27 : Config.unisons.length;
+                                    if (((fromUltraBox && !beforeFive) || fromSlarmoosBox || fromSomethingBox) && (instrument.unison == unisonLength)) {
                                         instrument.unison = Config.unisons.length;
                                         instrument.unisonVoices = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
                                         const unisonSpreadNegative = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
@@ -16872,7 +16872,7 @@ li.select2-results__option[role=group] > strong:hover {
                                 else if ((fromJummBox && beforeFive) || (beforeFour && fromGoldBox)) {
                                     const instrument = this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator];
                                     instrument.pan = clamp(0, Config.panMax + 1, (base64CharCodeToInt[compressed.charCodeAt(charIndex++)] << 6) + base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
-                                    if (fromJummBox && !beforeThree || fromGoldBox || fromUltraBox || fromSlarmoosBox) {
+                                    if (fromJummBox && !beforeThree || fromGoldBox || fromUltraBox || fromSlarmoosBox || fromSomethingBox) {
                                         instrument.panDelay = base64CharCodeToInt[compressed.charCodeAt(charIndex++)];
                                     }
                                 }
@@ -17373,7 +17373,7 @@ li.select2-results__option[role=group] > strong:hover {
                                     }
                                 }
                                 else {
-                                    if (fromUltraBox || fromSlarmoosBox) {
+                                    if (fromUltraBox || fromSlarmoosBox || fromSomethingBox) {
                                         const instrument = this.channels[instrumentChannelIterator].instruments[instrumentIndexIterator];
                                         instrument.decimalOffset = clamp(0, 50 + 1, base64CharCodeToInt[compressed.charCodeAt(charIndex++)]);
                                     }
