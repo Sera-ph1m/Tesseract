@@ -9880,12 +9880,13 @@ var beepbox = (function (exports) {
         return { interval: interval, time: time, size: size };
     }
     class Note {
-        constructor(pitch, start, end, size, fadeout = false) {
+        constructor(pitch, start, end, size, fadeout = false, chipWaveStartOffset = 0) {
             this.pitches = [pitch];
             this.pins = [makeNotePin(0, 0, size), makeNotePin(0, end - start, fadeout ? 0 : size)];
             this.start = start;
             this.end = end;
             this.continuesLastPattern = false;
+            this.chipWaveStartOffset = chipWaveStartOffset;
         }
         pickMainInterval() {
             let longestFlatIntervalDuration = 0;
@@ -9921,6 +9922,7 @@ var beepbox = (function (exports) {
                 newNote.pins.push(makeNotePin(pin.interval, pin.time, pin.size));
             }
             newNote.continuesLastPattern = this.continuesLastPattern;
+            newNote.chipWaveStartOffset = this.chipWaveStartOffset;
             return newNote;
         }
         getEndPinIndex(part) {
@@ -20940,6 +20942,19 @@ var beepbox = (function (exports) {
                     }
                 }
             }
+            if (!tone.atNoteStart && tone.freshlyAllocated && tone.note != null && instrument.type == 0 && (Config.chipWaves[instrument.chipWave].isCustomSampled || Config.chipWaves[instrument.chipWave].isSampled)) {
+                const noteStartTick = tone.noteStartPart * Config.ticksPerPart;
+                const currentTick = (this.beat * Config.partsPerBeat + this.part) * Config.ticksPerPart + this.tick;
+                const ticksElapsed = currentTick - noteStartTick;
+                if (ticksElapsed > 0) {
+                    const samplesElapsed = ticksElapsed * samplesPerTick;
+                    const voiceCount = instrument.unisonVoices;
+                    for (let i = 0; i < voiceCount; i++) {
+                        const phaseOffset = samplesElapsed * tone.phaseDeltas[i];
+                        tone.phases[i] += phaseOffset;
+                    }
+                }
+            }
             tone.isOnLastTick = toneIsOnLastTick;
             let tmpNoteFilter = instrument.noteFilter;
             let startPoint;
@@ -21092,7 +21107,9 @@ var beepbox = (function (exports) {
                             tone.prevVibrato = vibratoEnd;
                         }
                     }
-                    tone.ticksSinceReleased = 0;
+                    if (!released) {
+                        tone.ticksSinceReleased = 0;
+                    }
                     let discreteSlideType = -1;
                     if (effectsIncludeDiscreteSlide(instrument.effects)) {
                         discreteSlideType = instrument.discreteSlide;
@@ -21253,6 +21270,53 @@ var beepbox = (function (exports) {
                 tone.noteFilterCount++;
             }
             noteFilterExpression = Math.min(3.0, noteFilterExpression);
+            if (instrument.type == 0 && Config.chipWaves[instrument.chipWave].isCustomSampled) {
+                if ((tone.atNoteStart && !transition.isSeamless && !tone.forceContinueAtStart) || tone.freshlyAllocated) {
+                    let noteStartOffsetSamples = instrument.chipWaveStartOffset + (tone.note ? tone.note.chipWaveStartOffset : 0);
+                    if (!tone.atNoteStart && tone.note != null) {
+                        const note = tone.note;
+                        let elapsedParts = 0;
+                        const partsPerBar = song.beatsPerBar * Config.partsPerBeat;
+                        if (note.start > 0 || !note.continuesLastPattern) {
+                            elapsedParts = currentPart - note.start;
+                        }
+                        else {
+                            let startBar = this.bar;
+                            let startPart = 0;
+                            let bar = this.bar;
+                            let noteToFind = note;
+                            while (noteToFind.start === 0 && noteToFind.continuesLastPattern && bar > 0) {
+                                const prevPattern = song.getPattern(channelIndex, bar - 1);
+                                if (prevPattern == null)
+                                    break;
+                                let matchingPrevNote = null;
+                                for (const prevNote of prevPattern.notes) {
+                                    if (prevNote.end === partsPerBar && Synth.adjacentNotesHaveMatchingPitches(prevNote, noteToFind)) {
+                                        matchingPrevNote = prevNote;
+                                        break;
+                                    }
+                                }
+                                if (matchingPrevNote != null) {
+                                    bar--;
+                                    noteToFind = matchingPrevNote;
+                                }
+                                else {
+                                    break;
+                                }
+                            }
+                            startBar = bar;
+                            startPart = noteToFind.start;
+                            const elapsedBars = this.bar - startBar;
+                            elapsedParts = (elapsedBars * partsPerBar) + currentPart - startPart;
+                        }
+                        const elapsedTicks = elapsedParts * Config.ticksPerPart + this.tick;
+                        noteStartOffsetSamples += elapsedTicks * samplesPerTick;
+                    }
+                    if (tone.note != null) {
+                        tone.note.chipWaveStartOffset = noteStartOffsetSamples;
+                    }
+                }
+            }
             if (instrument.type == 1 || instrument.type == 11) {
                 let sineExpressionBoost = 1.0;
                 let totalCarrierExpression = 0.0;
