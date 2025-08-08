@@ -46434,6 +46434,16 @@ You should be redirected to the song at:<br /><br />
             this._lastScrollTime = 0;
             this._barDropDownGetOpenedPosition = (event) => {
                 this._barDropDownBar = Math.floor(Math.min(this._doc.song.barCount - 1, Math.max(0, this._mouseX / this._barWidth)));
+                event.preventDefault();
+                setTimeout(() => {
+                    try {
+                        this._barDropDown.focus({ preventScroll: true });
+                    }
+                    catch (_a) {
+                        this._barDropDown.focus();
+                    }
+                    this._barDropDown.click();
+                }, 0);
             };
             this._barDropDownHandler = (event) => {
                 var moveBarOffset = this._barDropDown.value == "barBefore" ? 0 : 1;
@@ -46457,6 +46467,7 @@ You should be redirected to the song at:<br /><br />
                     }
                 }
                 this._barDropDown.selectedIndex = -1;
+                this._barDropDown.tabIndex = -1;
             };
             this._whenSelectChanged = () => {
                 this._doc.selection.setPattern(this._select.selectedIndex);
@@ -46633,6 +46644,7 @@ You should be redirected to the song at:<br /><br />
                 determinedCursorType = true;
             }, true);
             this._barDropDown.selectedIndex = -1;
+            this._barDropDown.tabIndex = -1;
             this._barDropDown.addEventListener("change", this._barDropDownHandler);
             this._barDropDown.addEventListener("mousedown", this._barDropDownGetOpenedPosition);
         }
@@ -46793,6 +46805,10 @@ You should be redirected to the song at:<br /><br />
                 cumulativeHeight += rowHeight;
             }
             return null;
+        }
+        getRowOffset(channelIndex) {
+            const info = this._getVisualRowInfo(channelIndex);
+            return info ? info.y : channelIndex * ChannelRow.patternHeight;
         }
         movePlayheadToMouse() {
             if (this._mouseOver) {
@@ -50493,8 +50509,6 @@ You should be redirected to the song at:<br /><br />
                 this._muteEditor.render();
                 this._trackAndMuteContainer.scrollLeft =
                     this.doc.barScrollPos * this.doc.getBarWidth();
-                this._trackAndMuteContainer.scrollTop =
-                    this.doc.channelScrollPos * ChannelRow.patternHeight;
                 if (document.activeElement != this._patternEditor.modDragValueLabel &&
                     this._patternEditor.editingModLabel) {
                     this._patternEditor.stopEditingModLabel(false);

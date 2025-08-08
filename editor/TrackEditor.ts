@@ -211,7 +211,8 @@ export class TrackEditor {
       true
     );
 
-    this._barDropDown.selectedIndex = -1;
+        this._barDropDown.selectedIndex = -1;
+        this._barDropDown.tabIndex = -1;
     this._barDropDown.addEventListener("change", this._barDropDownHandler);
     this._barDropDown.addEventListener(
       "mousedown",
@@ -436,13 +437,24 @@ export class TrackEditor {
     return null;
   }
 
-  private _barDropDownGetOpenedPosition = (event: MouseEvent): void => {
+      private _barDropDownGetOpenedPosition = (event: MouseEvent): void => {
     this._barDropDownBar = Math.floor(
       Math.min(
         this._doc.song.barCount - 1,
         Math.max(0, this._mouseX / this._barWidth)
       )
     );
+    // Prevent the browser's native focus/scroll on mousedown, then open the
+    // native dropdown programmatically without scrolling.
+    event.preventDefault();
+    setTimeout(() => {
+      try {
+        this._barDropDown.focus({ preventScroll: true });
+      } catch {
+        this._barDropDown.focus();
+      }
+      this._barDropDown.click();
+    }, 0);
   };
 
   private _barDropDownHandler = (event: Event): void => {
@@ -470,8 +482,13 @@ export class TrackEditor {
     }
 
     this._barDropDown.selectedIndex = -1;
+    this._barDropDown.tabIndex = -1;
   };
-
+  public getRowOffset(channelIndex: number): number {
+    const info = this._getVisualRowInfo(channelIndex);
+    // fallback to fixed height if something went wrong
+    return info ? info.y : channelIndex * ChannelRow.patternHeight;
+  }
   private _whenSelectChanged = (): void => {
     this._doc.selection.setPattern(this._select.selectedIndex);
   };

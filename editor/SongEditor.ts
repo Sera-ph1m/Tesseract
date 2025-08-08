@@ -5579,8 +5579,8 @@ export class SongEditor {
 
     this._trackAndMuteContainer.scrollLeft =
       this.doc.barScrollPos * this.doc.getBarWidth();
-    this._trackAndMuteContainer.scrollTop =
-      this.doc.channelScrollPos * ChannelRow.patternHeight;
+//    const fullY = this._trackEditor.getRowOffset(this.doc.channel);
+//    this._trackAndMuteContainer.scrollTop = fullY - Config.barEditorHeight;
 
     if (
       document.activeElement != this._patternEditor.modDragValueLabel &&
