@@ -22774,7 +22774,6 @@ li.select2-results__option[role=group] > strong:hover {
                     }
                 }
             }
-            tone.freshlyAllocated = false;
             for (let i = 0; i < Config.maxPitchOrOperatorCount; i++) {
                 tone.phaseDeltas[i] = 0.0;
                 tone.phaseDeltaScales[i] = 0.0;
@@ -23623,7 +23622,59 @@ li.select2-results__option[role=group] > strong:hover {
                         tone.pickedStrings[i].update(this, instrumentState, tone, i, roundedSamplesPerTick, stringDecayStart, stringDecayEnd, instrument.stringSustainType);
                     }
                 }
+                if (tone.freshlyAllocated &&
+                    tone.note != null &&
+                    (instrument.type == 9 ||
+                        (instrument.type == 0 &&
+                            (Config.chipWaves[instrument.chipWave].isSampled ||
+                                Config.chipWaves[instrument.chipWave].isCustomSampled))) &&
+                    (!tone.atNoteStart ||
+                        tone.prevNote != null ||
+                        tone.note.continuesLastPattern)) {
+                    const partsPerBar = Config.partsPerBeat * this.song.beatsPerBar;
+                    const currentPart = this.getCurrentPart();
+                    let originBar = this.bar;
+                    let originStartPart = tone.noteStartPart;
+                    let originPattern = song.getPattern(channelIndex, originBar);
+                    let noteToFind = tone.note;
+                    while (originStartPart == 0 && originBar > 0) {
+                        const prevPattern = song.getPattern(channelIndex, originBar - 1);
+                        if (prevPattern == null)
+                            break;
+                        let candidate = null;
+                        for (let i = prevPattern.notes.length - 1; i >= 0; i--) {
+                            const n = prevPattern.notes[i];
+                            if (n.end == partsPerBar &&
+                                Synth.adjacentNotesHaveMatchingPitches(n, noteToFind)) {
+                                candidate = n;
+                                break;
+                            }
+                        }
+                        if (candidate == null)
+                            break;
+                        const canSeamless = this.adjacentPatternHasCompatibleInstrumentTransition(song, song.channels[channelIndex], originPattern, prevPattern, tone.instrumentIndex, instrument.getTransition(), instrument.getChord(), noteToFind, candidate, noteToFind.continuesLastPattern &&
+                            Synth.adjacentNotesHaveMatchingPitches(candidate, noteToFind));
+                        if (canSeamless == null)
+                            break;
+                        originBar--;
+                        originStartPart = candidate.start;
+                        originPattern = prevPattern;
+                        noteToFind = candidate;
+                    }
+                    const elapsedParts = (this.bar - originBar) * partsPerBar +
+                        currentPart -
+                        originStartPart;
+                    const elapsedTicks = elapsedParts * Config.ticksPerPart + this.tick;
+                    if (elapsedTicks > 0) {
+                        const samplesElapsed = elapsedTicks * samplesPerTick;
+                        const voiceCount = instrument.unisonVoices;
+                        for (let i = 0; i < voiceCount; i++) {
+                            tone.phases[i] += samplesElapsed * tone.phaseDeltas[i];
+                        }
+                    }
+                }
             }
+            tone.freshlyAllocated = false;
         }
         static getLFOAmplitude(instrument, secondsIntoBar) {
             let effect = 0.0;
